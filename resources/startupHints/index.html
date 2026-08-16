@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>录制讲题视频快速教程</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body { width: 100%; min-height: 100%; margin: 0; }
+        body { color: #24344d; background: #f4f7fb; font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; padding: 24px; }
+        .hero { color: white; background: linear-gradient(135deg, #2563a9, #4188df); border-radius: 16px; padding: 22px 26px; box-shadow: 0 10px 28px rgba(37, 99, 169, .18); }
+        h1 { margin: 0 0 7px; font-size: 27px; }
+        .hero p { margin: 0; color: #eaf3ff; font-size: 15px; }
+        .location { margin: 18px 0; background: white; border: 1px solid #dbe7f5; border-radius: 13px; padding: 16px 20px; }
+        .location strong { color: #17549a; }
+        .path { display: inline-block; margin: 7px 0 0; color: #174ea6; background: #edf4ff; border-radius: 7px; padding: 6px 10px; font-weight: 600; }
+        .steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        .step { min-height: 112px; background: white; border: 1px solid #e0e7f0; border-radius: 12px; padding: 15px 16px 14px 54px; position: relative; }
+        .num { position: absolute; left: 15px; top: 15px; width: 28px; height: 28px; color: white; background: #3278d4; border-radius: 50%; text-align: center; line-height: 28px; font-weight: 700; }
+        .step h2 { margin: 1px 0 6px; font-size: 17px; color: #1d3554; }
+        .step p { margin: 0; color: #5c6d83; font-size: 14px; line-height: 1.65; }
+        .symbol { color: #1761ae; font-size: 17px; font-weight: 700; }
+        .tip { margin-top: 15px; color: #485c75; background: #fff8e8; border-left: 4px solid #f3b63f; border-radius: 7px; padding: 10px 13px; font-size: 13px; }
+        footer { margin-top: 17px; padding-top: 13px; border-top: 1px solid #dce4ee; color: #65758a; font-size: 12px; line-height: 1.7; text-align: center; }
+        footer strong { color: #354a65; }
+    </style>
+</head>
+<body>
+    <section class="hero">
+        <h1>🎬 录制讲题视频快速教程</h1>
+        <p>用 OpenBoard 一边板书、一边录制声音和画面，停止后自动生成便于微信发送的 MP4 视频。</p>
+    </section>
+    <section class="location">
+        <strong>录屏功能在哪里？</strong><br>
+        点击窗口右上角的 <b>“OpenBoard”齿轮菜单</b>，选择 <b>“播客（Podcast）”</b>，屏幕上会出现录制控制条。
+        <br><span class="path">右上角 OpenBoard → 播客（Podcast）</span>
+    </section>
+    <section class="steps">
+        <article class="step"><span class="num">1</span><h2>开始录制</h2><p>在录制控制条中点击红色“录制”按钮，开始讲题、板书和录音。</p></article>
+        <article class="step"><span class="num">2</span><h2>暂停或继续</h2><p>录制中点击 <span class="symbol">⏸</span> 暂停；暂停后按钮变为 <span class="symbol">▶</span>，点击即可继续。</p></article>
+        <article class="step"><span class="num">3</span><h2>停止并生成视频</h2><p>再次点击红色“停止”按钮。请稍候，程序会自动完成 MP4 转换。</p></article>
+        <article class="step"><span class="num">4</span><h2>找到录制文件</h2><p>默认保存在 Windows <b>桌面</b>，文件名以 <b>Podcast-</b> 开头，扩展名为 <b>.mp4</b>。</p></article>
+    </section>
+    <div class="tip"><b>提示：</b>停止录制后不要立即关闭软件，等待 MP4 转换完成。视频较长时需要多等一会儿。</div>
+    <footer>
+        <strong>希望学定制版</strong> · 使用问题反馈：<strong>W000210 车禹泽</strong><br>
+        本软件为基于 OpenBoard 开源项目的非官方定制版本；OpenBoard 原版权及开源许可证声明继续保留。
+    </footer>
+</body>
+</html>

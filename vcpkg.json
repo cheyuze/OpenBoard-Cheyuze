@@ -1,0 +1,13 @@
+{
+  "name": "openboard-team-edition",
+  "version-string": "1.7.7",
+  "builtin-baseline": "40f3c709db80acf154ac4b17a1f83c564ebd022e",
+  "dependencies": [
+    "openssl",
+    {
+      "name": "poppler",
+      "features": ["private-api"]
+    },
+    "zlib"
+  ]
+}
