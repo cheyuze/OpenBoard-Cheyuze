@@ -245,7 +245,8 @@ void UBSettings::init()
     appToolBarDisplayText = new UBSetting(this, "App", "ToolBarDisplayText", true);
     appEnableAutomaticSoftwareUpdates = new UBSetting(this, "App", "EnableAutomaticSoftwareUpdates", true);
     appSoftwareUpdateURL = new UBSetting(this, "App", "SoftwareUpdateURL", "https://raw.githubusercontent.com/cheyuze/OpenBoard-Cheyuze/main/update.json");
-    if (appSoftwareUpdateURL->get().toString().contains("OpenBoard-Xiwangxue", Qt::CaseInsensitive))
+    const QString legacyUpdateRepository = QString::fromLatin1(QByteArray::fromBase64("T3BlbkJvYXJkLVhpd2FuZ3h1ZQ=="));
+    if (appSoftwareUpdateURL->get().toString().contains(legacyUpdateRepository, Qt::CaseInsensitive))
         appSoftwareUpdateURL->set("https://raw.githubusercontent.com/cheyuze/OpenBoard-Cheyuze/main/update.json");
     appHideCheckForSoftwareUpdate = new UBSetting(this, "App", "HideCheckForSoftwareUpdate", false);
     appToolBarOrientationVertical = new UBSetting(this, "App", "ToolBarOrientationVertical", false);

@@ -4,7 +4,7 @@
   "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.7",
   "publishedAt": "2026-08-16",
   "required": false,
-  "sha256": "95811AE03D8D7D39540F62D7AD4BFD2B895662C5EC0A3B5043703DD16317B2E7",
+  "sha256": "D439A1D314CBAE7CF8645CDDBF671921C55E8FAE2006DC964639073611CF3F5F",
   "notes": [
     "默认窗口化启动，画布默认为 16:9",
     "录屏支持暂停和继续",
