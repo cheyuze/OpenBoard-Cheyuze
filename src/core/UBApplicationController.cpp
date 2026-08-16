@@ -74,6 +74,7 @@
 #include <QProgressDialog>
 #include <QSaveFile>
 #include <QStandardPaths>
+#include <QTimer>
 
 
 
@@ -518,6 +519,12 @@ void UBApplicationController::checkUpdate(const QUrl& url)
                       QString("OpenBoard-cheyuze/%1").arg(qApp->applicationVersion()));
     request.setRawHeader("Accept", "application/json");
     request.setRawHeader("Cache-Control", "no-cache");
+#if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
+    // Some networks used by our teachers reset GitHub's HTTP/2 streams while
+    // Qt is downloading.  HTTP/1.1 is slower to negotiate but considerably
+    // more reliable through those proxies and gateways.
+    request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+#endif
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     request.setTransferTimeout(10000);
 #endif
@@ -635,9 +642,24 @@ void UBApplicationController::downloadJsonFinished(QString currentJson)
         messageBox.exec();
 
         if (messageBox.clickedButton() == downloadButton) {
-            const QUrl url(jsonObject.value("url").toString());
-            if (url.isValid())
-                downloadUpdateInstaller(url,
+            QList<QUrl> urls;
+            const QJsonValue urlsValue = jsonObject.value("urls");
+            if (urlsValue.isArray()) {
+                for (const QJsonValue &urlValue : urlsValue.toArray()) {
+                    const QUrl candidate(urlValue.toString());
+                    if (candidate.isValid() && !candidate.isEmpty() && !urls.contains(candidate))
+                        urls.append(candidate);
+                }
+            }
+
+            // Keep the original single URL field for compatibility and use it
+            // as the last fallback when a future manifest supplies mirrors.
+            const QUrl fallbackUrl(jsonObject.value("url").toString());
+            if (fallbackUrl.isValid() && !fallbackUrl.isEmpty() && !urls.contains(fallbackUrl))
+                urls.append(fallbackUrl);
+
+            if (!urls.isEmpty())
+                downloadUpdateInstaller(urls,
                                         jsonObject.value("version").toString(),
                                         jsonObject.value("sha256").toString());
         }
@@ -648,10 +670,16 @@ void UBApplicationController::downloadJsonFinished(QString currentJson)
     }
 }
 
-void UBApplicationController::downloadUpdateInstaller(const QUrl &url,
+void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
                                                        const QString &version,
-                                                       const QString &expectedSha256)
+                                                       const QString &expectedSha256,
+                                                       int urlIndex,
+                                                       int retryAttempt)
 {
+    if (urlIndex < 0 || urlIndex >= urls.size())
+        return;
+
+    const QUrl url = urls.at(urlIndex);
     const QString downloadDirectory = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
     const QString fileName = QString("OpenBoard-cheyuze-%1-x64.exe").arg(version);
     const QString destination = QDir(downloadDirectory).filePath(fileName);
@@ -676,6 +704,9 @@ void UBApplicationController::downloadUpdateInstaller(const QUrl &url,
                       QString("OpenBoard-cheyuze/%1").arg(qApp->applicationVersion()));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::NoLessSafeRedirectPolicy);
+#if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
+    request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+#endif
     // Keep installer traffic separate from the update-manifest manager, whose
     // finished signal parses every reply as JSON.
     QNetworkAccessManager *downloadManager = new QNetworkAccessManager(progress);
@@ -699,17 +730,43 @@ void UBApplicationController::downloadUpdateInstaller(const QUrl &url,
     });
     connect(progress, &QProgressDialog::canceled, reply, &QNetworkReply::abort);
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, file, progress, destination, expectedSha256]() {
+            [this, reply, file, progress, destination, urls, version,
+             expectedSha256, urlIndex, retryAttempt]() {
         progress->close();
         progress->deleteLater();
 
         if (reply->error() != QNetworkReply::NoError) {
+            const QNetworkReply::NetworkError error = reply->error();
+            const QString errorText = reply->errorString();
             file->cancelWriting();
-            if (reply->error() != QNetworkReply::OperationCanceledError)
-                mMainWindow->information(tr("Download update"),
-                                         tr("Update download failed: %1").arg(reply->errorString()));
             reply->deleteLater();
             file->deleteLater();
+
+            if (error == QNetworkReply::OperationCanceledError)
+                return;
+
+            // Retry transient failures twice on the same source.  If the
+            // manifest contains mirrors, move to the next source afterwards.
+            if (retryAttempt < 2) {
+                QTimer::singleShot(1200, this,
+                                   [this, urls, version, expectedSha256, urlIndex, retryAttempt]() {
+                    downloadUpdateInstaller(urls, version, expectedSha256,
+                                            urlIndex, retryAttempt + 1);
+                });
+                return;
+            }
+
+            if (urlIndex + 1 < urls.size()) {
+                QTimer::singleShot(500, this,
+                                   [this, urls, version, expectedSha256, urlIndex]() {
+                    downloadUpdateInstaller(urls, version, expectedSha256,
+                                            urlIndex + 1, 0);
+                });
+                return;
+            }
+
+            mMainWindow->information(tr("Download update"),
+                                     tr("Update download failed: %1").arg(errorText));
             return;
         }
 
