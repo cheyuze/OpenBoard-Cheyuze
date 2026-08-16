@@ -2161,8 +2161,51 @@ void UBBoardController::chooseCustomColor()
     if (!initialColor.isValid())
         initialColor = Qt::black;
 
-    const QColor selectedColor = QColorDialog::getColor(
-        initialColor, mMainWindow, tr("Choose a color"), QColorDialog::DontUseNativeDialog);
+    QColorDialog colorDialog(initialColor, mMainWindow);
+    colorDialog.setWindowTitle(tr("Choose a color"));
+    colorDialog.setOption(QColorDialog::DontUseNativeDialog);
+
+    // QColorDialog uses Qt's own translation catalogue. Deployed Windows
+    // builds do not ship the complete Qt catalogue, so translate the visible
+    // controls here to keep the Team Edition colour palette fully Chinese.
+    const QHash<QString, QString> colorDialogTranslations = {
+        {QStringLiteral("Basic colors"), QStringLiteral("基本颜色")},
+        {QStringLiteral("Pick Screen Color"), QStringLiteral("拾取屏幕颜色")},
+        {QStringLiteral("Custom colors"), QStringLiteral("自定义颜色")},
+        {QStringLiteral("Add to Custom Colors"), QStringLiteral("添加到自定义颜色")},
+        {QStringLiteral("Hue:"), QStringLiteral("色相：")},
+        {QStringLiteral("Sat:"), QStringLiteral("饱和度：")},
+        {QStringLiteral("Val:"), QStringLiteral("明度：")},
+        {QStringLiteral("Red:"), QStringLiteral("红：")},
+        {QStringLiteral("Green:"), QStringLiteral("绿：")},
+        {QStringLiteral("Blue:"), QStringLiteral("蓝：")},
+        {QStringLiteral("HTML:"), QStringLiteral("HTML：")},
+        {QStringLiteral("Alpha channel:"), QStringLiteral("透明度：")},
+        {QStringLiteral("OK"), QStringLiteral("确定")},
+        {QStringLiteral("Cancel"), QStringLiteral("取消")}
+    };
+
+    const auto translatedText = [&colorDialogTranslations](QString text) {
+        text.remove(QLatin1Char('&'));
+        return colorDialogTranslations.value(text, QString());
+    };
+
+    for (QLabel *label : colorDialog.findChildren<QLabel*>()) {
+        const QString translation = translatedText(label->text());
+        if (!translation.isEmpty())
+            label->setText(translation);
+    }
+
+    for (QAbstractButton *button : colorDialog.findChildren<QAbstractButton*>()) {
+        const QString translation = translatedText(button->text());
+        if (!translation.isEmpty())
+            button->setText(translation);
+    }
+
+    if (colorDialog.exec() != QDialog::Accepted)
+        return;
+
+    const QColor selectedColor = colorDialog.selectedColor();
 
     if (!selectedColor.isValid())
         return;

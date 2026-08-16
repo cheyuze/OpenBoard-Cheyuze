@@ -31,6 +31,7 @@
 #include <QPainter>
 #include <QMouseEvent>
 #include <QCheckBox>
+#include <QDesktopServices>
 #include <QWebEnginePage>
 #include <QWebChannel>
 #include "UBStartupHintsPalette.h"
@@ -39,6 +40,30 @@
 
 #include "globals/UBGlobals.h"
 #include "core/UBSettings.h"
+
+namespace
+{
+class UBStartupHintsPage : public QWebEnginePage
+{
+public:
+    explicit UBStartupHintsPage(QObject *parent = nullptr)
+        : QWebEnginePage(parent)
+    {
+    }
+
+protected:
+    bool acceptNavigationRequest(const QUrl &url, NavigationType type, bool isMainFrame) override
+    {
+        if (url.scheme().compare(QStringLiteral("yach"), Qt::CaseInsensitive) == 0)
+        {
+            QDesktopServices::openUrl(url);
+            return false;
+        }
+
+        return QWebEnginePage::acceptNavigationRequest(url, type, isMainFrame);
+    }
+};
+}
 
 
 
@@ -54,6 +79,7 @@ UBStartupHintsPalette::UBStartupHintsPalette(QWidget *parent) :
     setLayout(mLayout);
     QString url = UBSettings::settings()->applicationStartupHintsDirectory() + "/index.html";
     mpWebView = new UBWebEngineView(this);
+    mpWebView->setPage(new UBStartupHintsPage(mpWebView));
     mpSankoreAPI = new UBWidgetUniboardAPI(0);
     QWebChannel* channel = new QWebChannel(this);
     mpWebView->page()->setWebChannel(channel);

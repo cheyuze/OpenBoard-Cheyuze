@@ -1,10 +1,10 @@
 {
-  "version": "1.7.12",
-  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.12/OpenBoard-cheyuze-1.7.12-x64.exe",
-  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.12",
+  "version": "1.7.13",
+  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.13/OpenBoard-cheyuze-1.7.13-x64.exe",
+  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.13",
   "publishedAt": "2026-08-16",
   "required": false,
-  "sha256": "D08C4FC8756F61D7D35BFF4729DC17934B43A59C6B710CE000A80298DDB7765D",
+  "sha256": "A291FB757BB800346203CA6A07924AD97FE8CDADF0285F482341CE486B777A80",
   "notes": [
     "默认窗口化启动，画布默认为 16:9",
     "录屏支持暂停和继续",
@@ -20,6 +20,8 @@
     "点击下载更新后直接下载并显示进度，完成后可直接启动安装",
     "测试更新：安装进度页的教学培训提示文字改为绿色",
     "修复部分网络环境下载更新时出现的 HTTP/2 protocol error",
-    "更新下载失败后自动重试，并支持配置多个备用下载源"
+    "更新下载失败后自动重试，并支持配置多个备用下载源",
+    "色盘窗口中的颜色分类、参数名称和操作按钮全部改为简体中文",
+    "提示与技巧改为版本更新内容，并加入可点击的车禹泽如流名牌"
   ]
 }
