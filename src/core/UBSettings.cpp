@@ -244,10 +244,13 @@ void UBSettings::init()
     appToolBarPositionedAtTop = new UBSetting(this, "App", "ToolBarPositionedAtTop", true);
     appToolBarDisplayText = new UBSetting(this, "App", "ToolBarDisplayText", true);
     appEnableAutomaticSoftwareUpdates = new UBSetting(this, "App", "EnableAutomaticSoftwareUpdates", true);
-    appSoftwareUpdateURL = new UBSetting(this, "App", "SoftwareUpdateURL", "https://raw.githubusercontent.com/cheyuze/OpenBoard-Cheyuze/main/update.json");
+    const QString cheyuzeUpdateUrl = "https://raw.githubusercontent.com/cheyuze/OpenBoard-Cheyuze/main/update.json";
+    appSoftwareUpdateURL = new UBSetting(this, "App", "SoftwareUpdateURL", cheyuzeUpdateUrl);
     const QString legacyUpdateRepository = QString::fromLatin1(QByteArray::fromBase64("T3BlbkJvYXJkLVhpd2FuZ3h1ZQ=="));
-    if (appSoftwareUpdateURL->get().toString().contains(legacyUpdateRepository, Qt::CaseInsensitive))
-        appSoftwareUpdateURL->set("https://raw.githubusercontent.com/cheyuze/OpenBoard-Cheyuze/main/update.json");
+    const QString configuredUpdateUrl = appSoftwareUpdateURL->get().toString();
+    if (configuredUpdateUrl.contains(legacyUpdateRepository, Qt::CaseInsensitive)
+            || configuredUpdateUrl.contains("openboard.ch/update.json", Qt::CaseInsensitive))
+        appSoftwareUpdateURL->set(cheyuzeUpdateUrl);
     appHideCheckForSoftwareUpdate = new UBSetting(this, "App", "HideCheckForSoftwareUpdate", false);
     appToolBarOrientationVertical = new UBSetting(this, "App", "ToolBarOrientationVertical", false);
     appPreferredLanguage = new UBSetting(this,"App","PreferredLanguage", "");

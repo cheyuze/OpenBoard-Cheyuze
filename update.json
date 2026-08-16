@@ -1,18 +1,19 @@
 {
-  "version": "1.7.8",
+  "version": "1.7.9",
   "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/latest",
-  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.8",
+  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.9",
   "publishedAt": "2026-08-16",
   "required": false,
-  "sha256": "3A00E7B1D4E28F81882BDDCEE541DE406F29BC2FC9CFD49729ECAE1F030A3CA3",
+  "sha256": "9873F043BB4ED2C4AE913E3FA9A92B103838F2296EA798F2F10C29DDA30023C9",
   "notes": [
     "默认窗口化启动，画布默认为 16:9",
     "录屏支持暂停和继续",
     "直接录制 H.264/AAC MP4，减少转码造成的音画不同步",
     "录入鼠标指针，并优化书写光标",
     "新增 Shift 直线和常用形状工具",
-    "补齐简体中文界面文案"
-    ,"顶部新增完整色盘，可自由选择任意颜色"
-    ,"将录制按钮移到顶部工具栏，讲题录制更快捷"
+    "补齐简体中文界面文案",
+    "顶部新增完整色盘，可自由选择任意颜色",
+    "将录制按钮移到顶部工具栏，讲题录制更快捷",
+    "修复旧版本检查更新时误用 OpenBoard 官方地址的问题"
   ]
 }
