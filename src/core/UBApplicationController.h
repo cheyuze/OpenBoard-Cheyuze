@@ -178,6 +178,7 @@ class UBApplicationController : public QObject
 
         bool isNoUpdateDisplayed;
         void checkUpdate(const QUrl &url = QUrl());
+        void downloadUpdateInstaller(const QUrl &url, const QString &version, const QString &expectedSha256);
         QNetworkAccessManager * mNetworkAccessManager;
 
         void downloadJsonFinished(QString updateString);

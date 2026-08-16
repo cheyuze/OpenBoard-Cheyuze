@@ -67,6 +67,14 @@
 
 #include "ui_mainWindow.h"
 
+#include <QCryptographicHash>
+#include <QFile>
+#include <QMessageBox>
+#include <QProcess>
+#include <QProgressDialog>
+#include <QSaveFile>
+#include <QStandardPaths>
+
 
 
 #ifdef Q_OS_MAC
@@ -618,8 +626,8 @@ void UBApplicationController::downloadJsonFinished(QString currentJson)
         QMessageBox messageBox(mMainWindow);
         messageBox.setIcon(QMessageBox::Information);
         messageBox.setWindowTitle(tr("Update available"));
-        messageBox.setText(tr("A new version %1 is available.\nCurrent version: %2")
-                               .arg(jsonObject.value("version").toString(), qApp->applicationVersion()));
+        messageBox.setText(tr("A new version %1 is available.").arg(jsonObject.value("version").toString())
+                           + "\n" + tr("Current version: %1").arg(qApp->applicationVersion()));
         if (!notes.trimmed().isEmpty())
             messageBox.setInformativeText(tr("What's new:") + notes);
         QPushButton *downloadButton = messageBox.addButton(tr("Download update"), QMessageBox::AcceptRole);
@@ -629,13 +637,122 @@ void UBApplicationController::downloadJsonFinished(QString currentJson)
         if (messageBox.clickedButton() == downloadButton) {
             const QUrl url(jsonObject.value("url").toString());
             if (url.isValid())
-                QDesktopServices::openUrl(url);
+                downloadUpdateInstaller(url,
+                                        jsonObject.value("version").toString(),
+                                        jsonObject.value("sha256").toString());
         }
     }
     else if (isNoUpdateDisplayed) {
         mMainWindow->information(tr("Check for updates"),
                                  tr("You are using the latest version (%1).").arg(qApp->applicationVersion()));
     }
+}
+
+void UBApplicationController::downloadUpdateInstaller(const QUrl &url,
+                                                       const QString &version,
+                                                       const QString &expectedSha256)
+{
+    const QString downloadDirectory = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    const QString fileName = QString("OpenBoard-cheyuze-%1-x64.exe").arg(version);
+    const QString destination = QDir(downloadDirectory).filePath(fileName);
+
+    QSaveFile *file = new QSaveFile(destination, this);
+    if (!file->open(QIODevice::WriteOnly)) {
+        mMainWindow->information(tr("Download update"),
+                                 tr("Unable to save the installer to: %1").arg(destination));
+        file->deleteLater();
+        return;
+    }
+
+    QProgressDialog *progress = new QProgressDialog(tr("Downloading update %1...").arg(version),
+                                                    tr("Cancel"), 0, 100, mMainWindow);
+    progress->setWindowTitle(tr("Download update"));
+    progress->setWindowModality(Qt::WindowModal);
+    progress->setAutoClose(false);
+    progress->setMinimumDuration(0);
+
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader,
+                      QString("OpenBoard-cheyuze/%1").arg(qApp->applicationVersion()));
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+    // Keep installer traffic separate from the update-manifest manager, whose
+    // finished signal parses every reply as JSON.
+    QNetworkAccessManager *downloadManager = new QNetworkAccessManager(progress);
+    QNetworkReply *reply = downloadManager->get(request);
+
+    connect(reply, &QNetworkReply::readyRead, this, [reply, file]() {
+        file->write(reply->readAll());
+    });
+    connect(reply, &QNetworkReply::downloadProgress, progress,
+            [progress](qint64 received, qint64 total) {
+        if (total > 0) {
+            progress->setRange(0, 100);
+            progress->setValue(static_cast<int>((received * 100) / total));
+            progress->setLabelText(tr("Downloading update... %1 MB / %2 MB")
+                                   .arg(received / 1024.0 / 1024.0, 0, 'f', 1)
+                                   .arg(total / 1024.0 / 1024.0, 0, 'f', 1));
+        }
+        else {
+            progress->setRange(0, 0);
+        }
+    });
+    connect(progress, &QProgressDialog::canceled, reply, &QNetworkReply::abort);
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, file, progress, destination, expectedSha256]() {
+        progress->close();
+        progress->deleteLater();
+
+        if (reply->error() != QNetworkReply::NoError) {
+            file->cancelWriting();
+            if (reply->error() != QNetworkReply::OperationCanceledError)
+                mMainWindow->information(tr("Download update"),
+                                         tr("Update download failed: %1").arg(reply->errorString()));
+            reply->deleteLater();
+            file->deleteLater();
+            return;
+        }
+
+        if (!file->commit()) {
+            mMainWindow->information(tr("Download update"),
+                                     tr("Unable to save the downloaded installer."));
+            reply->deleteLater();
+            file->deleteLater();
+            return;
+        }
+
+        if (!expectedSha256.trimmed().isEmpty()) {
+            QFile downloadedFile(destination);
+            if (!downloadedFile.open(QIODevice::ReadOnly)) {
+                mMainWindow->information(tr("Download update"), tr("Unable to verify the installer."));
+                reply->deleteLater();
+                file->deleteLater();
+                return;
+            }
+            QCryptographicHash hash(QCryptographicHash::Sha256);
+            hash.addData(&downloadedFile);
+            if (QString::fromLatin1(hash.result().toHex()).compare(expectedSha256,
+                                                                   Qt::CaseInsensitive) != 0) {
+                downloadedFile.close();
+                QFile::remove(destination);
+                mMainWindow->information(tr("Download update"),
+                                         tr("Installer verification failed. Please try again."));
+                reply->deleteLater();
+                file->deleteLater();
+                return;
+            }
+        }
+
+        const QMessageBox::StandardButton installNow = QMessageBox::question(
+            mMainWindow, tr("Download complete"),
+            tr("The update has been downloaded. Install it now?"),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+        if (installNow == QMessageBox::Yes && QProcess::startDetached(destination, QStringList()))
+            qApp->quit();
+
+        reply->deleteLater();
+        file->deleteLater();
+    });
 }
 
 void UBApplicationController::checkAtLaunch()

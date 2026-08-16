@@ -1428,11 +1428,22 @@ Do you wish to override the security check and continue ?   </source>
     <message><source>Check for updates</source><translation>检查更新</translation></message>
     <message><source>Unable to check for updates. Please check your network connection and try again.</source><translation>无法检查更新，请检查网络连接后重试。</translation></message>
     <message><source>The update information returned by the server is invalid.</source><translation>服务器返回的更新信息无效。</translation></message>
-    <message><source>A new version %1 is available.\nCurrent version: %2</source><translation>发现新版本 %1。\n当前版本：%2</translation></message>
+    <message><source>A new version %1 is available.</source><translation>发现新版本 %1。</translation></message>
+    <message><source>Current version: %1</source><translation>当前版本：%1</translation></message>
     <message><source>What's new:</source><translation>更新内容：</translation></message>
     <message><source>Download update</source><translation>下载更新</translation></message>
     <message><source>Remind me later</source><translation>稍后提醒</translation></message>
     <message><source>You are using the latest version (%1).</source><translation>当前已是最新版本（%1）。</translation></message>
+    <message><source>Unable to save the installer to: %1</source><translation>无法将安装包保存到：%1</translation></message>
+    <message><source>Downloading update %1...</source><translation>正在下载更新 %1……</translation></message>
+    <message><source>Cancel</source><translation>取消</translation></message>
+    <message><source>Downloading update... %1 MB / %2 MB</source><translation>正在下载更新……%1 MB / %2 MB</translation></message>
+    <message><source>Update download failed: %1</source><translation>更新下载失败：%1</translation></message>
+    <message><source>Unable to save the downloaded installer.</source><translation>无法保存下载的安装包。</translation></message>
+    <message><source>Unable to verify the installer.</source><translation>无法校验安装包。</translation></message>
+    <message><source>Installer verification failed. Please try again.</source><translation>安装包校验失败，请重新下载。</translation></message>
+    <message><source>Download complete</source><translation>下载完成</translation></message>
+    <message><source>The update has been downloaded. Install it now?</source><translation>更新已经下载完成，是否立即安装？</translation></message>
 </context>
 <context>
     <name>UBBackgroundPalette</name>
