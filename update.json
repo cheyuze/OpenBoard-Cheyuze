@@ -1,10 +1,10 @@
 {
   "version": "1.7.7",
-  "url": "https://github.com/cheyuze/OpenBoard-Xiwangxue/releases/latest",
-  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Xiwangxue/tree/v1.7.7",
+  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/latest",
+  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.7",
   "publishedAt": "2026-08-16",
   "required": false,
-  "sha256": "468BCE80DE70F2A439704D4BDB4F10B371AA89B56E18C35F73BD2920A95D77FE",
+  "sha256": "95811AE03D8D7D39540F62D7AD4BFD2B895662C5EC0A3B5043703DD16317B2E7",
   "notes": [
     "默认窗口化启动，画布默认为 16:9",
     "录屏支持暂停和继续",

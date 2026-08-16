@@ -244,7 +244,9 @@ void UBSettings::init()
     appToolBarPositionedAtTop = new UBSetting(this, "App", "ToolBarPositionedAtTop", true);
     appToolBarDisplayText = new UBSetting(this, "App", "ToolBarDisplayText", true);
     appEnableAutomaticSoftwareUpdates = new UBSetting(this, "App", "EnableAutomaticSoftwareUpdates", true);
-    appSoftwareUpdateURL = new UBSetting(this, "App", "SoftwareUpdateURL", "https://raw.githubusercontent.com/cheyuze/OpenBoard-Xiwangxue/main/update.json");
+    appSoftwareUpdateURL = new UBSetting(this, "App", "SoftwareUpdateURL", "https://raw.githubusercontent.com/cheyuze/OpenBoard-Cheyuze/main/update.json");
+    if (appSoftwareUpdateURL->get().toString().contains("OpenBoard-Xiwangxue", Qt::CaseInsensitive))
+        appSoftwareUpdateURL->set("https://raw.githubusercontent.com/cheyuze/OpenBoard-Cheyuze/main/update.json");
     appHideCheckForSoftwareUpdate = new UBSetting(this, "App", "HideCheckForSoftwareUpdate", false);
     appToolBarOrientationVertical = new UBSetting(this, "App", "ToolBarOrientationVertical", false);
     appPreferredLanguage = new UBSetting(this,"App","PreferredLanguage", "");

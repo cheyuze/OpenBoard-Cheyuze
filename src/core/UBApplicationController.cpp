@@ -507,7 +507,7 @@ void UBApplicationController::checkUpdate(const QUrl& url)
 
     QNetworkRequest request(jsonUrl);
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QString("OpenBoard-Xiwangxue/%1").arg(qApp->applicationVersion()));
+                      QString("OpenBoard-cheyuze/%1").arg(qApp->applicationVersion()));
     request.setRawHeader("Accept", "application/json");
     request.setRawHeader("Cache-Control", "no-cache");
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)

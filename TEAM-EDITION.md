@@ -1,4 +1,4 @@
-# OpenBoard Team Edition
+# OpenBoard 车厘子定制版
 
 This build is based on OpenBoard 1.7.7 and contains three Windows-focused
 changes for classroom screen recording:

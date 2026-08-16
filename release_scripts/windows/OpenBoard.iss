@@ -9,10 +9,10 @@
 ; Do not use the same AppId value in installers for other applications.
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
 AppId={{8CCA6AC7-BBF9-4DD2-8E70-A907E0FCA38F}}
-AppName=OpenBoard Team Edition
+AppName=OpenBoard 车厘子定制版
 AppVersion={#ApplicationVersion}
-AppVerName=OpenBoard Team Edition {#ApplicationVersion}
-UninstallDisplayName=OpenBoard Team Edition {#ApplicationVersion}
+AppVerName=OpenBoard 车厘子定制版 {#ApplicationVersion}
+UninstallDisplayName=OpenBoard 车厘子定制版 {#ApplicationVersion}
 AppPublisher=Open Education Foundation
 ArchitecturesInstallIn64BitMode=x64
 

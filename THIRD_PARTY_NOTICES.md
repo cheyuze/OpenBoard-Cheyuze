@@ -1,6 +1,6 @@
 # 第三方组件声明
 
-OpenBoard 希望学定制版基于 OpenBoard 开发，整体以 GNU GPL v3 发布。
+OpenBoard 车厘子定制版基于 OpenBoard 开发，整体以 GNU GPL v3 发布。
 
 发行包使用了 Qt、FFmpeg、OpenSSL、Poppler、QuaZip、Boost 等第三方组件。各组件仍适用其各自的版权和许可证条款，相关许可文本保留在源码树、构建依赖或安装目录中。
 

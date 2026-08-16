@@ -1,6 +1,6 @@
 ![GitHub Repo stars](https://img.shields.io/github/stars/OpenBoard-org/openboard)
 ![GitHub Repo forks](https://img.shields.io/github/forks/OpenBoard-org/openboard)
-# OpenBoard 希望学定制版
+# OpenBoard 车厘子定制版
 
 > 本项目是基于 OpenBoard 1.7.7 的非官方教学定制版，不是 OpenBoard 官方发行版。
 > OpenBoard 原项目版权归原作者及贡献者所有。定制版维护：W000210 车禹泽。
@@ -13,7 +13,7 @@
 - Shift 直线、常用形状与中文化界面。
 - 启动时检查 GitHub Releases 更新，也可从菜单手动检查。
 
-安装包、更新说明和对应版本源码见 [Releases](https://github.com/cheyuze/OpenBoard-Xiwangxue/releases)。
+安装包、更新说明和对应版本源码见 [Releases](https://github.com/cheyuze/OpenBoard-Cheyuze/releases)。
 
 本项目继续按 GNU GPL v3 发布，详见 [LICENSE](LICENSE)。第三方组件说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
