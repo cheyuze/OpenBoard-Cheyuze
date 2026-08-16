@@ -4,7 +4,7 @@
   "sourceUrl": "https://github.com/cheyuze/OpenBoard-Xiwangxue/tree/v1.7.7",
   "publishedAt": "2026-08-16",
   "required": false,
-  "sha256": "28C8290AEB7ACFC8F0397F8D4AE46B5C45054BB034B9C77B6E71BB73ADC421C0",
+  "sha256": "468BCE80DE70F2A439704D4BDB4F10B371AA89B56E18C35F73BD2920A95D77FE",
   "notes": [
     "默认窗口化启动，画布默认为 16:9",
     "录屏支持暂停和继续",
