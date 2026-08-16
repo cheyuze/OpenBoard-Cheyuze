@@ -10,6 +10,11 @@
         <file>images/play.svg</file>
         <file>images/pause.svg</file>
         <file>images/stop.svg</file>
+        <file>images/podcast/record.svg</file>
+        <file>images/podcast/stop.svg</file>
+        <file>images/podcast/pause.svg</file>
+        <file>images/podcast/play.svg</file>
+        <file>images/podcast/settings.svg</file>
         <file>images/menu.svg</file>
         <file>images/flash.svg</file>
         <file>images/soundOn.svg</file>

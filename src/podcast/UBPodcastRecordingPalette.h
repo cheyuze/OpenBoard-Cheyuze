@@ -52,6 +52,10 @@ class UBPodcastRecordingPalette : public UBActionPalette
         void recordingProgressChanged(qint64 ms);
         void audioLevelChanged(quint8 level);
 
+    protected:
+        void paintEvent(QPaintEvent *event) override;
+        int radius() override;
+
     private:
         QLabel *mTimerLabel;
         UBVuMeter *mLevelMeter;

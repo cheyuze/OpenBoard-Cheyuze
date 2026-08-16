@@ -44,34 +44,81 @@
 UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
      : UBActionPalette(Qt::Horizontal, parent)
 {
-    addAction(UBApplication::mainWindow->actionPodcastRecord);
-    addAction(UBApplication::mainWindow->actionPodcastPause);
+    setAttribute(Qt::WA_TranslucentBackground);
+    setWindowTitle(QStringLiteral("录制控制"));
+    setGrip(false);
+    setWindowOpacity(0.98);
+
+    QLayout *paletteLayout = layout();
+    paletteLayout->setContentsMargins(12, 9, 12, 9);
+    paletteLayout->setSpacing(6);
+
+    QAction *recordAction = UBApplication::mainWindow->actionPodcastRecord;
+    QAction *pauseAction = UBApplication::mainWindow->actionPodcastPause;
+    QAction *configAction = UBApplication::mainWindow->actionPodcastConfig;
+
+    recordAction->setIcon(QIcon(":/images/podcast/record.svg"));
+    recordAction->setText(QStringLiteral("录制"));
+    recordAction->setToolTip(QStringLiteral("录制"));
+    pauseAction->setIcon(QIcon(":/images/podcast/pause.svg"));
+    pauseAction->setText(QStringLiteral("暂停"));
+    pauseAction->setToolTip(QStringLiteral("暂停"));
+    configAction->setIcon(QIcon(":/images/podcast/settings.svg"));
+    configAction->setToolTip(QStringLiteral("录制设置"));
+
+    addAction(recordAction);
+    addAction(pauseAction);
 
     mTimerLabel = new QLabel(this);
-    mTimerLabel->setStyleSheet(QString("QLabel {color: white; font-size: 14px; font-weight: bold; font-family: Arial; background-color: transparent; border: none}"));
+    mTimerLabel->setAlignment(Qt::AlignCenter);
+    mTimerLabel->setMinimumWidth(56);
+    mTimerLabel->setStyleSheet(QStringLiteral(
+        "QLabel { color: #F8FAFC; font-size: 15px; font-weight: 600; "
+        "font-family: 'Segoe UI'; background: transparent; border: none; "
+        "padding: 0 4px; }"));
     recordingProgressChanged(0);
 
     layout()->addWidget(mTimerLabel);
 
     mLevelMeter = new UBVuMeter(this);
-    mLevelMeter->setMinimumSize(6, 32);
+    mLevelMeter->setFixedSize(5, 26);
 
     layout()->addWidget(mLevelMeter);
 
-    addAction(UBApplication::mainWindow->actionPodcastConfig);
+    addAction(configAction);
+
+    const QString buttonStyle = QStringLiteral(
+        "QToolButton { background: transparent; border: 1px solid transparent; "
+        "border-radius: 10px; padding: 6px; }"
+        "QToolButton:hover { background: rgba(255, 255, 255, 32); "
+        "border-color: rgba(255, 255, 255, 38); }"
+        "QToolButton:pressed, QToolButton:checked { background: rgba(59, 130, 246, 58); "
+        "border-color: rgba(96, 165, 250, 105); }"
+        "QToolButton:disabled { background: transparent; border-color: transparent; }"
+        "QToolButton::menu-indicator { image: none; }"
+    );
+
+    for (QAction *action : {recordAction, pauseAction, configAction})
+    {
+        if (QToolButton *button = getButtonFromAction(action))
+        {
+            button->setFixedSize(40, 40);
+            button->setIconSize(QSize(24, 24));
+            button->setStyleSheet(buttonStyle);
+        }
+    }
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-    foreach(QObject* menuWidget,  UBApplication::mainWindow->actionPodcastConfig->associatedObjects())
+    foreach(QObject* menuWidget, configAction->associatedObjects())
 #else
-    foreach(QWidget* menuWidget,  UBApplication::mainWindow->actionPodcastConfig->associatedWidgets())
+    foreach(QWidget* menuWidget, configAction->associatedWidgets())
 #endif
     {
         QToolButton *tb = qobject_cast<QToolButton*>(menuWidget);
 
-        tb->setIconSize(QSize(16, 16));
-
         if (tb && !tb->menu())
         {
+            tb->setIconSize(QSize(24, 24));
             tb->setObjectName("ubButtonMenu");
             tb->setPopupMode(QToolButton::InstantPopup);
             QMenu* menu = new QMenu(this);
@@ -100,6 +147,8 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
             tb->setMenu(menu);
         }
     }
+
+    adjustSize();
 }
 
 
@@ -111,16 +160,22 @@ UBPodcastRecordingPalette::~UBPodcastRecordingPalette()
 
 void UBPodcastRecordingPalette::recordingStateChanged(UBPodcastController::RecordingState state)
 {
+    QAction *recordAction = UBApplication::mainWindow->actionPodcastRecord;
+    QAction *pauseAction = UBApplication::mainWindow->actionPodcastPause;
+
     if (state == UBPodcastController::Recording)
     {
-        UBApplication::mainWindow->actionPodcastRecord->setChecked(true);
-        UBApplication::mainWindow->actionPodcastRecord->setEnabled(true);
+        recordAction->setChecked(true);
+        recordAction->setEnabled(true);
+        recordAction->setIcon(QIcon(":/images/podcast/stop.svg"));
+        recordAction->setText(QStringLiteral("停止"));
+        recordAction->setToolTip(QStringLiteral("停止"));
 
-        UBApplication::mainWindow->actionPodcastPause->setChecked(false);
-        UBApplication::mainWindow->actionPodcastPause->setEnabled(true);
-        UBApplication::mainWindow->actionPodcastPause->setIcon(QIcon(":/images/pause.svg"));
-        UBApplication::mainWindow->actionPodcastPause->setText(tr("Pause"));
-        UBApplication::mainWindow->actionPodcastPause->setToolTip(tr("Pause Podcast Recording"));
+        pauseAction->setChecked(false);
+        pauseAction->setEnabled(true);
+        pauseAction->setIcon(QIcon(":/images/podcast/pause.svg"));
+        pauseAction->setText(QStringLiteral("暂停"));
+        pauseAction->setToolTip(QStringLiteral("暂停"));
 
         //UBApplication::mainWindow->actionPodcastMic->setEnabled(false);
 
@@ -128,36 +183,45 @@ void UBPodcastRecordingPalette::recordingStateChanged(UBPodcastController::Recor
     }
     else if (state == UBPodcastController::Stopped)
     {
-        UBApplication::mainWindow->actionPodcastRecord->setChecked(false);
-        UBApplication::mainWindow->actionPodcastRecord->setEnabled(true);
+        recordAction->setChecked(false);
+        recordAction->setEnabled(true);
+        recordAction->setIcon(QIcon(":/images/podcast/record.svg"));
+        recordAction->setText(QStringLiteral("录制"));
+        recordAction->setToolTip(QStringLiteral("录制"));
 
-        UBApplication::mainWindow->actionPodcastPause->setChecked(false);
-        UBApplication::mainWindow->actionPodcastPause->setEnabled(false);
-        UBApplication::mainWindow->actionPodcastPause->setIcon(QIcon(":/images/pause.svg"));
-        UBApplication::mainWindow->actionPodcastPause->setText(tr("Pause"));
-        UBApplication::mainWindow->actionPodcastPause->setToolTip(tr("Pause Podcast Recording"));
+        pauseAction->setChecked(false);
+        pauseAction->setEnabled(false);
+        pauseAction->setIcon(QIcon(":/images/podcast/pause.svg"));
+        pauseAction->setText(QStringLiteral("暂停"));
+        pauseAction->setToolTip(QStringLiteral("暂停"));
 
         //UBApplication::mainWindow->actionPodcastMic->setEnabled(true);
         UBApplication::mainWindow->actionPodcastConfig->setEnabled(true);
     }
     else if (state == UBPodcastController::Paused)
     {
-        UBApplication::mainWindow->actionPodcastRecord->setChecked(true);
-        UBApplication::mainWindow->actionPodcastRecord->setEnabled(true);
+        recordAction->setChecked(true);
+        recordAction->setEnabled(true);
+        recordAction->setIcon(QIcon(":/images/podcast/stop.svg"));
+        recordAction->setText(QStringLiteral("停止"));
+        recordAction->setToolTip(QStringLiteral("停止"));
 
-        UBApplication::mainWindow->actionPodcastPause->setChecked(true);
-        UBApplication::mainWindow->actionPodcastPause->setEnabled(true);
-        UBApplication::mainWindow->actionPodcastPause->setIcon(QIcon(":/images/play.svg"));
-        UBApplication::mainWindow->actionPodcastPause->setText(tr("Resume"));
-        UBApplication::mainWindow->actionPodcastPause->setToolTip(tr("Resume Podcast Recording"));
+        pauseAction->setChecked(true);
+        pauseAction->setEnabled(true);
+        pauseAction->setIcon(QIcon(":/images/podcast/play.svg"));
+        pauseAction->setText(QStringLiteral("播放"));
+        pauseAction->setToolTip(QStringLiteral("播放"));
 
         //UBApplication::mainWindow->actionPodcastMic->setEnabled(false);
         UBApplication::mainWindow->actionPodcastConfig->setEnabled(false);
     }
     else
     {
-        UBApplication::mainWindow->actionPodcastRecord->setEnabled(false);
-        UBApplication::mainWindow->actionPodcastPause->setEnabled(false);
+        recordAction->setIcon(QIcon(":/images/podcast/stop.svg"));
+        recordAction->setText(QStringLiteral("停止"));
+        recordAction->setToolTip(QStringLiteral("停止"));
+        recordAction->setEnabled(false);
+        pauseAction->setEnabled(false);
         UBApplication::mainWindow->actionPodcastConfig->setEnabled(false);
     }
 }
@@ -168,7 +232,7 @@ void UBPodcastRecordingPalette::recordingProgressChanged(qint64 ms)
     int min = ms / 60000;
     int seconds = (ms / 1000) % 60;
 
-    mTimerLabel->setText(QString("%1:%2").arg(min, 3, 10, QChar(' ')).arg(seconds, 2, 10, QChar('0')));
+    mTimerLabel->setText(QString("%1:%2").arg(min, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0')));
 }
 
 
@@ -207,8 +271,39 @@ void UBVuMeter::paintEvent(QPaintEvent* e)
 
     QPainter painter(this);
 
-    int h = (height() - 8) * mVolume / 255;
-    QRectF rect(0, height() - 4 - h, width(), h);
+    painter.setRenderHint(QPainter::Antialiasing);
+    const QRectF track(0, 0, width(), height());
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(71, 85, 105));
+    painter.drawRoundedRect(track, width() / 2.0, width() / 2.0);
 
-    painter.fillRect(rect, UBSettings::documentViewLightColor);
+    const qreal levelHeight = track.height() * mVolume / 255.0;
+    if (levelHeight > 0.5)
+    {
+        QRectF levelRect(0, track.bottom() - levelHeight + 1, width(), levelHeight);
+        QColor levelColor = mVolume > 220 ? QColor(248, 113, 113) : QColor(52, 211, 153);
+        painter.setBrush(levelColor);
+        painter.drawRoundedRect(levelRect, width() / 2.0, width() / 2.0);
+    }
+}
+
+void UBPodcastRecordingPalette::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    const QRectF panel = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+    QLinearGradient background(panel.topLeft(), panel.bottomLeft());
+    background.setColorAt(0.0, QColor(30, 41, 59, 248));
+    background.setColorAt(1.0, QColor(15, 23, 42, 248));
+    painter.setBrush(background);
+    painter.setPen(QPen(QColor(148, 163, 184, 95), 1.0));
+    painter.drawRoundedRect(panel, radius(), radius());
+}
+
+int UBPodcastRecordingPalette::radius()
+{
+    return 15;
 }

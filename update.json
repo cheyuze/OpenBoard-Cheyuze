@@ -1,27 +1,21 @@
 {
-  "version": "1.7.13",
-  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.13/OpenBoard-cheyuze-1.7.13-x64.exe",
-  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.13",
+  "version": "1.7.14",
+  "urls": [
+    "https://gh-proxy.org/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.14/OpenBoard-cheyuze-1.7.14-x64.exe",
+    "https://gh-proxy.com/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.14/OpenBoard-cheyuze-1.7.14-x64.exe",
+    "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.14/OpenBoard-cheyuze-1.7.14-x64.exe"
+  ],
+  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.14/OpenBoard-cheyuze-1.7.14-x64.exe",
+  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.14",
   "publishedAt": "2026-08-16",
   "required": false,
-  "sha256": "A291FB757BB800346203CA6A07924AD97FE8CDADF0285F482341CE486B777A80",
+  "sha256": "461F3172C5557C45EEC1B1162A5BCD1B1FE9EC630A2CF153B4CF3DE78ACAEE69",
   "notes": [
-    "默认窗口化启动，画布默认为 16:9",
-    "录屏支持暂停和继续",
-    "直接录制 H.264/AAC MP4，减少转码造成的音画不同步",
-    "录入鼠标指针，并优化书写光标",
-    "新增 Shift 直线和常用形状工具",
-    "补齐简体中文界面文案",
-    "顶部新增完整色盘，可自由选择任意颜色",
-    "将录制按钮移到顶部工具栏，讲题录制更快捷",
-    "修复旧版本检查更新时误用 OpenBoard 官方地址的问题",
-    "修复安装后程序内部版本号仍显示 1.7.8 的问题",
-    "安装界面改为中文并增加教学培训提示文字",
-    "点击下载更新后直接下载并显示进度，完成后可直接启动安装",
-    "测试更新：安装进度页的教学培训提示文字改为绿色",
-    "修复部分网络环境下载更新时出现的 HTTP/2 protocol error",
-    "更新下载失败后自动重试，并支持配置多个备用下载源",
-    "色盘窗口中的颜色分类、参数名称和操作按钮全部改为简体中文",
-    "提示与技巧改为版本更新内容，并加入可点击的车禹泽如流名牌"
+    "桌面模式自动显示录制控制面板",
+    "录制面板改为现代深色圆角样式",
+    "录制、停止、暂停和播放按钮增加动态中文悬浮提示",
+    "优先使用国内可达的 GitHub 加速地址",
+    "下载源失败或持续低速时自动切换备用链路",
+    "下载完成后校验 SHA-256，防止错误或被篡改的安装包运行"
   ]
 }

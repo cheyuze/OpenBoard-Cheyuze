@@ -124,6 +124,8 @@ class UBPodcastController : public QObject
 
         void setRecordingState(RecordingState pRecordingState);
 
+        void positionRecordingPalette(bool desktopMode);
+
         void sendLatestPixmapToEncoder();
 
         long elapsedRecordingMs();

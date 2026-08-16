@@ -118,7 +118,8 @@ UBPodcastController::UBPodcastController(QObject* pParent)
 
 UBPodcastController::~UBPodcastController()
 {
-    // NOOP
+    delete mRecordingPalette;
+    mRecordingPalette = 0;
 }
 
 
@@ -652,10 +653,20 @@ void UBPodcastController::applicationDesktopMode(bool displayed)
     if (displayed)
     {
         setSourceWidget(UBApplication::displayManager->widget(ScreenRole::Desktop));
+
+        // The main OpenBoard window is hidden in desktop mode.  Keep the
+        // recorder as an independent, always-on-top tool window and make it
+        // available immediately so recording can be started from the desktop.
+        toggleRecordingPalette(true);
+        QSignalBlocker blocker(UBApplication::mainWindow->actionPodcast);
+        UBApplication::mainWindow->actionPodcast->setChecked(true);
+        positionRecordingPalette(true);
     }
     else
     {
         applicationMainModeChanged(UBApplication::applicationController->displayMode());
+        if (mRecordingPalette && mRecordingPalette->isVisible())
+            positionRecordingPalette(false);
     }
 }
 
@@ -881,21 +892,23 @@ void UBPodcastController::toggleRecordingPalette(bool visible)
 {
     if(!mRecordingPalette)
     {
-        mRecordingPalette = new UBPodcastRecordingPalette(UBApplication::mainWindow);
+        // A parentless UBFloatingPalette is a frameless, always-on-top tool
+        // window.  This is intentional: the main window is hidden while the
+        // desktop annotation layer is active.
+        mRecordingPalette = new UBPodcastRecordingPalette(0);
+
+        // The palette is top-level and therefore is not owned by the main
+        // window.  Delete it while the main-window actions it references are
+        // still alive, and clear the pointer before this controller is later
+        // destroyed by the static-memory cleaner.
+        connect(UBApplication::mainWindow, &QObject::destroyed, this, [this]() {
+            delete mRecordingPalette;
+            mRecordingPalette = 0;
+        });
 
         mRecordingPalette->adjustSizeAndPosition();
         mRecordingPalette->setCustomPosition(true);
-
-        int left = UBApplication::boardController->controlView()->width() * 0.75
-                   - mRecordingPalette->width() / 2;
-
-        int top = UBApplication::boardController->controlView()->height()
-                   - mRecordingPalette->height() - UBSettings::boardMargin;
-
-        QPoint controlViewPoint(left, top);
-        QPoint mainWindowsPoint = UBApplication::boardController->controlView()->mapTo(UBApplication::mainWindow, controlViewPoint);
-
-        mRecordingPalette->move(mainWindowsPoint);
+        positionRecordingPalette(mIsDesktopMode);
 
         connect(UBApplication::mainWindow->actionPodcastRecord, SIGNAL(triggered(bool))
              , this, SLOT(recordToggled(bool)));
@@ -910,6 +923,34 @@ void UBPodcastController::toggleRecordingPalette(bool visible)
     }
 
     mRecordingPalette->setVisible(visible);
+    if (visible)
+        mRecordingPalette->raise();
+}
+
+void UBPodcastController::positionRecordingPalette(bool desktopMode)
+{
+    if (!mRecordingPalette)
+        return;
+
+    if (desktopMode)
+    {
+        QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
+        if (!screen)
+            screen = QGuiApplication::primaryScreen();
+        if (!screen)
+            return;
+
+        const QRect available = screen->availableGeometry();
+        const int left = available.center().x() - mRecordingPalette->width() / 2;
+        const int top = available.bottom() - mRecordingPalette->height() - 28;
+        mRecordingPalette->move(left, top);
+        return;
+    }
+
+    QWidget *controlView = UBApplication::boardController->controlView();
+    const int left = controlView->width() * 0.75 - mRecordingPalette->width() / 2;
+    const int top = controlView->height() - mRecordingPalette->height() - UBSettings::boardMargin;
+    mRecordingPalette->move(controlView->mapToGlobal(QPoint(left, top)));
 }
 
 
@@ -1029,4 +1070,3 @@ QList<QAction*> UBPodcastController::podcastPublicationActions()
 
     return mPodcastPublicationActions;
 }
-

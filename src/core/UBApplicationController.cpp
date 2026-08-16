@@ -68,6 +68,7 @@
 #include "ui_mainWindow.h"
 
 #include <QCryptographicHash>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QMessageBox>
 #include <QProcess>
@@ -83,6 +84,17 @@
 #endif
 
 #include "core/memcheck.h"
+
+namespace
+{
+    struct UBUpdateDownloadMonitor
+    {
+        QElapsedTimer interval;
+        qint64 lastReceived = 0;
+        int slowIntervals = 0;
+        bool lowSpeedAbort = false;
+    };
+}
 
 UBApplicationController::UBApplicationController(UBBoardView *pControlView,
                                                  UBBoardView *pDisplayView,
@@ -495,6 +507,11 @@ void UBApplicationController::showDesktop(bool dontSwitchFrontProcess)
     }
 
     mIsShowingDesktop = true;
+
+    // Ensure the recorder controller is listening before desktopMode(true)
+    // is emitted.  It lazily creates an independent recording palette, so
+    // desktop recording remains accessible even though mMainWindow is hidden.
+    UBPodcastController::instance();
     emit desktopMode(true);
 
     if (!dontSwitchFrontProcess) {
@@ -707,16 +724,22 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
 #if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
     request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
 #endif
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    request.setTransferTimeout(30000);
+#endif
     // Keep installer traffic separate from the update-manifest manager, whose
     // finished signal parses every reply as JSON.
     QNetworkAccessManager *downloadManager = new QNetworkAccessManager(progress);
     QNetworkReply *reply = downloadManager->get(request);
+    const std::shared_ptr<UBUpdateDownloadMonitor> monitor =
+            std::make_shared<UBUpdateDownloadMonitor>();
+    monitor->interval.start();
 
     connect(reply, &QNetworkReply::readyRead, this, [reply, file]() {
         file->write(reply->readAll());
     });
     connect(reply, &QNetworkReply::downloadProgress, progress,
-            [progress](qint64 received, qint64 total) {
+            [progress, reply, monitor, urlIndex, urls](qint64 received, qint64 total) {
         if (total > 0) {
             progress->setRange(0, 100);
             progress->setValue(static_cast<int>((received * 100) / total));
@@ -727,11 +750,38 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
         else {
             progress->setRange(0, 0);
         }
+
+        // A connected but unusably slow GitHub/CDN stream does not produce a
+        // network error, so the normal retry path would never run.  Measure
+        // three consecutive five-second windows and move to the next mirror
+        // when throughput remains below 96 KiB/s.  The final source is kept
+        // running so genuinely slow networks can still finish the download.
+        const qint64 elapsed = monitor->interval.elapsed();
+        if (elapsed >= 5000)
+        {
+            const qint64 bytesInWindow = received - monitor->lastReceived;
+            const qint64 bytesPerSecond = elapsed > 0
+                    ? bytesInWindow * 1000 / elapsed : 0;
+
+            if (received >= 256 * 1024 && bytesPerSecond < 96 * 1024)
+                ++monitor->slowIntervals;
+            else
+                monitor->slowIntervals = 0;
+
+            monitor->lastReceived = received;
+            monitor->interval.restart();
+
+            if (monitor->slowIntervals >= 3 && urlIndex + 1 < urls.size())
+            {
+                monitor->lowSpeedAbort = true;
+                reply->abort();
+            }
+        }
     });
     connect(progress, &QProgressDialog::canceled, reply, &QNetworkReply::abort);
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, file, progress, destination, urls, version,
-             expectedSha256, urlIndex, retryAttempt]() {
+             expectedSha256, urlIndex, retryAttempt, monitor]() {
         progress->close();
         progress->deleteLater();
 
@@ -743,7 +793,17 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
             file->deleteLater();
 
             if (error == QNetworkReply::OperationCanceledError)
+            {
+                if (monitor->lowSpeedAbort && urlIndex + 1 < urls.size())
+                {
+                    QTimer::singleShot(250, this,
+                                       [this, urls, version, expectedSha256, urlIndex]() {
+                        downloadUpdateInstaller(urls, version, expectedSha256,
+                                                urlIndex + 1, 0);
+                    });
+                }
                 return;
+            }
 
             // Retry transient failures twice on the same source.  If the
             // manifest contains mirrors, move to the next source afterwards.
