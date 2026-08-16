@@ -603,7 +603,7 @@ void UBApplication::decorateActionMenu(QAction* action)
             menu->addSeparator();
 
             menu->addAction(mainWindow->actionPodcast);
-            mainWindow->actionPodcast->setText(tr("Podcast"));
+            mainWindow->actionPodcast->setText(tr("Record Video"));
 
             menu->addSeparator();
             menu->addAction(mainWindow->actionQuit);

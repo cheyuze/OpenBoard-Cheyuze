@@ -228,6 +228,7 @@ class UBBoardController : public UBDocumentContainer
         void hideMessage();
         void setDisabled(bool disable);
         void setColorIndex(int pColorIndex);
+        void chooseCustomColor();
         void removeTool(UBToolWidget* toolWidget);
         void hide();
         void show();

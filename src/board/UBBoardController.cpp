@@ -362,9 +362,11 @@ void UBBoardController::setupToolbar()
     colorChoice->setLabel(tr("Color"));
 
     mMainWindow->boardToolBar->insertWidget(mMainWindow->actionBackgrounds, colorChoice);
+    mMainWindow->boardToolBar->insertAction(mMainWindow->actionBackgrounds, mMainWindow->actionCustomColor);
 
     connect(settings->appToolBarDisplayText, SIGNAL(changed(QVariant)), colorChoice, SLOT(displayText(QVariant)));
     connect(colorChoice, SIGNAL(activated(int)), this, SLOT(setColorIndex(int)));
+    connect(mMainWindow->actionCustomColor, &QAction::triggered, this, &UBBoardController::chooseCustomColor);
     connect(UBDrawingController::drawingController(), SIGNAL(colorIndexChanged(int)), colorChoice, SLOT(setCurrentIndex(int)));
     connect(UBDrawingController::drawingController(), SIGNAL(colorIndexChanged(int)), UBDrawingController::drawingController(), SIGNAL(colorPaletteChanged()));
     connect(UBDrawingController::drawingController(), SIGNAL(colorPaletteChanged()), colorChoice, SLOT(colorPaletteChanged()));
@@ -422,7 +424,7 @@ void UBBoardController::setupToolbar()
 
     //-----------------------------------------------------------//
 
-    UBApplication::app()->insertSpaceToToolbarBeforeAction(mMainWindow->boardToolBar, mMainWindow->actionBoard);
+    UBApplication::app()->insertSpaceToToolbarBeforeAction(mMainWindow->boardToolBar, mMainWindow->actionPodcast);
 
     UBApplication::app()->decorateActionMenu(mMainWindow->actionMenu);
 
@@ -2141,6 +2143,42 @@ void UBBoardController::setColorIndex(int pColorIndex)
         mMarkerColorOnDarkBackground = UBSettings::settings()->markerColors(true).at(pColorIndex);
         mMarkerColorOnLightBackground = UBSettings::settings()->markerColors(false).at(pColorIndex);
     }
+}
+
+void UBBoardController::chooseCustomColor()
+{
+    UBDrawingController *drawingController = UBDrawingController::drawingController();
+
+    if (drawingController->stylusTool() != UBStylusTool::Marker &&
+            drawingController->stylusTool() != UBStylusTool::Pen &&
+            drawingController->stylusTool() != UBStylusTool::Line)
+    {
+        drawingController->setStylusTool(UBStylusTool::Pen);
+    }
+
+    const int colorIndex = drawingController->currentToolColorIndex();
+    QColor initialColor = drawingController->currentToolColor();
+    if (!initialColor.isValid())
+        initialColor = Qt::black;
+
+    const QColor selectedColor = QColorDialog::getColor(
+        initialColor, mMainWindow, tr("Choose a color"), QColorDialog::DontUseNativeDialog);
+
+    if (!selectedColor.isValid())
+        return;
+
+    if (drawingController->stylusTool() == UBStylusTool::Marker)
+    {
+        drawingController->setMarkerColor(false, selectedColor, colorIndex);
+        drawingController->setMarkerColor(true, selectedColor, colorIndex);
+    }
+    else
+    {
+        drawingController->setPenColor(false, selectedColor, colorIndex);
+        drawingController->setPenColor(true, selectedColor, colorIndex);
+    }
+
+    setColorIndex(colorIndex);
 }
 
 void UBBoardController::colorPaletteChanged()

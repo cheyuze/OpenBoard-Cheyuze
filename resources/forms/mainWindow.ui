@@ -78,6 +78,7 @@
    <addaction name="separator"/>
    <addaction name="actionErase"/>
    <addaction name="separator"/>
+   <addaction name="actionPodcast"/>
    <addaction name="actionBoard"/>
    <addaction name="actionWeb"/>
    <addaction name="actionDocument"/>
@@ -553,6 +554,18 @@
    </property>
    <property name="shortcut">
     <string>5</string>
+   </property>
+  </action>
+  <action name="actionCustomColor">
+   <property name="icon">
+    <iconset resource="../OpenBoard.qrc">
+     <normaloff>:/images/toolbar/colorPalette.svg</normaloff>:/images/toolbar/colorPalette.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Color Palette</string>
+   </property>
+   <property name="toolTip">
+    <string>Choose any color</string>
    </property>
   </action>
   <action name="actionWebBack">
@@ -1347,10 +1360,10 @@
      <normaloff>:/images/toolbar/record.png</normaloff>:/images/toolbar/record.png</iconset>
    </property>
    <property name="text">
-    <string>Podcast</string>
+    <string>Record Video</string>
    </property>
    <property name="toolTip">
-    <string>Record Presentation to Video</string>
+    <string>Open screen recording controls</string>
    </property>
   </action>
   <action name="actionPodcastRecord">

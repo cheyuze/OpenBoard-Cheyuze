@@ -4142,4 +4142,19 @@ p, li { white-space: pre-wrap; }
         <translation>继续视频录制</translation>
     </message>
 </context>
+<context>
+    <name>MainWindow</name>
+    <message><source>Color Palette</source><translation>色盘</translation></message>
+    <message><source>Choose any color</source><translation>选择任意颜色</translation></message>
+    <message><source>Record Video</source><translation>录制</translation></message>
+    <message><source>Open screen recording controls</source><translation>打开录屏控制面板</translation></message>
+</context>
+<context>
+    <name>UBApplication</name>
+    <message><source>Record Video</source><translation>录制</translation></message>
+</context>
+<context>
+    <name>UBBoardController</name>
+    <message><source>Choose a color</source><translation>选择颜色</translation></message>
+</context>
 </TS>
