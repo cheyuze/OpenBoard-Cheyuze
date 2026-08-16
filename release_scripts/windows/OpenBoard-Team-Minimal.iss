@@ -14,7 +14,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DefaultDirName={autopf}\OpenBoard 车厘子定制版
 DefaultGroupName=OpenBoard 车厘子定制版
 OutputDir=..\..\install\win32
-OutputBaseFilename=OpenBoard-cheyuze-1.7.10-x64
+OutputBaseFilename=OpenBoard-cheyuze-1.7.11-x64
 SetupIconFile=..\..\resources\win\OpenBoard.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -75,7 +75,7 @@ begin
   TrainingNotice.AutoSize := False;
   TrainingNotice.Alignment := taCenter;
   TrainingNotice.Font.Size := 14;
-  TrainingNotice.Font.Color := clRed;
+  TrainingNotice.Font.Color := clGreen;
   TrainingNotice.Caption :=
     '初中学部—中台教学培训，祝您月月 SSS' + #13#10 + #13#10 +
     '欢迎反馈问题和优化意见';

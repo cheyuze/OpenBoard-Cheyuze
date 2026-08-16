@@ -1,10 +1,10 @@
 {
-  "version": "1.7.10",
-  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.10/OpenBoard-cheyuze-1.7.10-x64.exe",
-  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.10",
+  "version": "1.7.11",
+  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.11/OpenBoard-cheyuze-1.7.11-x64.exe",
+  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.11",
   "publishedAt": "2026-08-16",
   "required": false,
-  "sha256": "7FCAF691816CAD80F56E4304E441C9724D5ABA143AC5952C8E7EC46BF4C46546",
+  "sha256": "198E29AAAEB1CA1FAF1AAEBA804431FE7F6E38B0FE026D5E34932BBC82D3AD65",
   "notes": [
     "默认窗口化启动，画布默认为 16:9",
     "录屏支持暂停和继续",
@@ -17,6 +17,7 @@
     "修复旧版本检查更新时误用 OpenBoard 官方地址的问题",
     "修复安装后程序内部版本号仍显示 1.7.8 的问题",
     "安装界面改为中文并增加教学培训提示文字",
-    "点击下载更新后直接下载并显示进度，完成后可直接启动安装"
+    "点击下载更新后直接下载并显示进度，完成后可直接启动安装",
+    "测试更新：安装进度页的教学培训提示文字改为绿色"
   ]
 }
