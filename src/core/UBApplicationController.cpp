@@ -523,11 +523,41 @@ void UBApplicationController::showDesktop(bool dontSwitchFrontProcess)
 }
 
 
-void UBApplicationController::checkUpdate(const QUrl& url)
+void UBApplicationController::checkUpdate(const QUrl& url,
+                                          const QList<QUrl>& urls,
+                                          int urlIndex,
+                                          int retryAttempt)
 {
+    QList<QUrl> manifestUrls = urls;
     QUrl jsonUrl = url;
-    if (url.isEmpty())
-        jsonUrl = UBSettings::settings()->appSoftwareUpdateURL->get().toUrl();
+
+    if (manifestUrls.isEmpty())
+    {
+        const QUrl configuredUrl = url.isEmpty()
+                ? UBSettings::settings()->appSoftwareUpdateURL->get().toUrl()
+                : url;
+        const QString configuredUrlString = configuredUrl.toString();
+
+        // The manifest is tiny, so free GitHub acceleration endpoints are a
+        // practical zero-cost first line for networks where GitHub Raw is
+        // unavailable.  The canonical URL remains the final source of truth.
+        if (configuredUrlString.startsWith("https://raw.githubusercontent.com/",
+                                           Qt::CaseInsensitive))
+        {
+            manifestUrls.append(QUrl("https://gh-proxy.org/" + configuredUrlString));
+            manifestUrls.append(QUrl("https://gh-proxy.com/" + configuredUrlString));
+        }
+        manifestUrls.append(configuredUrl);
+        urlIndex = 0;
+        retryAttempt = 0;
+    }
+
+    if (jsonUrl.isEmpty())
+    {
+        if (urlIndex < 0 || urlIndex >= manifestUrls.size())
+            return;
+        jsonUrl = manifestUrls.at(urlIndex);
+    }
 
     qDebug() << "Checking for update at url: " << jsonUrl.toString();
 
@@ -545,7 +575,13 @@ void UBApplicationController::checkUpdate(const QUrl& url)
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     request.setTransferTimeout(10000);
 #endif
-    mNetworkAccessManager->get(request);
+    QNetworkReply *reply = mNetworkAccessManager->get(request);
+    QStringList manifestUrlStrings;
+    for (const QUrl &manifestUrl : manifestUrls)
+        manifestUrlStrings.append(manifestUrl.toString());
+    reply->setProperty("updateManifestUrls", manifestUrlStrings);
+    reply->setProperty("updateManifestUrlIndex", urlIndex);
+    reply->setProperty("updateManifestRetryAttempt", retryAttempt);
 
 }
 
@@ -553,8 +589,32 @@ void UBApplicationController::checkUpdate(const QUrl& url)
 
 void UBApplicationController::updateRequestFinished(QNetworkReply * reply)
 {
+    QList<QUrl> manifestUrls;
+    const QStringList manifestUrlStrings = reply->property("updateManifestUrls").toStringList();
+    for (const QString &manifestUrlString : manifestUrlStrings)
+        manifestUrls.append(QUrl(manifestUrlString));
+    const int urlIndex = reply->property("updateManifestUrlIndex").toInt();
+    const int retryAttempt = reply->property("updateManifestRetryAttempt").toInt();
+
     if (reply->error()) {
         qWarning() << "Error downloading update file: " << reply->errorString();
+
+        if (retryAttempt < 1) {
+            reply->deleteLater();
+            QTimer::singleShot(500, this, [this, manifestUrls, urlIndex, retryAttempt]() {
+                checkUpdate(QUrl(), manifestUrls, urlIndex, retryAttempt + 1);
+            });
+            return;
+        }
+
+        if (urlIndex + 1 < manifestUrls.size()) {
+            reply->deleteLater();
+            QTimer::singleShot(250, this, [this, manifestUrls, urlIndex]() {
+                checkUpdate(QUrl(), manifestUrls, urlIndex + 1, 0);
+            });
+            return;
+        }
+
         if (isNoUpdateDisplayed)
             mMainWindow->information(tr("Check for updates"),
                                      tr("Unable to check for updates. Please check your network connection and try again."));
@@ -569,7 +629,7 @@ void UBApplicationController::updateRequestFinished(QNetworkReply * reply)
         // The returned URL might be relative. resolved() creates an absolute url from it
         QUrl redirect_url(reply->url().resolved(redirect_target.toUrl()));
 
-        checkUpdate(redirect_url);
+        checkUpdate(redirect_url, manifestUrls, urlIndex, retryAttempt);
         reply->deleteLater();
         return;
     }
@@ -584,9 +644,19 @@ void UBApplicationController::updateRequestFinished(QNetworkReply * reply)
 
         downloadJsonFinished(responseString);
     }
-    else if (isNoUpdateDisplayed) {
-        mMainWindow->information(tr("Check for updates"),
-                                 tr("The update information returned by the server is invalid."));
+    else {
+        qWarning() << "Invalid update manifest returned by: " << reply->url();
+        if (urlIndex + 1 < manifestUrls.size()) {
+            reply->deleteLater();
+            QTimer::singleShot(250, this, [this, manifestUrls, urlIndex]() {
+                checkUpdate(QUrl(), manifestUrls, urlIndex + 1, 0);
+            });
+            return;
+        }
+
+        if (isNoUpdateDisplayed)
+            mMainWindow->information(tr("Check for updates"),
+                                     tr("The update information returned by the server is invalid."));
     }
 
     reply->deleteLater();

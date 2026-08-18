@@ -1,16 +1,18 @@
 {
-  "version": "1.7.14",
+  "version": "1.7.15",
   "urls": [
-    "https://gh-proxy.org/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.14/OpenBoard-cheyuze-1.7.14-x64.exe",
-    "https://gh-proxy.com/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.14/OpenBoard-cheyuze-1.7.14-x64.exe",
-    "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.14/OpenBoard-cheyuze-1.7.14-x64.exe"
+    "https://gh-proxy.org/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.15/OpenBoard-cheyuze-1.7.15-x64.exe",
+    "https://gh-proxy.com/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.15/OpenBoard-cheyuze-1.7.15-x64.exe",
+    "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.15/OpenBoard-cheyuze-1.7.15-x64.exe"
   ],
-  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.14/OpenBoard-cheyuze-1.7.14-x64.exe",
-  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.14",
+  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.15/OpenBoard-cheyuze-1.7.15-x64.exe",
+  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.15",
   "publishedAt": "2026-08-16",
   "required": false,
-  "sha256": "461F3172C5557C45EEC1B1162A5BCD1B1FE9EC630A2CF153B4CF3DE78ACAEE69",
+  "sha256": "E372BDD244E10094590A7A28860D4298BD789704291F8D4374C4CB55BD164333",
   "notes": [
+    "桌面模式录制真实电脑屏幕",
+    "录制结束后支持选择保存位置和文件名",
     "桌面模式自动显示录制控制面板",
     "录制面板改为现代深色圆角样式",
     "录制、停止、暂停和播放按钮增加动态中文悬浮提示",

@@ -177,7 +177,9 @@ class UBApplicationController : public QObject
         bool mIsShowingDesktop;
 
         bool isNoUpdateDisplayed;
-        void checkUpdate(const QUrl &url = QUrl());
+        void checkUpdate(const QUrl &url = QUrl(),
+                         const QList<QUrl> &urls = QList<QUrl>(),
+                         int urlIndex = 0, int retryAttempt = 0);
         void downloadUpdateInstaller(const QList<QUrl> &urls, const QString &version,
                                      const QString &expectedSha256, int urlIndex = 0,
                                      int retryAttempt = 0);

@@ -55,6 +55,9 @@
 #include "podcast/intranet/UBIntranetPodcastPublisher.h"
 #include "UBPodcastRecordingPalette.h"
 
+#include <QFileDialog>
+#include <QMessageBox>
+
 
 
 
@@ -273,6 +276,16 @@ void UBPodcastController::start()
     if (mRecordingState == Stopped)
     {
         mInitialized = false;
+        mEmptyChapter = true;
+        mRecordingTimestampOffset = 0;
+        mSuggestedRecordingFilePath.clear();
+
+        // Starting a recording used to call applicationMainModeChanged()
+        // unconditionally.  In desktop mode that reset mIsDesktopMode and
+        // switched the source back to the board, so the resulting video still
+        // contained the whiteboard.  Preserve the actual mode at the moment
+        // the user presses Record and size the video from that source.
+        const bool desktopRecording = UBApplication::applicationController->isShowingDesktop();
 
         QSize recommendedSize(1024, 768);
 
@@ -290,17 +303,22 @@ void UBPodcastController::start()
         }
         else if (mFullVideoSizeAction && mFullVideoSizeAction->isChecked())
         {
-            recommendedSize = UBApplication::boardController->controlView()->size();
+            recommendedSize = desktopRecording
+                    ? UBApplication::displayManager->screenSize(ScreenRole::Desktop)
+                    : UBApplication::boardController->controlView()->size();
             mVideoBitsPerSecondAtStart = fullBitRate;
         }
 
-        QSize scaledboardSize = UBApplication::boardController->controlView()->size();
-        scaledboardSize.scale(recommendedSize, Qt::KeepAspectRatio);
+        QSize sourceSize = desktopRecording
+                ? UBApplication::displayManager->screenSize(ScreenRole::Desktop)
+                : UBApplication::boardController->controlView()->size();
+        QSize scaledSourceSize = sourceSize;
+        scaledSourceSize.scale(recommendedSize, Qt::KeepAspectRatio);
 
         // Video width/height should be a multiple of 4
 
-        int width = scaledboardSize.width();
-        int height = scaledboardSize.height();
+        int width = scaledSourceSize.width();
+        int height = scaledSourceSize.height();
 
         if (width % 4 != 0)
                 width = ((width / 4) * 4);
@@ -310,7 +328,20 @@ void UBPodcastController::start()
 
         mVideoFrameSizeAtStart = QSize(width, height);
 
-        applicationMainModeChanged(UBApplication::applicationController->displayMode());
+        if (desktopRecording)
+        {
+            mIsDesktopMode = true;
+            setSourceWidget(UBApplication::displayManager->widget(ScreenRole::Desktop));
+        }
+        else
+        {
+            applicationMainModeChanged(UBApplication::applicationController->displayMode());
+        }
+
+        // setSourceWidget() is intentionally a no-op when the source pointer
+        // has not changed, but the selected output resolution may have.  Keep
+        // the source-to-video transform in sync for every new recording.
+        widgetSizeChanged(sourceSize);
 
 #ifdef Q_OS_WIN
         // Encode H.264/AAC directly into MP4. This avoids the former WMV ->
@@ -362,17 +393,28 @@ void UBPodcastController::start()
             qDebug() << "mPodcastRecordingPath: " << mPodcastRecordingPath;
 
             QString videoFileName;
+            const QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
 
             if (mIntranetPublicationAction && mIntranetPublicationAction->isChecked())
             {
-                videoFileName = mPodcastRecordingPath + "/" + "Podcast-"
-                        + QDateTime::currentDateTime().toString("yyyyMMddhhmmss")
+                mSuggestedRecordingFilePath = mPodcastRecordingPath + "/" + "Podcast-"
+                        + timestamp
                         + "-" + UBPlatformUtils::computerName() + "." + mVideoEncoder->videoFileExtension();
             }
             else
             {
-                videoFileName = mPodcastRecordingPath + "/" + tr("OpenBoard Cast") + "." + mVideoEncoder->videoFileExtension();
+                mSuggestedRecordingFilePath = UBFileSystemUtils::nextAvailableFileName(
+                        mPodcastRecordingPath + "/" + tr("讲题录制-%1").arg(timestamp)
+                                + "." + mVideoEncoder->videoFileExtension(), " ");
             }
+
+            // Encode to a unique working file first.  After the encoder has
+            // closed it, encodingFinished() presents Save As and moves the
+            // completed MP4 to the name chosen by the user.
+            videoFileName = mPodcastRecordingPath + "/"
+                    + tr("OpenBoard录制-处理中-%1").arg(
+                            QDateTime::currentDateTime().toString("yyyyMMdd-HHmmsszzz"))
+                    + "." + mVideoEncoder->videoFileExtension();
 
             videoFileName = UBFileSystemUtils::nextAvailableFileName(videoFileName, " ");
 
@@ -692,6 +734,10 @@ void UBPodcastController::encodingFinished(bool ok)
     {
         if (ok)
         {
+            const QString finalVideoFilePath = saveRecordingAs(mVideoEncoder->videoFileName());
+            mVideoEncoder->setVideoFileName(finalVideoFilePath);
+            mPodcastRecordingPath = QFileInfo(finalVideoFilePath).absolutePath();
+
             if (!mApplicationIsClosing)
             {
                 QString location;
@@ -730,6 +776,72 @@ void UBPodcastController::encodingFinished(bool ok)
 
         setRecordingState(Stopped);
     }
+}
+
+
+QString UBPodcastController::saveRecordingAs(const QString& temporaryFilePath)
+{
+    if (temporaryFilePath.isEmpty())
+        return temporaryFilePath;
+
+    const QFileInfo temporaryInfo(temporaryFilePath);
+    QString suggestedPath = mSuggestedRecordingFilePath;
+    if (suggestedPath.isEmpty())
+    {
+        suggestedPath = UBFileSystemUtils::nextAvailableFileName(
+                QDir(mPodcastRecordingPath).filePath(
+                        tr("讲题录制-%1.%2")
+                                .arg(QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss"),
+                                     temporaryInfo.suffix())), " ");
+    }
+
+    QWidget* dialogParent = mRecordingPalette
+            ? static_cast<QWidget*>(mRecordingPalette)
+            : static_cast<QWidget*>(UBApplication::mainWindow);
+    QString destination;
+    if (!mApplicationIsClosing)
+    {
+        destination = QFileDialog::getSaveFileName(
+                dialogParent,
+                tr("保存录制视频"),
+                suggestedPath,
+                tr("MP4 视频 (*.mp4)"));
+    }
+
+    // Cancelling the dialog must never discard a completed lesson.  Save it
+    // under the unique suggested name and tell the user where it went.
+    if (destination.isEmpty())
+        destination = suggestedPath;
+
+    if (QFileInfo(destination).suffix().isEmpty())
+        destination += ".mp4";
+
+    destination = QDir::toNativeSeparators(destination);
+    const QString source = QDir::toNativeSeparators(temporaryFilePath);
+    if (QFileInfo(source).absoluteFilePath() == QFileInfo(destination).absoluteFilePath())
+        return destination;
+
+    // The native Save As dialog already asks before replacing an existing
+    // file.  Prefer a rename; copy is the cross-volume fallback.
+    if (QFile::exists(destination) && !QFile::remove(destination))
+    {
+        QMessageBox::warning(dialogParent, tr("保存录制视频"),
+                tr("无法替换所选文件。录制视频仍保存在：\n%1").arg(source));
+        return source;
+    }
+
+    if (QFile::rename(source, destination))
+        return destination;
+
+    if (QFile::copy(source, destination))
+    {
+        QFile::remove(source);
+        return destination;
+    }
+
+    QMessageBox::warning(dialogParent, tr("保存录制视频"),
+            tr("无法将视频保存到所选位置。录制视频仍保存在：\n%1").arg(source));
+    return source;
 }
 
 

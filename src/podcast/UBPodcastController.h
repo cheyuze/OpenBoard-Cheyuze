@@ -128,6 +128,8 @@ class UBPodcastController : public QObject
 
         void sendLatestPixmapToEncoder();
 
+        QString saveRecordingAs(const QString& temporaryFilePath);
+
         long elapsedRecordingMs();
 
         static UBPodcastController* sInstance;
@@ -188,6 +190,7 @@ class UBPodcastController : public QObject
         QAction *mIntranetPublicationAction;
 
         QString mPodcastRecordingPath;
+        QString mSuggestedRecordingFilePath;
 
 };
 
