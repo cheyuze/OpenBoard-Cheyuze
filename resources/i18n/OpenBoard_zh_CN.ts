@@ -182,7 +182,7 @@ Do you wish to override the security check and continue ?   </source>
         <location filename="../forms/mainWindow.ui" line="147"/>
         <location filename="../forms/mainWindow.ui" line="320"/>
         <source>Documents</source>
-        <translation>文档</translation>
+        <translation>历史记录</translation>
     </message>
     <message>
         <location filename="../forms/mainWindow.ui" line="203"/>

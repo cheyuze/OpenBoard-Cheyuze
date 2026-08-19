@@ -735,33 +735,41 @@ void UBPodcastController::encodingFinished(bool ok)
         if (ok)
         {
             const QString finalVideoFilePath = saveRecordingAs(mVideoEncoder->videoFileName());
-            mVideoEncoder->setVideoFileName(finalVideoFilePath);
-            mPodcastRecordingPath = QFileInfo(finalVideoFilePath).absolutePath();
-
-            if (!mApplicationIsClosing)
+            if (finalVideoFilePath.isEmpty())
             {
-                QString location;
+                QFile::remove(mVideoEncoder->videoFileName());
+                UBApplication::showMessage(tr("The recording was discarded."), false);
+            }
+            else
+            {
+                mVideoEncoder->setVideoFileName(finalVideoFilePath);
+                mPodcastRecordingPath = QFileInfo(finalVideoFilePath).absolutePath();
 
-                if (mPodcastRecordingPath == QStandardPaths::writableLocation(QStandardPaths::DesktopLocation))
-                    location = tr("on your desktop ...");
-                else
+                if (!mApplicationIsClosing)
                 {
-                    QDir dir(mPodcastRecordingPath);
-                    location = tr("in folder %1").arg(mPodcastRecordingPath);
-                }
+                    QString location;
 
-                UBApplication::showMessage(tr("Podcast created %1").arg(location), false);
+                    if (mPodcastRecordingPath == QStandardPaths::writableLocation(QStandardPaths::DesktopLocation))
+                        location = tr("on your desktop ...");
+                    else
+                    {
+                        QDir dir(mPodcastRecordingPath);
+                        location = tr("in folder %1").arg(mPodcastRecordingPath);
+                    }
 
-                if (mIntranetPublicationAction && mIntranetPublicationAction->isChecked())
-                {
-                    UBIntranetPodcastPublisher* intranet = new UBIntranetPodcastPublisher(this); // Self destroyed
-                    intranet->publishVideo(mVideoEncoder->videoFileName(), elapsedRecordingMs());
-                }
+                    UBApplication::showMessage(tr("Podcast created %1").arg(location), false);
 
-                if (mYoutubePublicationAction && mYoutubePublicationAction->isChecked())
-                {
-                    UBYouTubePublisher* youTube = new UBYouTubePublisher(this); // Self destroyed
-                    youTube->uploadVideo(mVideoEncoder->videoFileName());
+                    if (mIntranetPublicationAction && mIntranetPublicationAction->isChecked())
+                    {
+                        UBIntranetPodcastPublisher* intranet = new UBIntranetPodcastPublisher(this); // Self destroyed
+                        intranet->publishVideo(mVideoEncoder->videoFileName(), elapsedRecordingMs());
+                    }
+
+                    if (mYoutubePublicationAction && mYoutubePublicationAction->isChecked())
+                    {
+                        UBYouTubePublisher* youTube = new UBYouTubePublisher(this); // Self destroyed
+                        youTube->uploadVideo(mVideoEncoder->videoFileName());
+                    }
                 }
             }
         }
@@ -801,15 +809,30 @@ QString UBPodcastController::saveRecordingAs(const QString& temporaryFilePath)
     QString destination;
     if (!mApplicationIsClosing)
     {
-        destination = QFileDialog::getSaveFileName(
-                dialogParent,
-                tr("保存录制视频"),
-                suggestedPath,
-                tr("MP4 视频 (*.mp4)"));
+        while (destination.isEmpty())
+        {
+            destination = QFileDialog::getSaveFileName(
+                    dialogParent,
+                    tr("保存录制视频"),
+                    suggestedPath,
+                    tr("MP4 视频 (*.mp4)"));
+
+            if (!destination.isEmpty())
+                break;
+
+            const QMessageBox::StandardButton discard = QMessageBox::question(
+                    dialogParent,
+                    tr("放弃录制"),
+                    tr("未保存的录制视频将会丢失。是否确认放弃本次录制？"),
+                    QMessageBox::Yes | QMessageBox::No,
+                    QMessageBox::No);
+            if (discard == QMessageBox::Yes)
+                return QString();
+        }
     }
 
-    // Cancelling the dialog must never discard a completed lesson.  Save it
-    // under the unique suggested name and tell the user where it went.
+    // Closing the application bypasses the Save As dialog. Keep the recording
+    // under its unique suggested name so the shutdown path remains recoverable.
     if (destination.isEmpty())
         destination = suggestedPath;
 

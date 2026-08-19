@@ -68,6 +68,7 @@
 #include "ui_mainWindow.h"
 
 #include <QCryptographicHash>
+#include <QDesktopServices>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QMessageBox>
@@ -724,7 +725,14 @@ void UBApplicationController::downloadJsonFinished(QString currentJson)
                            + "\n" + tr("Current version: %1").arg(qApp->applicationVersion()));
         if (!notes.trimmed().isEmpty())
             messageBox.setInformativeText(tr("What's new:") + notes);
-        QPushButton *downloadButton = messageBox.addButton(tr("Download update"), QMessageBox::AcceptRole);
+        const QString baiduUrlString = jsonObject.value("baiduUrl").toString().trimmed();
+        const QString baiduPassword = jsonObject.value("baiduPassword").toString().trimmed();
+        QPushButton *downloadButton = messageBox.addButton(
+                tr("Download from domestic mirrors"), QMessageBox::AcceptRole);
+        QPushButton *baiduButton = nullptr;
+        if (!baiduUrlString.isEmpty())
+            baiduButton = messageBox.addButton(tr("Download from Baidu Netdisk"),
+                                               QMessageBox::ActionRole);
         messageBox.addButton(tr("Remind me later"), QMessageBox::RejectRole);
         messageBox.exec();
 
@@ -749,6 +757,21 @@ void UBApplicationController::downloadJsonFinished(QString currentJson)
                 downloadUpdateInstaller(urls,
                                         jsonObject.value("version").toString(),
                                         jsonObject.value("sha256").toString());
+        }
+        else if (baiduButton && messageBox.clickedButton() == baiduButton) {
+            const QUrl baiduUrl(baiduUrlString);
+            if (baiduUrl.isValid() && QDesktopServices::openUrl(baiduUrl)) {
+                const QString passwordText = baiduPassword.isEmpty()
+                        ? tr("No extraction code was provided.")
+                        : tr("Baidu Netdisk extraction code: %1").arg(baiduPassword);
+                QMessageBox::information(mMainWindow, tr("Baidu Netdisk download"),
+                                          tr("The Baidu Netdisk share page has been opened in your browser.\n\n%1")
+                                          .arg(passwordText));
+            }
+            else {
+                QMessageBox::warning(mMainWindow, tr("Baidu Netdisk download"),
+                                     tr("Unable to open the Baidu Netdisk share page."));
+            }
         }
     }
     else if (isNoUpdateDisplayed) {

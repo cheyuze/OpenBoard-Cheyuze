@@ -68,7 +68,9 @@ void UBResources::init()
     // Cursors
     // The crosshair is precise but not very intuitive for classroom writing.
     // Use OpenBoard's pencil artwork and place the hotspot at the pencil tip.
-    penCursor       = QCursor(QPixmap(":/images/stylusPalette/penOn.png"), 5, 27);
+    // Use the transparent pencil cursor artwork. penOn.png contains the
+    // white circular selection background used by the palette icon.
+    penCursor       = QCursor(QPixmap(":/images/stylusPalette/pen.png"), 5, 27);
     eraserCursor    = QCursor(QPixmap(":/images/cursors/eraser.png"), 5, 25);
     markerCursor    = QCursor(QPixmap(":/images/cursors/marker.png"), 3, 30);
     pointerCursor   = QCursor(QPixmap(":/images/cursors/laser.png"), 2, 1);
