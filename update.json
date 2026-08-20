@@ -1,19 +1,24 @@
 {
-  "version": "1.7.20",
+  "version": "1.8.0",
   "urls": [
-    "https://gh-proxy.com/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.20/OpenBoard-cheyuze-1.7.20-x64.exe",
-    "https://gh-proxy.org/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.20/OpenBoard-cheyuze-1.7.20-x64.exe",
-    "https://ghproxy.net/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.20/OpenBoard-cheyuze-1.7.20-x64.exe",
-    "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.20/OpenBoard-cheyuze-1.7.20-x64.exe"
+    "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.8.0/OpenBoard-cheyuze-1.8.0-x64.exe",
+    "https://gh-proxy.com/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.8.0/OpenBoard-cheyuze-1.8.0-x64.exe",
+    "https://gh-proxy.org/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.8.0/OpenBoard-cheyuze-1.8.0-x64.exe",
+    "https://ghproxy.net/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.8.0/OpenBoard-cheyuze-1.8.0-x64.exe"
   ],
-  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.7.20/OpenBoard-cheyuze-1.7.20-x64.exe",
+  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.8.0/OpenBoard-cheyuze-1.8.0-x64.exe",
   "baiduUrl": "https://pan.baidu.com/s/11ndlHH_WY8nQY3JBfDiOtg?pwd=edeu",
   "baiduPassword": "edeu",
-  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.7.20",
+  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.8.0",
   "publishedAt": "2026-08-20",
   "required": false,
-  "sha256": "A2D8C78FE12E88A3BC49732342A79C980E2F893600612079B0B4EB5471AF0BB2",
+  "sha256": "3B4BBD0E94531AF7328D67941914CB1338F4A4EDDDD4C73764B8F7C92637758C",
   "notes": [
+    "更新下载优先使用 GitHub 官方 Release 直链",
+    "下载中断、重试或切换备用源时保留进度并断点续传",
+    "下载较慢但仍有进度时不再误判为失败",
+    "仅在连续约 45 秒无数据时切换备用下载源",
+    "取消下载或关闭程序后保留临时文件，下次可继续下载",
     "移除工具栏伸缩空白，使 OpenBoard、录制、历史记录和桌面按钮稳定保持单行",
     "统一录制按钮的图标尺寸与垂直对齐",
     "Shift 只用于临时画直线，不再自动开启或关闭吸附功能",

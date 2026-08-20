@@ -74,6 +74,7 @@
 #include <QMessageBox>
 #include <QProcess>
 #include <QProgressDialog>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QTimer>
@@ -115,11 +116,61 @@ namespace
 
     struct UBUpdateDownloadMonitor
     {
-        qint64 lastReceived = 0;
-        qint64 currentReceived = 0;
-        int slowIntervals = 0;
-        bool lowSpeedAbort = false;
+        qint64 resumeOffset = 0;
+        qint64 lastOverallReceived = 0;
+        qint64 overallReceived = 0;
+        qint64 overallTotal = -1;
+        int stalledIntervals = 0;
+        bool switchSourceAbort = false;
+        bool rangeUnsupported = false;
+        bool userCanceled = false;
+        bool writeFailed = false;
+        bool headersChecked = false;
     };
+
+    bool fileMatchesSha256(const QString &path, const QString &expectedSha256)
+    {
+        if (expectedSha256.trimmed().isEmpty())
+            return false;
+
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly))
+            return false;
+
+        QCryptographicHash hash(QCryptographicHash::Sha256);
+        hash.addData(&file);
+        return QString::fromLatin1(hash.result().toHex())
+                .compare(expectedSha256.trimmed(), Qt::CaseInsensitive) == 0;
+    }
+
+    bool promoteDownloadedFile(const QString &partialPath, const QString &destination)
+    {
+        QFile input(partialPath);
+        if (!input.open(QIODevice::ReadOnly))
+            return false;
+
+        QSaveFile output(destination);
+        if (!output.open(QIODevice::WriteOnly))
+            return false;
+
+        char buffer[1024 * 1024];
+        while (!input.atEnd())
+        {
+            const qint64 read = input.read(buffer, sizeof(buffer));
+            if (read <= 0 || output.write(buffer, read) != read)
+            {
+                output.cancelWriting();
+                return false;
+            }
+        }
+
+        if (!output.commit())
+            return false;
+
+        input.close();
+        QFile::remove(partialPath);
+        return true;
+    }
 }
 
 UBApplicationController::UBApplicationController(UBBoardView *pControlView,
@@ -775,8 +826,22 @@ void UBApplicationController::downloadJsonFinished(QString currentJson)
             if (fallbackUrl.isValid() && !fallbackUrl.isEmpty() && !urls.contains(fallbackUrl))
                 urls.append(fallbackUrl);
 
-            if (!urls.isEmpty())
-                downloadUpdateInstaller(urls,
+            // Prefer the official GitHub release asset. Public proxy services
+            // are fallbacks only, and receive a Range request so switching to
+            // them never discards bytes already downloaded from GitHub.
+            QList<QUrl> orderedUrls;
+            for (const QUrl &candidate : urls) {
+                if (candidate.host().compare(QStringLiteral("github.com"),
+                                             Qt::CaseInsensitive) == 0)
+                    orderedUrls.append(candidate);
+            }
+            for (const QUrl &candidate : urls) {
+                if (!orderedUrls.contains(candidate))
+                    orderedUrls.append(candidate);
+            }
+
+            if (!orderedUrls.isEmpty())
+                downloadUpdateInstaller(orderedUrls,
                                         jsonObject.value("version").toString(),
                                         jsonObject.value("sha256").toString());
         }
@@ -815,12 +880,34 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
     const QString downloadDirectory = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
     const QString fileName = QString("OpenBoard-cheyuze-%1-x64.exe").arg(version);
     const QString destination = QDir(downloadDirectory).filePath(fileName);
+    const QString partialPath = destination + QStringLiteral(".part");
 
-    QSaveFile *file = new QSaveFile(destination, this);
-    if (!file->open(QIODevice::WriteOnly)) {
+    if (fileMatchesSha256(destination, expectedSha256))
+    {
+        const QMessageBox::StandardButton installNow = QMessageBox::question(
+            mMainWindow, tr("Download complete"),
+            tr("The update has already been downloaded. Install it now?"),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+        if (installNow == QMessageBox::Yes && QProcess::startDetached(destination, QStringList()))
+            qApp->quit();
+        return;
+    }
+
+    QFile *file = new QFile(partialPath, this);
+    if (!file->open(QIODevice::ReadWrite)) {
         mMainWindow->information(tr("Download update"),
                                  tr("Unable to save the installer to: %1").arg(destination));
         file->deleteLater();
+        return;
+    }
+
+    const qint64 resumeOffset = file->size();
+    if (!file->seek(resumeOffset))
+    {
+        file->close();
+        file->deleteLater();
+        mMainWindow->information(tr("Download update"),
+                                 tr("Unable to continue the previous download."));
         return;
     }
 
@@ -830,17 +917,22 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
     progress->setWindowModality(Qt::WindowModal);
     progress->setAutoClose(false);
     progress->setMinimumDuration(0);
+    if (resumeOffset > 0)
+        progress->setLabelText(tr("Continuing update download... %1 MB downloaded")
+                               .arg(resumeOffset / 1024.0 / 1024.0, 0, 'f', 1));
 
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::UserAgentHeader,
                       QString("OpenBoard-cheyuze/%1").arg(qApp->applicationVersion()));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::NoLessSafeRedirectPolicy);
+    if (resumeOffset > 0)
+        request.setRawHeader("Range", QByteArray("bytes=") + QByteArray::number(resumeOffset) + "-");
 #if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
     request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
 #endif
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    request.setTransferTimeout(30000);
+    request.setTransferTimeout(120000);
 #endif
     // Keep installer traffic separate from the update-manifest manager, whose
     // finished signal parses every reply as JSON.
@@ -848,90 +940,151 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
     QNetworkReply *reply = downloadManager->get(request);
     const std::shared_ptr<UBUpdateDownloadMonitor> monitor =
             std::make_shared<UBUpdateDownloadMonitor>();
+    monitor->resumeOffset = resumeOffset;
+    monitor->lastOverallReceived = resumeOffset;
+    monitor->overallReceived = resumeOffset;
 
-    // A stalled proxy can keep the TCP connection alive without emitting
-    // enough downloadProgress signals for the old monitor to switch sources.
-    // Sample the latest received byte count independently every five seconds
-    // so a slow source is abandoned promptly when another source is available.
+    // Preserve slow but progressing downloads. Only change source after a
+    // sustained period with no new bytes; the .part file is kept and the next
+    // source receives a Range request for the exact saved offset.
     QTimer *speedTimer = new QTimer(progress);
     speedTimer->setInterval(5000);
     speedTimer->start();
 
-    connect(reply, &QNetworkReply::readyRead, this, [reply, file]() {
-        file->write(reply->readAll());
+    connect(reply, &QNetworkReply::readyRead, this, [reply, file, monitor]() {
+        if (!monitor->headersChecked)
+        {
+            const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            if (status == 0)
+                return;
+
+            monitor->headersChecked = true;
+            if (monitor->resumeOffset > 0)
+            {
+                const QString contentRange = QString::fromLatin1(reply->rawHeader("Content-Range"));
+                const QRegularExpression expression(
+                        QStringLiteral("^bytes\\s+(\\d+)-(\\d+)/(\\d+|\\*)$"),
+                        QRegularExpression::CaseInsensitiveOption);
+                const QRegularExpressionMatch match = expression.match(contentRange.trimmed());
+                const bool validRange = status == 206 && match.hasMatch()
+                        && match.captured(1).toLongLong() == monitor->resumeOffset;
+
+                if (!validRange)
+                {
+                    monitor->rangeUnsupported = true;
+                    reply->abort();
+                    return;
+                }
+
+                if (match.captured(3) != QStringLiteral("*"))
+                    monitor->overallTotal = match.captured(3).toLongLong();
+            }
+        }
+
+        const QByteArray data = reply->readAll();
+        if (!data.isEmpty() && file->write(data) != data.size())
+        {
+            monitor->writeFailed = true;
+            reply->abort();
+        }
     });
     connect(reply, &QNetworkReply::downloadProgress, progress,
-            [progress, reply, monitor, urlIndex, urls](qint64 received, qint64 total) {
-        monitor->currentReceived = received;
-        if (total > 0) {
+            [progress, monitor](qint64 received, qint64 total) {
+        monitor->overallReceived = monitor->resumeOffset + received;
+        if (monitor->overallTotal <= 0 && total > 0)
+            monitor->overallTotal = monitor->resumeOffset + total;
+
+        if (monitor->overallTotal > 0) {
             progress->setRange(0, 100);
-            progress->setValue(static_cast<int>((received * 100) / total));
+            progress->setValue(static_cast<int>((monitor->overallReceived * 100)
+                                                / monitor->overallTotal));
             progress->setLabelText(tr("Downloading update... %1 MB / %2 MB")
-                                   .arg(received / 1024.0 / 1024.0, 0, 'f', 1)
-                                   .arg(total / 1024.0 / 1024.0, 0, 'f', 1));
+                                   .arg(monitor->overallReceived / 1024.0 / 1024.0, 0, 'f', 1)
+                                   .arg(monitor->overallTotal / 1024.0 / 1024.0, 0, 'f', 1));
         }
         else {
             progress->setRange(0, 0);
         }
-
     });
     connect(speedTimer, &QTimer::timeout, progress,
             [progress, reply, monitor, speedTimer, urlIndex, urls]() {
-        const qint64 bytesInWindow = monitor->currentReceived - monitor->lastReceived;
-        const qint64 bytesPerSecond = bytesInWindow * 1000 / 5000;
-        const bool stalledBeforeStart = monitor->currentReceived == 0;
-        const bool slowWindow = stalledBeforeStart ||
-                (monitor->currentReceived > 0 && bytesPerSecond < 96 * 1024);
-
-        if (slowWindow)
-            ++monitor->slowIntervals;
+        if (monitor->overallReceived <= monitor->lastOverallReceived)
+            ++monitor->stalledIntervals;
         else
-            monitor->slowIntervals = 0;
+            monitor->stalledIntervals = 0;
 
-        monitor->lastReceived = monitor->currentReceived;
+        monitor->lastOverallReceived = monitor->overallReceived;
 
-        // Switch after two consecutive five-second slow windows (about ten
-        // seconds), while leaving the final source running for slow networks.
-        if (monitor->slowIntervals >= 2 && urlIndex + 1 < urls.size())
+        // Nine empty windows are about 45 seconds. A merely slow connection is
+        // allowed to continue; only a real stall moves to another source.
+        if (monitor->stalledIntervals >= 9 && urlIndex + 1 < urls.size())
         {
-            monitor->lowSpeedAbort = true;
+            monitor->switchSourceAbort = true;
             speedTimer->stop();
             reply->abort();
             progress->setLabelText(
-                    tr("The current download source is too slow. Switching to a backup source..."));
+                    tr("The current download source is not responding. Switching to a backup source and continuing the download..."));
         }
     });
-    connect(progress, &QProgressDialog::canceled, reply, &QNetworkReply::abort);
+    connect(progress, &QProgressDialog::canceled, reply, [reply, monitor]() {
+        monitor->userCanceled = true;
+        reply->abort();
+    });
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, file, progress, destination, urls, version,
-             expectedSha256, urlIndex, retryAttempt, monitor, speedTimer]() {
+             partialPath, expectedSha256, urlIndex, retryAttempt, monitor, speedTimer]() {
         speedTimer->stop();
         speedTimer->deleteLater();
         progress->close();
         progress->deleteLater();
 
-        if (reply->error() != QNetworkReply::NoError) {
+        // A Range request that starts exactly at the end of a completely
+        // downloaded file may receive HTTP 416. Treat it as complete only
+        // after the normal SHA-256 verification succeeds.
+        bool rangeAlreadyComplete = false;
+        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (httpStatus == 416 && !expectedSha256.trimmed().isEmpty())
+        {
+            file->flush();
+            file->close();
+            rangeAlreadyComplete = fileMatchesSha256(partialPath, expectedSha256);
+        }
+
+        if (reply->error() != QNetworkReply::NoError && !rangeAlreadyComplete) {
             const QNetworkReply::NetworkError error = reply->error();
             const QString errorText = reply->errorString();
-            file->cancelWriting();
+            file->flush();
+            file->close();
             reply->deleteLater();
             file->deleteLater();
 
             if (error == QNetworkReply::OperationCanceledError)
             {
-                if (monitor->lowSpeedAbort && urlIndex + 1 < urls.size())
+                if (monitor->userCanceled)
+                    return;
+
+                if ((monitor->switchSourceAbort || monitor->rangeUnsupported)
+                        && urlIndex + 1 < urls.size())
                 {
                     QTimer::singleShot(250, this,
                                        [this, urls, version, expectedSha256, urlIndex]() {
                         downloadUpdateInstaller(urls, version, expectedSha256,
                                                 urlIndex + 1, 0);
                     });
+                    return;
                 }
+
+                if (monitor->writeFailed)
+                    mMainWindow->information(tr("Download update"),
+                                             tr("Unable to save the downloaded installer."));
+                else if (monitor->rangeUnsupported)
+                    mMainWindow->information(
+                            tr("Download update"),
+                            tr("No download source accepted the resume request. The downloaded part has been kept; please try again later."));
                 return;
             }
 
-            // Retry transient failures twice on the same source.  If the
-            // manifest contains mirrors, move to the next source afterwards.
+            // Retry transient failures without discarding the .part file.
             if (retryAttempt < 2) {
                 QTimer::singleShot(1200, this,
                                    [this, urls, version, expectedSha256, urlIndex, retryAttempt]() {
@@ -955,34 +1108,26 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
             return;
         }
 
-        if (!file->commit()) {
+        file->flush();
+        file->close();
+
+        if (!expectedSha256.trimmed().isEmpty()) {
+            if (!fileMatchesSha256(partialPath, expectedSha256)) {
+                QFile::remove(partialPath);
+                mMainWindow->information(tr("Download update"),
+                                         tr("Installer verification failed. The damaged partial file was removed; please try again."));
+                reply->deleteLater();
+                file->deleteLater();
+                return;
+            }
+        }
+
+        if (!promoteDownloadedFile(partialPath, destination)) {
             mMainWindow->information(tr("Download update"),
                                      tr("Unable to save the downloaded installer."));
             reply->deleteLater();
             file->deleteLater();
             return;
-        }
-
-        if (!expectedSha256.trimmed().isEmpty()) {
-            QFile downloadedFile(destination);
-            if (!downloadedFile.open(QIODevice::ReadOnly)) {
-                mMainWindow->information(tr("Download update"), tr("Unable to verify the installer."));
-                reply->deleteLater();
-                file->deleteLater();
-                return;
-            }
-            QCryptographicHash hash(QCryptographicHash::Sha256);
-            hash.addData(&downloadedFile);
-            if (QString::fromLatin1(hash.result().toHex()).compare(expectedSha256,
-                                                                   Qt::CaseInsensitive) != 0) {
-                downloadedFile.close();
-                QFile::remove(destination);
-                mMainWindow->information(tr("Download update"),
-                                         tr("Installer verification failed. Please try again."));
-                reply->deleteLater();
-                file->deleteLater();
-                return;
-            }
         }
 
         const QMessageBox::StandardButton installNow = QMessageBox::question(
