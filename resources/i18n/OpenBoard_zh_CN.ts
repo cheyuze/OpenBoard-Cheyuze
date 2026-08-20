@@ -1451,10 +1451,13 @@ Do you wish to override the security check and continue ?   </source>
     <message><source>You are using the latest version (%1).</source><translation>当前已是最新版本（%1）。</translation></message>
     <message><source>Unable to save the installer to: %1</source><translation>无法将安装包保存到：%1</translation></message>
     <message><source>Downloading update %1...</source><translation>正在下载更新 %1……</translation></message>
+    <message><source>Connecting to download source %1 of %2...</source><translation>正在连接下载源 %1/%2……您可以继续使用白板</translation></message>
     <message><source>Continuing update download... %1 MB downloaded</source><translation>正在继续下载更新……已下载 %1 MB</translation></message>
     <message><source>Cancel</source><translation>取消</translation></message>
     <message><source>Downloading update... %1 MB / %2 MB</source><translation>正在下载更新……%1 MB / %2 MB</translation></message>
     <message><source>Update download failed: %1</source><translation>更新下载失败：%1</translation></message>
+    <message><source>Automatic update download failed. You can download the installer from Baidu Netdisk.</source><translation>自动更新下载失败，您可以改用百度网盘下载安装包。</translation></message>
+    <message><source>Close</source><translation>关闭</translation></message>
     <message><source>Unable to save the downloaded installer.</source><translation>无法保存下载的安装包。</translation></message>
     <message><source>Unable to verify the installer.</source><translation>无法校验安装包。</translation></message>
     <message><source>Installer verification failed. Please try again.</source><translation>安装包校验失败，请重新下载。</translation></message>
@@ -1464,6 +1467,8 @@ Do you wish to override the security check and continue ?   </source>
     <message><source>Download complete</source><translation>下载完成</translation></message>
     <message><source>The update has been downloaded. Install it now?</source><translation>更新已经下载完成，是否立即安装？</translation></message>
     <message><source>The update has already been downloaded. Install it now?</source><translation>更新安装包已下载，是否立即安装？</translation></message>
+    <message><source>Install update</source><translation>安装更新</translation></message>
+    <message><source>Unable to start the update installer. OpenBoard will remain running.</source><translation>无法启动更新安装程序，OpenBoard 将保持运行。</translation></message>
 </context>
 <context>
     <name>UBBackgroundPalette</name>
