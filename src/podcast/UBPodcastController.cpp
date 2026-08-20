@@ -51,12 +51,11 @@
 
 #include "UBAbstractVideoEncoder.h"
 
-#include "podcast/youtube/UBYouTubePublisher.h"
-#include "podcast/intranet/UBIntranetPodcastPublisher.h"
 #include "UBPodcastRecordingPalette.h"
 
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QSaveFile>
 
 
 
@@ -101,8 +100,6 @@ UBPodcastController::UBPodcastController(QObject* pParent)
     , mSmallVideoSizeAction(0)
     , mMediumVideoSizeAction(0)
     , mFullVideoSizeAction(0)
-    , mYoutubePublicationAction(0)
-    , mIntranetPublicationAction(0)
 {
     connect(UBApplication::applicationController, SIGNAL(mainModeChanged(UBApplicationController::MainMode)),
             this, SLOT(applicationMainModeChanged(UBApplicationController::MainMode)));
@@ -144,13 +141,6 @@ void UBPodcastController::groupActionTriggered(QAction* action)
 }
 
 
-void UBPodcastController::actionToggled(bool checked)
-{
-    Q_UNUSED(checked);
-    updateActionState();
-}
-
-
 void UBPodcastController::updateActionState()
 {
     if (mSmallVideoSizeAction && mSmallVideoSizeAction->isChecked())
@@ -177,9 +167,6 @@ void UBPodcastController::updateActionState()
             }
         }
     }
-
-    UBSettings::settings()->podcastPublishToYoutube->set(mYoutubePublicationAction && mYoutubePublicationAction->isChecked());
-    UBSettings::settings()->podcastPublishToIntranet->set(mIntranetPublicationAction && mIntranetPublicationAction->isChecked());
 
 }
 
@@ -395,18 +382,9 @@ void UBPodcastController::start()
             QString videoFileName;
             const QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
 
-            if (mIntranetPublicationAction && mIntranetPublicationAction->isChecked())
-            {
-                mSuggestedRecordingFilePath = mPodcastRecordingPath + "/" + "Podcast-"
-                        + timestamp
-                        + "-" + UBPlatformUtils::computerName() + "." + mVideoEncoder->videoFileExtension();
-            }
-            else
-            {
-                mSuggestedRecordingFilePath = UBFileSystemUtils::nextAvailableFileName(
-                        mPodcastRecordingPath + "/" + tr("讲题录制-%1").arg(timestamp)
-                                + "." + mVideoEncoder->videoFileExtension(), " ");
-            }
+            mSuggestedRecordingFilePath = UBFileSystemUtils::nextAvailableFileName(
+                    mPodcastRecordingPath + "/" + tr("讲题录制-%1").arg(timestamp)
+                            + "." + mVideoEncoder->videoFileExtension(), " ");
 
             // Encode to a unique working file first.  After the encoder has
             // closed it, encodingFinished() presents Save As and moves the
@@ -759,17 +737,6 @@ void UBPodcastController::encodingFinished(bool ok)
 
                     UBApplication::showMessage(tr("Podcast created %1").arg(location), false);
 
-                    if (mIntranetPublicationAction && mIntranetPublicationAction->isChecked())
-                    {
-                        UBIntranetPodcastPublisher* intranet = new UBIntranetPodcastPublisher(this); // Self destroyed
-                        intranet->publishVideo(mVideoEncoder->videoFileName(), elapsedRecordingMs());
-                    }
-
-                    if (mYoutubePublicationAction && mYoutubePublicationAction->isChecked())
-                    {
-                        UBYouTubePublisher* youTube = new UBYouTubePublisher(this); // Self destroyed
-                        youTube->uploadVideo(mVideoEncoder->videoFileName());
-                    }
                 }
             }
         }
@@ -844,26 +811,48 @@ QString UBPodcastController::saveRecordingAs(const QString& temporaryFilePath)
     if (QFileInfo(source).absoluteFilePath() == QFileInfo(destination).absoluteFilePath())
         return destination;
 
-    // The native Save As dialog already asks before replacing an existing
-    // file.  Prefer a rename; copy is the cross-volume fallback.
-    if (QFile::exists(destination) && !QFile::remove(destination))
-    {
-        QMessageBox::warning(dialogParent, tr("保存录制视频"),
-                tr("无法替换所选文件。录制视频仍保存在：\n%1").arg(source));
-        return source;
-    }
-
-    if (QFile::rename(source, destination))
+    // A destination that does not exist can usually be reached with a cheap
+    // rename.  This keeps normal saves instant when the working file and the
+    // selected folder are on the same volume.
+    if (!QFile::exists(destination) && QFile::rename(source, destination))
         return destination;
 
-    if (QFile::copy(source, destination))
+    // QSaveFile writes to a sibling temporary file and only replaces the
+    // destination during commit().  Therefore an existing lesson is retained
+    // if a cross-volume copy, disk write, or final replacement fails.
+    QFile sourceFile(source);
+    QSaveFile destinationFile(destination);
+    bool copySucceeded = sourceFile.open(QIODevice::ReadOnly)
+            && destinationFile.open(QIODevice::WriteOnly);
+    QByteArray buffer;
+    while (copySucceeded && !sourceFile.atEnd())
+    {
+        buffer = sourceFile.read(4 * 1024 * 1024);
+        if (buffer.isEmpty() && sourceFile.error() != QFileDevice::NoError)
+        {
+            copySucceeded = false;
+            break;
+        }
+
+        if (!buffer.isEmpty() && destinationFile.write(buffer) != buffer.size())
+            copySucceeded = false;
+    }
+
+    sourceFile.close();
+    if (copySucceeded)
+        copySucceeded = destinationFile.commit();
+    else
+        destinationFile.cancelWriting();
+
+    if (copySucceeded)
     {
         QFile::remove(source);
         return destination;
     }
 
     QMessageBox::warning(dialogParent, tr("保存录制视频"),
-            tr("无法将视频保存到所选位置。录制视频仍保存在：\n%1").arg(source));
+            tr("无法将视频保存到所选位置。原有文件没有被修改，录制视频仍保存在：\n%1")
+                    .arg(source));
     return source;
 }
 
@@ -1177,31 +1166,4 @@ QList<QAction*> UBPodcastController::videoSizeActions()
     }
 
     return mVideoSizesActions;
-}
-
-
-QList<QAction*> UBPodcastController::podcastPublicationActions()
-{
-    if (mPodcastPublicationActions.length() == 0)
-    {
-        mIntranetPublicationAction = new QAction(tr("Publish to Intranet"), this);
-
-        mIntranetPublicationAction->setCheckable(true);
-        mIntranetPublicationAction->setChecked(UBSettings::settings()->podcastPublishToIntranet->get().toBool());
-
-        mPodcastPublicationActions << mIntranetPublicationAction;
-
-        mYoutubePublicationAction = new QAction(tr("Publish to Youtube"), this);
-        mYoutubePublicationAction->setCheckable(true);
-        mYoutubePublicationAction->setChecked(UBSettings::settings()->podcastPublishToYoutube->get().toBool());
-
-        mPodcastPublicationActions << mYoutubePublicationAction;
-
-        foreach(QAction* publicationAction, mPodcastPublicationActions)
-        {
-            connect(publicationAction, SIGNAL(toggled(bool)), this, SLOT(actionToggled(bool)));
-        }
-    }
-
-    return mPodcastPublicationActions;
 }

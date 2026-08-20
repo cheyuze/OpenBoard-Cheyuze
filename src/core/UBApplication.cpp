@@ -340,8 +340,6 @@ int UBApplication::exec(const QString& pFileToImport)
     UBThumbnailUI::_private::initCatalog();
 
     connect(mainWindow->actionBoard, SIGNAL(triggered()), this, SLOT(showBoard()));
-    connect(mainWindow->actionWeb, SIGNAL(triggered()), this, SLOT(showInternet()));
-    connect(mainWindow->actionWeb, SIGNAL(triggered()), this, SLOT(stopScript()));
     connect(mainWindow->actionDocument, SIGNAL(triggered()), this, SLOT(showDocument()));
     connect(mainWindow->actionDocument, SIGNAL(triggered()), this, SLOT(stopScript()));
     connect(mainWindow->actionQuit, SIGNAL(triggered()), this, SLOT(closing()));
@@ -495,7 +493,6 @@ void UBApplication::toolBarPositionChanged(QVariant topOrBottom)
         area = Qt::BottomToolBarArea;
 
     mainWindow->addToolBar(area, mainWindow->boardToolBar);
-    mainWindow->addToolBar(area, mainWindow->webToolBar);
     mainWindow->addToolBar(area, mainWindow->documentToolBar);
 
     webController->showTabAtTop(topOrBottom.toBool());
@@ -695,26 +692,10 @@ bool UBApplication::eventFilter(QObject *obj, QEvent *event)
 #endif
     }
 
-    else if (event->type() == QEvent::KeyPress)
-    {
-        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-
-        // set snap action when pressing shift while snapping tool is active
-        if (keyEvent->key() == Qt::Key_Shift && UBDrawingController::drawingController()->isSnappingTool())
-        {
-            mainWindow->actionSnap->setChecked(true);
-        }
-    }
     else if (event->type() == QEvent::KeyRelease)
     {
         // intercept key release events for shortcut handler
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-
-        // unset snap action when releasing shift while snapping tool is active
-        if (keyEvent->key() == Qt::Key_Shift && UBDrawingController::drawingController()->isSnappingTool())
-        {
-            mainWindow->actionSnap->setChecked(false);
-        }
 
         return UBShortcutManager::shortcutManager()->handleKeyReleaseEvent(keyEvent)
                     || result;

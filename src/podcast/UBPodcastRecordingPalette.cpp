@@ -135,15 +135,6 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
                 menu->addAction(videoSizeAction);
             }
 
-            menu->addSeparator();
-
-            QList<QAction*> podcastPublication = UBPodcastController::instance()->podcastPublicationActions();
-
-            foreach(QAction* publicationAction, podcastPublication)
-            {
-                menu->addAction(publicationAction);
-            }
-
             tb->setMenu(menu);
         }
     }

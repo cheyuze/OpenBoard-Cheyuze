@@ -78,12 +78,11 @@
    <addaction name="separator"/>
    <addaction name="actionErase"/>
    <addaction name="separator"/>
+   <addaction name="actionMenu"/>
    <addaction name="actionPodcast"/>
    <addaction name="actionBoard"/>
-   <addaction name="actionWeb"/>
    <addaction name="actionDocument"/>
    <addaction name="actionDesktop"/>
-   <addaction name="actionMenu"/>
   </widget>
   <widget class="QToolBar" name="webToolBar">
    <property name="font">
@@ -1357,7 +1356,7 @@
    </property>
    <property name="icon">
     <iconset resource="../OpenBoard.qrc">
-     <normaloff>:/images/toolbar/record.png</normaloff>:/images/toolbar/record.png</iconset>
+     <normaloff>:/images/podcast/record.svg</normaloff>:/images/podcast/record.svg</iconset>
    </property>
    <property name="text">
     <string>Record Video</string>

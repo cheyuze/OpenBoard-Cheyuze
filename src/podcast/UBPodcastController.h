@@ -59,8 +59,6 @@ class UBPodcastController : public QObject
         QList<QAction*> audioRecordingDevicesActions();
         QList<QAction*> videoSizeActions();
 
-        QList<QAction*> podcastPublicationActions();
-
         enum RecordingState
         {
             Stopped = 0, Recording, Paused, Stopping
@@ -115,7 +113,6 @@ class UBPodcastController : public QObject
         void applicationAboutToQuit();
 
         void groupActionTriggered(QAction*);
-        void actionToggled(bool);
 
         void updateActionState();
 
@@ -183,11 +180,6 @@ class UBPodcastController : public QObject
         QAction* mSmallVideoSizeAction;
         QAction* mMediumVideoSizeAction;
         QAction* mFullVideoSizeAction;
-
-        QList<QAction*> mPodcastPublicationActions;
-
-        QAction *mYoutubePublicationAction;
-        QAction *mIntranetPublicationAction;
 
         QString mPodcastRecordingPath;
         QString mSuggestedRecordingFilePath;
