@@ -1437,7 +1437,7 @@ Do you wish to override the security check and continue ?   </source>
     <message><source>A new version %1 is available.</source><translation>发现新版本 %1。</translation></message>
     <message><source>Current version: %1</source><translation>当前版本：%1</translation></message>
     <message><source>What's new:</source><translation>更新内容：</translation></message>
-    <message><source>Download from domestic mirrors</source><translation>从国内加速源下载</translation></message>
+    <message><source>Download from domestic mirrors</source><translation>自动下载（GitHub 优先）</translation></message>
     <message><source>Download from Baidu Netdisk</source><translation>从百度网盘下载</translation></message>
     <message><source>Baidu Netdisk download</source><translation>百度网盘下载</translation></message>
     <message><source>Baidu Netdisk extraction code: %1</source><translation>百度网盘提取码：%1</translation></message>
@@ -1445,19 +1445,25 @@ Do you wish to override the security check and continue ?   </source>
     <message><source>No extraction code was provided.</source><translation>未提供提取码。</translation></message>
     <message><source>Unable to open the Baidu Netdisk share page.</source><translation>无法打开百度网盘分享页面。</translation></message>
     <message><source>The current download source is too slow. Switching to a backup source...</source><translation>当前下载源速度过慢，正在切换备用下载源……</translation></message>
+    <message><source>The current download source is not responding. Switching to a backup source and continuing the download...</source><translation>当前下载源长时间无响应，正在切换备用源并继续下载……</translation></message>
     <message><source>Download update</source><translation>下载更新</translation></message>
     <message><source>Remind me later</source><translation>稍后提醒</translation></message>
     <message><source>You are using the latest version (%1).</source><translation>当前已是最新版本（%1）。</translation></message>
     <message><source>Unable to save the installer to: %1</source><translation>无法将安装包保存到：%1</translation></message>
     <message><source>Downloading update %1...</source><translation>正在下载更新 %1……</translation></message>
+    <message><source>Continuing update download... %1 MB downloaded</source><translation>正在继续下载更新……已下载 %1 MB</translation></message>
     <message><source>Cancel</source><translation>取消</translation></message>
     <message><source>Downloading update... %1 MB / %2 MB</source><translation>正在下载更新……%1 MB / %2 MB</translation></message>
     <message><source>Update download failed: %1</source><translation>更新下载失败：%1</translation></message>
     <message><source>Unable to save the downloaded installer.</source><translation>无法保存下载的安装包。</translation></message>
     <message><source>Unable to verify the installer.</source><translation>无法校验安装包。</translation></message>
     <message><source>Installer verification failed. Please try again.</source><translation>安装包校验失败，请重新下载。</translation></message>
+    <message><source>Unable to continue the previous download.</source><translation>无法继续上次的下载。</translation></message>
+    <message><source>No download source accepted the resume request. The downloaded part has been kept; please try again later.</source><translation>所有下载源均未接受断点续传请求。已下载的部分已保留，请稍后重试。</translation></message>
+    <message><source>Installer verification failed. The damaged partial file was removed; please try again.</source><translation>安装包校验失败，已删除损坏的临时文件，请重新下载。</translation></message>
     <message><source>Download complete</source><translation>下载完成</translation></message>
     <message><source>The update has been downloaded. Install it now?</source><translation>更新已经下载完成，是否立即安装？</translation></message>
+    <message><source>The update has already been downloaded. Install it now?</source><translation>更新安装包已下载，是否立即安装？</translation></message>
 </context>
 <context>
     <name>UBBackgroundPalette</name>
