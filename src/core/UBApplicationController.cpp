@@ -79,6 +79,10 @@
 #include <QStandardPaths>
 #include <QTimer>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
 
 #ifdef Q_OS_MAC
@@ -170,6 +174,29 @@ namespace
         input.close();
         QFile::remove(partialPath);
         return true;
+    }
+
+    bool launchInstaller(QWidget *parent, const QString &path)
+    {
+#ifdef Q_OS_WIN
+        const QString nativePath = QDir::toNativeSeparators(path);
+        SHELLEXECUTEINFOW executeInfo = {};
+        executeInfo.cbSize = sizeof(executeInfo);
+        executeInfo.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+        executeInfo.hwnd = parent ? reinterpret_cast<HWND>(parent->winId()) : nullptr;
+        executeInfo.lpVerb = L"runas";
+        executeInfo.lpFile = reinterpret_cast<LPCWSTR>(nativePath.utf16());
+        executeInfo.nShow = SW_SHOWNORMAL;
+
+        if (!ShellExecuteExW(&executeInfo))
+            return false;
+
+        if (executeInfo.hProcess)
+            CloseHandle(executeInfo.hProcess);
+        return true;
+#else
+        return QProcess::startDetached(path, QStringList());
+#endif
     }
 }
 
@@ -843,7 +870,8 @@ void UBApplicationController::downloadJsonFinished(QString currentJson)
             if (!orderedUrls.isEmpty())
                 downloadUpdateInstaller(orderedUrls,
                                         jsonObject.value("version").toString(),
-                                        jsonObject.value("sha256").toString());
+                                        jsonObject.value("sha256").toString(),
+                                        QUrl(baiduUrlString), baiduPassword);
         }
         else if (baiduButton && messageBox.clickedButton() == baiduButton) {
             const QUrl baiduUrl(baiduUrlString);
@@ -870,8 +898,11 @@ void UBApplicationController::downloadJsonFinished(QString currentJson)
 void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
                                                        const QString &version,
                                                        const QString &expectedSha256,
+                                                       const QUrl &baiduUrl,
+                                                       const QString &baiduPassword,
                                                        int urlIndex,
-                                                       int retryAttempt)
+                                                       int retryAttempt,
+                                                       QProgressDialog *progress)
 {
     if (urlIndex < 0 || urlIndex >= urls.size())
         return;
@@ -888,8 +919,14 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
             mMainWindow, tr("Download complete"),
             tr("The update has already been downloaded. Install it now?"),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-        if (installNow == QMessageBox::Yes && QProcess::startDetached(destination, QStringList()))
-            qApp->quit();
+        if (installNow == QMessageBox::Yes)
+        {
+            if (launchInstaller(mMainWindow, destination))
+                QTimer::singleShot(500, qApp, []() { qApp->quit(); });
+            else
+                QMessageBox::warning(mMainWindow, tr("Install update"),
+                                     tr("Unable to start the update installer. OpenBoard will remain running."));
+        }
         return;
     }
 
@@ -911,12 +948,23 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
         return;
     }
 
-    QProgressDialog *progress = new QProgressDialog(tr("Downloading update %1...").arg(version),
-                                                    tr("Cancel"), 0, 100, mMainWindow);
-    progress->setWindowTitle(tr("Download update"));
-    progress->setWindowModality(Qt::WindowModal);
-    progress->setAutoClose(false);
-    progress->setMinimumDuration(0);
+    if (!progress)
+    {
+        progress = new QProgressDialog(tr("Downloading update %1...").arg(version),
+                                       tr("Cancel"), 0, 100, mMainWindow);
+        progress->setWindowTitle(tr("Download update"));
+        progress->setWindowModality(Qt::NonModal);
+        progress->setModal(false);
+        progress->setAutoClose(false);
+        progress->setAutoReset(false);
+        progress->setMinimumDuration(0);
+        progress->setAttribute(Qt::WA_DeleteOnClose, false);
+        progress->setWindowFlag(Qt::WindowMinimizeButtonHint, true);
+        progress->show();
+    }
+
+    progress->setLabelText(tr("Connecting to download source %1 of %2...")
+                           .arg(urlIndex + 1).arg(urls.size()));
     if (resumeOffset > 0)
         progress->setLabelText(tr("Continuing update download... %1 MB downloaded")
                                .arg(resumeOffset / 1024.0 / 1024.0, 0, 'f', 1));
@@ -938,6 +986,7 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
     // finished signal parses every reply as JSON.
     QNetworkAccessManager *downloadManager = new QNetworkAccessManager(progress);
     QNetworkReply *reply = downloadManager->get(request);
+    connect(reply, &QNetworkReply::finished, downloadManager, &QObject::deleteLater);
     const std::shared_ptr<UBUpdateDownloadMonitor> monitor =
             std::make_shared<UBUpdateDownloadMonitor>();
     monitor->resumeOffset = resumeOffset;
@@ -1032,11 +1081,53 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
     });
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, file, progress, destination, urls, version,
-             partialPath, expectedSha256, urlIndex, retryAttempt, monitor, speedTimer]() {
+             partialPath, expectedSha256, baiduUrl, baiduPassword,
+             urlIndex, retryAttempt, monitor, speedTimer]() {
         speedTimer->stop();
         speedTimer->deleteLater();
-        progress->close();
-        progress->deleteLater();
+
+        const auto closeProgress = [progress, reply]() {
+            QObject::disconnect(progress, nullptr, reply, nullptr);
+            progress->close();
+            progress->deleteLater();
+        };
+
+        const auto offerBaiduDownload = [this, baiduUrl, baiduPassword](const QString &reason) {
+            QMessageBox messageBox(mMainWindow);
+            messageBox.setIcon(QMessageBox::Warning);
+            messageBox.setWindowTitle(tr("Download update"));
+            messageBox.setText(reason);
+
+            QPushButton *baiduButton = nullptr;
+            if (baiduUrl.isValid() && !baiduUrl.isEmpty())
+            {
+                messageBox.setInformativeText(
+                        tr("Automatic update download failed. You can download the installer from Baidu Netdisk."));
+                baiduButton = messageBox.addButton(tr("Download from Baidu Netdisk"),
+                                                   QMessageBox::AcceptRole);
+            }
+            messageBox.addButton(tr("Close"), QMessageBox::RejectRole);
+            messageBox.exec();
+
+            if (baiduButton && messageBox.clickedButton() == baiduButton)
+            {
+                if (QDesktopServices::openUrl(baiduUrl))
+                {
+                    const QString passwordText = baiduPassword.isEmpty()
+                            ? tr("No extraction code was provided.")
+                            : tr("Baidu Netdisk extraction code: %1").arg(baiduPassword);
+                    QMessageBox::information(
+                            mMainWindow, tr("Baidu Netdisk download"),
+                            tr("The Baidu Netdisk share page has been opened in your browser.\n\n%1")
+                            .arg(passwordText));
+                }
+                else
+                {
+                    QMessageBox::warning(mMainWindow, tr("Baidu Netdisk download"),
+                                         tr("Unable to open the Baidu Netdisk share page."));
+                }
+            }
+        };
 
         // A Range request that starts exactly at the end of a completely
         // downloaded file may receive HTTP 416. Treat it as complete only
@@ -1061,50 +1152,64 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
             if (error == QNetworkReply::OperationCanceledError)
             {
                 if (monitor->userCanceled)
+                {
+                    closeProgress();
                     return;
+                }
 
                 if ((monitor->switchSourceAbort || monitor->rangeUnsupported)
                         && urlIndex + 1 < urls.size())
                 {
                     QTimer::singleShot(250, this,
-                                       [this, urls, version, expectedSha256, urlIndex]() {
+                                       [this, urls, version, expectedSha256, baiduUrl,
+                                        baiduPassword, urlIndex, progress]() {
                         downloadUpdateInstaller(urls, version, expectedSha256,
-                                                urlIndex + 1, 0);
+                                                baiduUrl, baiduPassword,
+                                                urlIndex + 1, 0, progress);
                     });
                     return;
                 }
 
                 if (monitor->writeFailed)
+                {
+                    closeProgress();
                     mMainWindow->information(tr("Download update"),
                                              tr("Unable to save the downloaded installer."));
+                }
                 else if (monitor->rangeUnsupported)
-                    mMainWindow->information(
-                            tr("Download update"),
+                {
+                    closeProgress();
+                    offerBaiduDownload(
                             tr("No download source accepted the resume request. The downloaded part has been kept; please try again later."));
+                }
                 return;
             }
 
             // Retry transient failures without discarding the .part file.
             if (retryAttempt < 2) {
                 QTimer::singleShot(1200, this,
-                                   [this, urls, version, expectedSha256, urlIndex, retryAttempt]() {
+                                   [this, urls, version, expectedSha256, baiduUrl,
+                                    baiduPassword, urlIndex, retryAttempt, progress]() {
                     downloadUpdateInstaller(urls, version, expectedSha256,
-                                            urlIndex, retryAttempt + 1);
+                                            baiduUrl, baiduPassword,
+                                            urlIndex, retryAttempt + 1, progress);
                 });
                 return;
             }
 
             if (urlIndex + 1 < urls.size()) {
                 QTimer::singleShot(500, this,
-                                   [this, urls, version, expectedSha256, urlIndex]() {
+                                   [this, urls, version, expectedSha256, baiduUrl,
+                                    baiduPassword, urlIndex, progress]() {
                     downloadUpdateInstaller(urls, version, expectedSha256,
-                                            urlIndex + 1, 0);
+                                            baiduUrl, baiduPassword,
+                                            urlIndex + 1, 0, progress);
                 });
                 return;
             }
 
-            mMainWindow->information(tr("Download update"),
-                                     tr("Update download failed: %1").arg(errorText));
+            closeProgress();
+            offerBaiduDownload(tr("Update download failed: %1").arg(errorText));
             return;
         }
 
@@ -1114,8 +1219,9 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
         if (!expectedSha256.trimmed().isEmpty()) {
             if (!fileMatchesSha256(partialPath, expectedSha256)) {
                 QFile::remove(partialPath);
-                mMainWindow->information(tr("Download update"),
-                                         tr("Installer verification failed. The damaged partial file was removed; please try again."));
+                closeProgress();
+                offerBaiduDownload(
+                        tr("Installer verification failed. The damaged partial file was removed; please try again."));
                 reply->deleteLater();
                 file->deleteLater();
                 return;
@@ -1123,6 +1229,7 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
         }
 
         if (!promoteDownloadedFile(partialPath, destination)) {
+            closeProgress();
             mMainWindow->information(tr("Download update"),
                                      tr("Unable to save the downloaded installer."));
             reply->deleteLater();
@@ -1130,12 +1237,19 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
             return;
         }
 
+        closeProgress();
         const QMessageBox::StandardButton installNow = QMessageBox::question(
             mMainWindow, tr("Download complete"),
             tr("The update has been downloaded. Install it now?"),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-        if (installNow == QMessageBox::Yes && QProcess::startDetached(destination, QStringList()))
-            qApp->quit();
+        if (installNow == QMessageBox::Yes)
+        {
+            if (launchInstaller(mMainWindow, destination))
+                QTimer::singleShot(500, qApp, []() { qApp->quit(); });
+            else
+                QMessageBox::warning(mMainWindow, tr("Install update"),
+                                     tr("Unable to start the update installer. OpenBoard will remain running."));
+        }
 
         reply->deleteLater();
         file->deleteLater();

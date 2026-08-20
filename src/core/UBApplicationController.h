@@ -181,8 +181,11 @@ class UBApplicationController : public QObject
                          const QList<QUrl> &urls = QList<QUrl>(),
                          int urlIndex = 0, int retryAttempt = 0);
         void downloadUpdateInstaller(const QList<QUrl> &urls, const QString &version,
-                                     const QString &expectedSha256, int urlIndex = 0,
-                                     int retryAttempt = 0);
+                                     const QString &expectedSha256,
+                                     const QUrl &baiduUrl = QUrl(),
+                                     const QString &baiduPassword = QString(),
+                                     int urlIndex = 0, int retryAttempt = 0,
+                                     QProgressDialog *progress = nullptr);
         QNetworkAccessManager * mNetworkAccessManager;
 
         void downloadJsonFinished(QString updateString);
