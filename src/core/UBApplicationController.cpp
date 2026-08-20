@@ -88,10 +88,35 @@
 
 namespace
 {
+    bool isTrustedGitHubManifestUrl(const QUrl &url)
+    {
+        if (!url.isValid()
+                || url.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) != 0
+                || !url.userInfo().isEmpty())
+        {
+            return false;
+        }
+
+        const int port = url.port(-1);
+        if (port != -1 && port != 443)
+            return false;
+
+        const QString host = url.host().toLower();
+        return host == QStringLiteral("github.com")
+                || host == QStringLiteral("raw.githubusercontent.com")
+                || host.endsWith(QStringLiteral(".githubusercontent.com"));
+    }
+
+    void appendUniqueUrl(QList<QUrl> &urls, const QUrl &url)
+    {
+        if (isTrustedGitHubManifestUrl(url) && !urls.contains(url))
+            urls.append(url);
+    }
+
     struct UBUpdateDownloadMonitor
     {
-        QElapsedTimer interval;
         qint64 lastReceived = 0;
+        qint64 currentReceived = 0;
         int slowIntervals = 0;
         bool lowSpeedAbort = false;
     };
@@ -223,12 +248,13 @@ void UBApplicationController::adaptToolBar()
     mMainWindow->actionClearPage->setVisible(Board == mMainMode && highResolution);
     mMainWindow->actionBoard->setVisible(Board != mMainMode || highResolution);
     mMainWindow->actionDocument->setVisible(Document != mMainMode || highResolution);
-    mMainWindow->actionWeb->setVisible(Internet != mMainMode || highResolution);
+    mMainWindow->actionWeb->setVisible(false);
     mMainWindow->boardToolBar->setIconSize(QSize(highResolution ? 48 : 42, mMainWindow->boardToolBar->iconSize().height()));
 
     mMainWindow->actionBoard->setEnabled(mMainMode != Board);
-    mMainWindow->actionWeb->setEnabled(mMainMode != Internet);
+    mMainWindow->actionWeb->setEnabled(false);
     mMainWindow->actionDocument->setEnabled(mMainMode != Document);
+    mMainWindow->webToolBar->hide();
 
     if (Document == mMainMode)
     {
@@ -424,37 +450,9 @@ void UBApplicationController::showBoard()
 
 void UBApplicationController::showInternet()
 {
-
-    if (UBApplication::boardController)
-    {
-        UBApplication::boardController->persistCurrentScene();
-        UBApplication::boardController->hide();
-    }
-
-    if (UBSettings::settings()->webUseExternalBrowser->get().toBool())
-    {
-        showDesktop(true);
-        UBApplication::webController->show();
-    }
-    else
-    {
-        mMainWindow->boardToolBar->hide();
-        mMainWindow->documentToolBar->hide();
-        mMainWindow->webToolBar->show();
-
-        mMainMode = Internet;
-
-        adaptToolBar();
-
-        mMainWindow->show();
-        mUninoteController->hideWindow();
-
-        UBApplication::webController->show();
-
-        UBApplication::displayManager->adjustScreens();
-
-        emit mainModeChanged(Internet);
-    }
+    // Browser mode has been removed from this edition. This guard also blocks
+    // legacy shortcuts or saved UI state from reopening it.
+    showBoard();
 }
 
 
@@ -539,16 +537,23 @@ void UBApplicationController::checkUpdate(const QUrl& url,
                 : url;
         const QString configuredUrlString = configuredUrl.toString();
 
-        // The manifest is tiny, so free GitHub acceleration endpoints are a
-        // practical zero-cost first line for networks where GitHub Raw is
-        // unavailable.  The canonical URL remains the final source of truth.
-        if (configuredUrlString.startsWith("https://raw.githubusercontent.com/",
-                                           Qt::CaseInsensitive))
-        {
-            manifestUrls.append(QUrl("https://gh-proxy.org/" + configuredUrlString));
-            manifestUrls.append(QUrl("https://gh-proxy.com/" + configuredUrlString));
-        }
-        manifestUrls.append(configuredUrl);
+        // Update metadata controls both the installer URL and its expected
+        // digest.  Fetch it only from GitHub-owned HTTPS endpoints; public
+        // proxies remain available for the much larger installer payload but
+        // are never trusted as a source of verification data.
+        appendUniqueUrl(manifestUrls, configuredUrl);
+        appendUniqueUrl(manifestUrls, QUrl(
+                "https://raw.githubusercontent.com/cheyuze/"
+                "OpenBoard-Cheyuze/main/update.json"));
+        appendUniqueUrl(manifestUrls, QUrl(
+                "https://github.com/cheyuze/OpenBoard-Cheyuze/"
+                "releases/latest/download/update.json"));
+        if (!isTrustedGitHubManifestUrl(configuredUrl))
+            qWarning() << "Ignoring untrusted update manifest URL:" << configuredUrlString;
+
+        // The initial URL argument may have come from a locally modified
+        // setting. Select the first validated entry from our trusted list.
+        jsonUrl = QUrl();
         urlIndex = 0;
         retryAttempt = 0;
     }
@@ -558,6 +563,23 @@ void UBApplicationController::checkUpdate(const QUrl& url,
         if (urlIndex < 0 || urlIndex >= manifestUrls.size())
             return;
         jsonUrl = manifestUrls.at(urlIndex);
+    }
+
+    if (!isTrustedGitHubManifestUrl(jsonUrl))
+    {
+        qWarning() << "Blocked untrusted update manifest URL:" << jsonUrl;
+        if (urlIndex + 1 < manifestUrls.size())
+        {
+            QTimer::singleShot(0, this, [this, manifestUrls, urlIndex]() {
+                checkUpdate(QUrl(), manifestUrls, urlIndex + 1, 0);
+            });
+        }
+        else if (isNoUpdateDisplayed)
+        {
+            mMainWindow->information(tr("Check for updates"),
+                                     tr("Unable to check for updates securely."));
+        }
+        return;
     }
 
     qDebug() << "Checking for update at url: " << jsonUrl.toString();
@@ -826,13 +848,21 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
     QNetworkReply *reply = downloadManager->get(request);
     const std::shared_ptr<UBUpdateDownloadMonitor> monitor =
             std::make_shared<UBUpdateDownloadMonitor>();
-    monitor->interval.start();
+
+    // A stalled proxy can keep the TCP connection alive without emitting
+    // enough downloadProgress signals for the old monitor to switch sources.
+    // Sample the latest received byte count independently every five seconds
+    // so a slow source is abandoned promptly when another source is available.
+    QTimer *speedTimer = new QTimer(progress);
+    speedTimer->setInterval(5000);
+    speedTimer->start();
 
     connect(reply, &QNetworkReply::readyRead, this, [reply, file]() {
         file->write(reply->readAll());
     });
     connect(reply, &QNetworkReply::downloadProgress, progress,
             [progress, reply, monitor, urlIndex, urls](qint64 received, qint64 total) {
+        monitor->currentReceived = received;
         if (total > 0) {
             progress->setRange(0, 100);
             progress->setValue(static_cast<int>((received * 100) / total));
@@ -844,37 +874,39 @@ void UBApplicationController::downloadUpdateInstaller(const QList<QUrl> &urls,
             progress->setRange(0, 0);
         }
 
-        // A connected but unusably slow GitHub/CDN stream does not produce a
-        // network error, so the normal retry path would never run.  Measure
-        // three consecutive five-second windows and move to the next mirror
-        // when throughput remains below 96 KiB/s.  The final source is kept
-        // running so genuinely slow networks can still finish the download.
-        const qint64 elapsed = monitor->interval.elapsed();
-        if (elapsed >= 5000)
+    });
+    connect(speedTimer, &QTimer::timeout, progress,
+            [progress, reply, monitor, speedTimer, urlIndex, urls]() {
+        const qint64 bytesInWindow = monitor->currentReceived - monitor->lastReceived;
+        const qint64 bytesPerSecond = bytesInWindow * 1000 / 5000;
+        const bool stalledBeforeStart = monitor->currentReceived == 0;
+        const bool slowWindow = stalledBeforeStart ||
+                (monitor->currentReceived > 0 && bytesPerSecond < 96 * 1024);
+
+        if (slowWindow)
+            ++monitor->slowIntervals;
+        else
+            monitor->slowIntervals = 0;
+
+        monitor->lastReceived = monitor->currentReceived;
+
+        // Switch after two consecutive five-second slow windows (about ten
+        // seconds), while leaving the final source running for slow networks.
+        if (monitor->slowIntervals >= 2 && urlIndex + 1 < urls.size())
         {
-            const qint64 bytesInWindow = received - monitor->lastReceived;
-            const qint64 bytesPerSecond = elapsed > 0
-                    ? bytesInWindow * 1000 / elapsed : 0;
-
-            if (received >= 256 * 1024 && bytesPerSecond < 96 * 1024)
-                ++monitor->slowIntervals;
-            else
-                monitor->slowIntervals = 0;
-
-            monitor->lastReceived = received;
-            monitor->interval.restart();
-
-            if (monitor->slowIntervals >= 3 && urlIndex + 1 < urls.size())
-            {
-                monitor->lowSpeedAbort = true;
-                reply->abort();
-            }
+            monitor->lowSpeedAbort = true;
+            speedTimer->stop();
+            reply->abort();
+            progress->setLabelText(
+                    tr("The current download source is too slow. Switching to a backup source..."));
         }
     });
     connect(progress, &QProgressDialog::canceled, reply, &QNetworkReply::abort);
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, file, progress, destination, urls, version,
-             expectedSha256, urlIndex, retryAttempt, monitor]() {
+             expectedSha256, urlIndex, retryAttempt, monitor, speedTimer]() {
+        speedTimer->stop();
+        speedTimer->deleteLater();
         progress->close();
         progress->deleteLater();
 

@@ -86,6 +86,68 @@
 
 #include "core/memcheck.h"
 
+namespace
+{
+    std::shared_ptr<UBDocumentProxy> findDocumentByUuid(
+            UBDocumentTreeNode *node, const QUuid &uuid)
+    {
+        if (!node || uuid.isNull())
+            return nullptr;
+
+        foreach (UBDocumentTreeNode *child, node->children())
+        {
+            if (child->nodeType() == UBDocumentTreeNode::Document)
+            {
+                const std::shared_ptr<UBDocumentProxy> proxy = child->proxyData();
+                if (proxy && !proxy->isBroken() && proxy->pageCount() > 0
+                        && proxy->uuid() == uuid)
+                {
+                    return proxy;
+                }
+            }
+            else
+            {
+                const std::shared_ptr<UBDocumentProxy> result =
+                        findDocumentByUuid(child, uuid);
+                if (result)
+                    return result;
+            }
+        }
+
+        return nullptr;
+    }
+
+    void findMostRecentlyUpdatedDocument(
+            UBDocumentTreeNode *node,
+            std::shared_ptr<UBDocumentProxy> &mostRecent,
+            QDateTime &mostRecentUpdate)
+    {
+        if (!node)
+            return;
+
+        foreach (UBDocumentTreeNode *child, node->children())
+        {
+            if (child->nodeType() == UBDocumentTreeNode::Document)
+            {
+                const std::shared_ptr<UBDocumentProxy> proxy = child->proxyData();
+                if (!proxy || proxy->isBroken() || proxy->pageCount() <= 0)
+                    continue;
+
+                const QDateTime updatedAt = proxy->lastUpdate();
+                if (!mostRecent || updatedAt > mostRecentUpdate)
+                {
+                    mostRecent = proxy;
+                    mostRecentUpdate = updatedAt;
+                }
+            }
+            else
+            {
+                findMostRecentlyUpdatedDocument(child, mostRecent, mostRecentUpdate);
+            }
+        }
+    }
+}
+
 UBBoardController::UBBoardController(UBMainWindow* mainWindow)
     : UBDocumentContainer(mainWindow->centralWidget())
     , mMainWindow(mainWindow)
@@ -150,11 +212,36 @@ void UBBoardController::init()
     connect(persistenceManager, &UBPersistenceManager::documentSceneMoved, this, &UBBoardController::documentSceneMoved);
     connect(persistenceManager, &UBPersistenceManager::documentSceneDeleted, this, &UBBoardController::documentSceneDeleted);
 
-    std::shared_ptr<UBDocumentProxy> doc = UBPersistenceManager::persistenceManager()->createNewDocument();
+    UBDocumentTreeModel *documentModel = persistenceManager->mDocumentTreeStructureModel;
+    UBDocumentTreeNode *myDocumentsNode = documentModel
+            ? documentModel->nodeFromIndex(documentModel->myDocumentsIndex()) : nullptr;
+
+    std::shared_ptr<UBDocumentProxy> doc;
+    const QString lastDocumentUuid = UBSettings::settings()
+            ->appLastSessionDocumentUUID->get().toString().trimmed();
+    if (!lastDocumentUuid.isEmpty())
+        doc = findDocumentByUuid(myDocumentsNode, QUuid(lastDocumentUuid));
+
+    // Existing installations do not yet have LastSessionDocumentUUID. In
+    // that case open the most recently edited board instead of creating an
+    // empty document on the first launch after upgrading.
+    if (!doc)
+    {
+        QDateTime mostRecentUpdate;
+        findMostRecentlyUpdatedDocument(myDocumentsNode, doc, mostRecentUpdate);
+    }
 
     if (doc)
     {
-        mInitialDocumentScene = setActiveDocumentScene(doc);
+        if (!setActiveDocumentScene(doc, doc->lastVisitedSceneIndex()))
+            doc.reset();
+    }
+
+    if (!doc)
+    {
+        doc = persistenceManager->createNewDocument();
+        if (doc)
+            mInitialDocumentScene = setActiveDocumentScene(doc);
     }
 
     connect(UBApplication::displayManager, &UBDisplayManager::screenRolesAssigned, this, [this](){
@@ -423,8 +510,6 @@ void UBBoardController::setupToolbar()
     mMainWindow->boardToolBar->insertSeparator(mMainWindow->actionBackgrounds);
 
     //-----------------------------------------------------------//
-
-    UBApplication::app()->insertSpaceToToolbarBeforeAction(mMainWindow->boardToolBar, mMainWindow->actionPodcast);
 
     UBApplication::app()->decorateActionMenu(mMainWindow->actionMenu);
 
@@ -1755,6 +1840,8 @@ std::shared_ptr<UBGraphicsScene> UBBoardController::setActiveDocumentScene(std::
         }
 
         pDocumentProxy->setLastVisitedSceneIndex(mActiveSceneIndex);
+        UBSettings::settings()->appLastSessionDocumentUUID->set(
+                UBStringUtils::toCanonicalUuid(pDocumentProxy->uuid()));
 
         UBFeaturesController* featuresController = paletteManager()->featuresWidget()->getFeaturesController();
 

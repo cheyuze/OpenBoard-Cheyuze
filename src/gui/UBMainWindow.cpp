@@ -54,6 +54,13 @@ UBMainWindow::UBMainWindow(QWidget *parent, Qt::WindowFlags flags)
 {
     Ui::MainWindow::setupUi(this);
 
+    // The team edition intentionally does not expose OpenBoard's embedded
+    // browser mode. Keep the underlying web components available for local
+    // widgets and startup information, but remove every user-facing entry.
+    actionWeb->setVisible(false);
+    actionWeb->setEnabled(false);
+    webToolBar->hide();
+
     mpDownloadWidget = new UBDownloadWidget();
     mpDownloadWidget->setWindowModality(Qt::ApplicationModal);
 

@@ -1437,6 +1437,14 @@ Do you wish to override the security check and continue ?   </source>
     <message><source>A new version %1 is available.</source><translation>发现新版本 %1。</translation></message>
     <message><source>Current version: %1</source><translation>当前版本：%1</translation></message>
     <message><source>What's new:</source><translation>更新内容：</translation></message>
+    <message><source>Download from domestic mirrors</source><translation>从国内加速源下载</translation></message>
+    <message><source>Download from Baidu Netdisk</source><translation>从百度网盘下载</translation></message>
+    <message><source>Baidu Netdisk download</source><translation>百度网盘下载</translation></message>
+    <message><source>Baidu Netdisk extraction code: %1</source><translation>百度网盘提取码：%1</translation></message>
+    <message><source>The Baidu Netdisk share page has been opened in your browser.\n\n%1</source><translation>百度网盘分享页面已在浏览器中打开。\n\n%1</translation></message>
+    <message><source>No extraction code was provided.</source><translation>未提供提取码。</translation></message>
+    <message><source>Unable to open the Baidu Netdisk share page.</source><translation>无法打开百度网盘分享页面。</translation></message>
+    <message><source>The current download source is too slow. Switching to a backup source...</source><translation>当前下载源速度过慢，正在切换备用下载源……</translation></message>
     <message><source>Download update</source><translation>下载更新</translation></message>
     <message><source>Remind me later</source><translation>稍后提醒</translation></message>
     <message><source>You are using the latest version (%1).</source><translation>当前已是最新版本（%1）。</translation></message>
