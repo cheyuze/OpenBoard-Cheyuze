@@ -1386,6 +1386,22 @@ Do you wish to override the security check and continue ?   </source>
         <translation>页面大小</translation>
     </message>
     <message>
+        <source>Startup Settings</source>
+        <translation>启动设置</translation>
+    </message>
+    <message>
+        <source>Restore the last whiteboard</source>
+        <translation>自动打开上次白板</translation>
+    </message>
+    <message>
+        <source>Create a new whiteboard</source>
+        <translation>自动新建白板</translation>
+    </message>
+    <message>
+        <source>Show document history</source>
+        <translation>显示历史记录</translation>
+    </message>
+    <message>
         <location filename="../../src/core/UBApplication.cpp" line="599"/>
         <source>Podcast</source>
         <translation>播客</translation>
@@ -3976,23 +3992,23 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <location filename="../forms/preferences.ui" line="537"/>
-        <source>Mode</source>
-        <translation>模式</translation>
+        <source>Startup</source>
+        <translation>启动设置</translation>
     </message>
     <message>
         <location filename="../forms/preferences.ui" line="545"/>
-        <source>Mode to start in:</source>
-        <translation>启动模式：</translation>
+        <source>When OpenBoard starts:</source>
+        <translation>打开 OpenBoard 时：</translation>
     </message>
     <message>
         <location filename="../forms/preferences.ui" line="553"/>
-        <source>Board</source>
-        <translation>演示板</translation>
+        <source>Restore the last whiteboard</source>
+        <translation>自动打开上次白板</translation>
     </message>
     <message>
         <location filename="../forms/preferences.ui" line="558"/>
-        <source>Desktop</source>
-        <translation>桌面</translation>
+        <source>Create a new whiteboard</source>
+        <translation>自动新建白板</translation>
     </message>
     <message>
         <location filename="../forms/preferences.ui" line="1020"/>
@@ -4097,8 +4113,8 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <location filename="../forms/preferences.ui" line="563"/>
-        <source>Documents</source>
-        <translation type="unfinished">文档</translation>
+        <source>Show document history</source>
+        <translation>显示历史记录</translation>
     </message>
     <message>
         <location filename="../forms/preferences.ui" line="624"/>

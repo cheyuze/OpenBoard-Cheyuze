@@ -83,6 +83,7 @@ plugins/cffadaptor/objects
 # Translation files #
 #####################
 *.qm
+!resources/i18n/qtbase_zh_CN.qm
 
 
 # Others #

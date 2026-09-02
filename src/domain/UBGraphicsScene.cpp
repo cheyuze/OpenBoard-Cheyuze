@@ -339,6 +339,7 @@ UBGraphicsScene::UBGraphicsScene(std::shared_ptr<UBDocumentProxy> document, bool
     , mZLayerController(new UBZLayerController(this))
     , mpLastPolygon(NULL)
     , mTempPolygon(NULL)
+    , mShapeFillPreview(NULL)
     , mDrawWithCompass(false)
     , mCurrentPolygon(0)
     , mSelectionFrame(0)
@@ -368,6 +369,12 @@ UBGraphicsScene::UBGraphicsScene(std::shared_ptr<UBDocumentProxy> document, bool
 //    connect(this, SIGNAL(selectionChanged()), this, SLOT(selectionChangedProcessing()));
     connect(UBApplication::undoStack.data(), SIGNAL(indexChanged(int)), this, SLOT(updateSelectionFrameWrapper(int)));
     connect(UBDrawingController::drawingController(), SIGNAL(stylusToolChanged(int,int)), this, SLOT(stylusToolChanged(int,int)));
+    connect(UBDrawingController::drawingController(),
+            &UBDrawingController::lineGeometryModeChanged, this,
+            [this](int mode) {
+        if (mode != UBDrawingController::PolygonGeometry)
+            cancelPolygonDrawing();
+    });
     connect(UBApplication::boardController, &UBBoardController::zoomChanged, this, &UBGraphicsScene::zoomChanged);
 }
 
@@ -402,6 +409,15 @@ void UBGraphicsScene::selectionChangedProcessing()
 bool UBGraphicsScene::inputDevicePress(const QPointF& scenePos, const qreal& pressure, Qt::KeyboardModifiers modifiers)
 {
     bool accepted = false;
+
+    UBDrawingController* drawingController = UBDrawingController::drawingController();
+    if (drawingController->stylusTool() == UBStylusTool::Line
+            && drawingController->lineGeometryMode()
+               == UBDrawingController::PolygonGeometry)
+    {
+        addPolygonVertex(scenePos);
+        return true;
+    }
 
     if (mInputDeviceIsPressed) {
         qWarning() << "scene received input device pressed, without input device release, muting event as input device move";
@@ -466,7 +482,11 @@ bool UBGraphicsScene::inputDevicePress(const QPointF& scenePos, const qreal& pre
                 }
 
                 moveTo(pos);
-                drawLineTo(pos, width, isLine);
+                if (currentTool == UBStylusTool::Line)
+                    drawConfiguredLineTo(pos, width,
+                            modifiers.testFlag(Qt::ShiftModifier));
+                else
+                    drawLineTo(pos, width, isLine);
 
                 mCurrentStroke->addPoint(pos, width);
             }
@@ -506,6 +526,12 @@ bool UBGraphicsScene::inputDeviceMove(const QPointF& scenePos, const qreal& pres
 
     UBDrawingController *dc = UBDrawingController::drawingController();
     UBStylusTool::Enum currentTool = (UBStylusTool::Enum)dc->stylusTool();
+    if (currentTool == UBStylusTool::Line
+            && dc->lineGeometryMode() == UBDrawingController::PolygonGeometry)
+    {
+        updatePolygonPreview(scenePos);
+        return polygonDrawingActive();
+    }
     const bool straightLine = currentTool == UBStylusTool::Line || mTemporaryStraightLine;
 
     QPointF position = QPointF(scenePos);
@@ -556,7 +582,8 @@ bool UBGraphicsScene::inputDeviceMove(const QPointF& scenePos, const qreal& pres
 
             if (straightLine || dc->activeRuler())
             {
-                if (UBDrawingController::drawingController()->stylusTool() != UBStylusTool::Marker)
+                if (UBDrawingController::drawingController()->stylusTool() != UBStylusTool::Marker
+                        && currentTool != UBStylusTool::Line)
                 if(NULL != mpLastPolygon && NULL != mCurrentStroke && mAddedItems.size() > 0){
                     UBCoreGraphicsScene::removeItemFromDeletion(mpLastPolygon);
                     mAddedItems.remove(mpLastPolygon);
@@ -611,16 +638,24 @@ bool UBGraphicsScene::inputDeviceMove(const QPointF& scenePos, const qreal& pres
                     }
                 }
 
-                QLineF radius(mPreviousPoint, position);
-                auto angle = radius.angle();
-                QLineF viewRadius{UBApplication::boardController->controlView()->mapFromScene(radius.p1()),
-                        UBApplication::boardController->controlView()->mapFromScene(radius.p2())};
-                QPoint offset = - viewRadius.p2().toPoint();
-                viewRadius.setLength(viewRadius.length() + 30);
-                offset += viewRadius.p2().toPoint();
-                UBApplication::boardController->setCursorFromAngle(angle, offset);
+                if (currentTool != UBStylusTool::Line
+                        || dc->lineGeometryMode() == UBDrawingController::StraightLineGeometry)
+                {
+                    QLineF radius(mPreviousPoint, position);
+                    auto angle = radius.angle();
+                    QLineF viewRadius{UBApplication::boardController->controlView()->mapFromScene(radius.p1()),
+                            UBApplication::boardController->controlView()->mapFromScene(radius.p2())};
+                    QPoint offset = - viewRadius.p2().toPoint();
+                    viewRadius.setLength(viewRadius.length() + 30);
+                    offset += viewRadius.p2().toPoint();
+                    UBApplication::boardController->setCursorFromAngle(angle, offset);
+                }
 
-                drawLineTo(position, width, true);
+                if (currentTool == UBStylusTool::Line)
+                    drawConfiguredLineTo(position, width,
+                            modifiers.testFlag(Qt::ShiftModifier));
+                else
+                    drawLineTo(position, width, true);
             }
 
             else {
@@ -656,7 +691,9 @@ bool UBGraphicsScene::inputDeviceMove(const QPointF& scenePos, const qreal& pres
                     // scenePos, to make the drawing feel more responsive. This line is then deleted if a new segment is
                     // added to the stroke. (Or it is added to the stroke when we stop drawing)
 
+                    QRectF previewDirtyRect;
                     if (mTempPolygon) {
+                        previewDirtyRect = mTempPolygon->sceneBoundingRect();
                         removeItem(mTempPolygon);
                         mTempPolygon = NULL;
                     }
@@ -667,6 +704,8 @@ bool UBGraphicsScene::inputDeviceMove(const QPointF& scenePos, const qreal& pres
 
                         mTempPolygon = lineToPolygonItem(QLineF(lastDrawnPoint, scenePos), mPreviousWidth, width);
                         addItem(mTempPolygon);
+                        previewDirtyRect = previewDirtyRect.united(mTempPolygon->sceneBoundingRect());
+                        repaintStrokePreview(previewDirtyRect);
                     }
                 }
             }
@@ -755,6 +794,20 @@ bool UBGraphicsScene::inputDeviceRelease(int tool, Qt::KeyboardModifiers modifie
 
 
             UBGraphicsStrokesGroup* pStrokes = new UBGraphicsStrokesGroup();
+
+            // Closed geometric shapes may have a separately rendered fill.
+            // Keep it in the same selectable/undoable group as the outline,
+            // but do not attach it to the outline stroke: it is persisted as
+            // a regular SVG polygon with its own opacity.
+            if (mShapeFillPreview)
+            {
+                UBGraphicsPolygonItem* fill = mShapeFillPreview;
+                mShapeFillPreview = nullptr;
+                removeItem(fill);
+                UBCoreGraphicsScene::removeItemFromDeletion(fill);
+                fill->setStrokesGroup(pStrokes);
+                pStrokes->addToGroup(fill);
+            }
 
             // Remove the strokes that were just drawn here and replace them by a stroke item
             foreach(UBGraphicsPolygonItem* poly, mCurrentStroke->polygons()){
@@ -878,8 +931,6 @@ void UBGraphicsScene::drawMarkerCircle(const QPointF &pPoint)
 
 void UBGraphicsScene::drawPenCircle(const QPointF &pPoint)
 {
-    QCursor cursor;
-
     if (mPenCircle && UBSettings::settings()->showPenPreviewCircle->get().toBool() &&
         UBSettings::settings()->currentPenWidth() >= UBSettings::settings()->penPreviewFromSize->get().toInt()) {
         qreal penDiameter = UBSettings::settings()->currentPenWidth();
@@ -890,18 +941,20 @@ void UBGraphicsScene::drawPenCircle(const QPointF &pPoint)
         mPenCircle->setRect(QRectF(pPoint.x() - penRadius, pPoint.y() - penRadius,
                                       penDiameter, penDiameter));
         mPenCircle->show();
-        cursor = Qt::BlankCursor;
     }
     else
     {
-        cursor = UBResources::resources()->penCursor;
+        // Avoid leaving a stale preview behind after reducing the pen width.
+        hidePenCircle();
     }
 
     if (!UBDrawingController::drawingController()->activeRuler())
     {
-        // set cursor only if no active ruler
+        // The coloured pencil is the pen tool's primary position indicator.
+        // Keep it visible while hovering as well as while writing; the optional
+        // circle above is only an additional width preview.
         if (controlView() && controlView()->viewport())
-            controlView()->viewport()->setCursor(cursor);
+            controlView()->viewport()->setCursor(UBResources::resources()->penCursor);
     }
 }
 
@@ -971,11 +1024,13 @@ void UBGraphicsScene::drawLineTo(const QPointF &pEndPoint, const qreal &startWid
     if (initialWidth == endWidth)
         initialWidth = mPreviousWidth;
 
+    QRectF previewDirtyRect;
     if (bLineStyle) {
         QSetIterator<QGraphicsItem*> itItems(mAddedItems);
 
         while (itItems.hasNext()) {
             QGraphicsItem* item = itItems.next();
+            previewDirtyRect = previewDirtyRect.united(item->sceneBoundingRect());
             removeItem(item);
         }
         mAddedItems.clear();
@@ -983,6 +1038,11 @@ void UBGraphicsScene::drawLineTo(const QPointF &pEndPoint, const qreal &startWid
 
     UBGraphicsPolygonItem *polygonItem = lineToPolygonItem(QLineF(mPreviousPoint, pEndPoint), initialWidth, endWidth);
     addPolygonItemToCurrentStroke(polygonItem);
+
+    if (bLineStyle) {
+        previewDirtyRect = previewDirtyRect.united(polygonItem->sceneBoundingRect());
+        repaintStrokePreview(previewDirtyRect);
+    }
 
     if (!bLineStyle) {
         mPreviousPoint = pEndPoint;
@@ -1008,7 +1068,7 @@ void UBGraphicsScene::drawCurve(const QList<QPointF>& points, qreal startWidth, 
     mPreviousPoint = points.last();
 }
 
-void UBGraphicsScene::addPolygonItemToCurrentStroke(UBGraphicsPolygonItem* polygonItem)
+void UBGraphicsScene::addPolygonItemToCurrentStroke(UBGraphicsPolygonItem* polygonItem, bool repaint)
 {
     if (!polygonItem->brush().isOpaque())
     {
@@ -1027,6 +1087,8 @@ void UBGraphicsScene::addPolygonItemToCurrentStroke(UBGraphicsPolygonItem* polyg
 
     // Here we add the item to the scene
     addItem(polygonItem);
+    if (repaint)
+        repaintStrokePreview(polygonItem->sceneBoundingRect());
     if (!mCurrentStroke)
         mCurrentStroke = new UBGraphicsStroke(shared_from_this());
 
@@ -1034,6 +1096,771 @@ void UBGraphicsScene::addPolygonItemToCurrentStroke(UBGraphicsPolygonItem* polyg
 
     mPreviousPolygonItems.append(polygonItem);
 
+}
+
+void UBGraphicsScene::drawConfiguredLineTo(const QPointF& endPoint, qreal width,
+        bool constrainAspectRatio)
+{
+    QRectF previewDirtyRect;
+
+    // A configured line/shape can contain several polygons (all dashes or all
+    // four sides). Remove the complete previous preview before rebuilding it.
+    //
+    // UBGraphicsPolygonItem owns the bookkeeping which detaches itself from
+    // its UBGraphicsStroke in its destructor.  Removing it from the stroke
+    // here first leaves the item's mStroke pointer intact; deleting the last
+    // polygon then deletes the stroke a second time and leaves mCurrentStroke
+    // dangling.  Let every polygon detach itself, and clear our non-owning
+    // pointer after the whole previous preview has been destroyed.
+    if (mCurrentStroke)
+    {
+        const QList<UBGraphicsPolygonItem*> oldPolygons = mCurrentStroke->polygons();
+        foreach (UBGraphicsPolygonItem* polygon, oldPolygons)
+        {
+            if (!polygon)
+                continue;
+
+            previewDirtyRect = previewDirtyRect.united(polygon->sceneBoundingRect());
+            mAddedItems.remove(polygon);
+            mPreviousPolygonItems.removeAll(polygon);
+            UBCoreGraphicsScene::removeItemFromDeletion(polygon);
+            removeItem(polygon);
+            delete polygon;
+        }
+
+        // On the initial mouse press the stroke exists but contains no polygon
+        // yet; inputDevicePress() still has to add its first point to it.  Only
+        // clear the pointer when an actual preview was destroyed (the final
+        // polygon destructor then owns deletion of the now-empty stroke).
+        if (!oldPolygons.isEmpty())
+            mCurrentStroke = nullptr;
+    }
+    mpLastPolygon = nullptr;
+
+    UBDrawingController* drawingController = UBDrawingController::drawingController();
+    const UBDrawingController::LineGeometryMode geometry = drawingController->lineGeometryMode();
+    QVector<QLineF> shapeSegments;
+    QVector<QLineF> hiddenShapeSegments;
+    QPolygonF closedPolygon;
+
+    auto appendPolyline = [&shapeSegments](const QPolygonF& points) {
+        for (int i = 1; i < points.size(); ++i)
+        {
+            if (QLineF(points.at(i - 1), points.at(i)).length() > 0.01)
+                shapeSegments << QLineF(points.at(i - 1), points.at(i));
+        }
+    };
+
+    auto appendClosedPolyline = [&appendPolyline](const QPolygonF& points) {
+        if (points.isEmpty())
+            return;
+        QPolygonF outline = points;
+        outline << points.first();
+        appendPolyline(outline);
+    };
+
+    auto appendHiddenPolyline = [&hiddenShapeSegments](const QPolygonF& points) {
+        for (int i = 1; i < points.size(); ++i)
+        {
+            if (QLineF(points.at(i - 1), points.at(i)).length() > 0.01)
+                hiddenShapeSegments << QLineF(points.at(i - 1), points.at(i));
+        }
+    };
+
+    auto ellipsePolygon = [](const QPointF& center, qreal radiusX,
+            qreal radiusY, int segmentCount = 64) {
+        QPolygonF points;
+        const qreal fullCircle = 6.28318530717958647692;
+        for (int i = 0; i < segmentCount; ++i)
+        {
+            const qreal angle = fullCircle * i / segmentCount;
+            points << center + QPointF(radiusX * qCos(angle), radiusY * qSin(angle));
+        }
+        return points;
+    };
+
+    auto regularPolygon = [](const QRectF& bounds, int sideCount) {
+        QPolygonF points;
+        const QPointF center = bounds.center();
+        const qreal radiusX = bounds.width() / 2.0;
+        const qreal radiusY = bounds.height() / 2.0;
+        const qreal fullCircle = 6.28318530717958647692;
+        for (int i = 0; i < sideCount; ++i)
+        {
+            const qreal angle = -1.57079632679489661923
+                    + fullCircle * i / sideCount;
+            points << center + QPointF(radiusX * qCos(angle), radiusY * qSin(angle));
+        }
+        return points;
+    };
+
+    auto appendArrowHead = [&shapeSegments](const QPointF& start,
+            const QPointF& tip, qreal headLength) {
+        QLineF direction(start, tip);
+        if (direction.length() <= 0.01)
+            return;
+
+        // Do not start from a null QLineF: setLength() cannot establish a
+        // reliable direction for a zero-length line on every Qt version.
+        QLineF first(tip, tip + QPointF(headLength, 0.0));
+        first.setAngle(direction.angle() + 150.0);
+        QLineF second(tip, tip + QPointF(headLength, 0.0));
+        second.setAngle(direction.angle() - 150.0);
+        shapeSegments << first << second;
+    };
+
+    if (geometry == UBDrawingController::StraightLineGeometry)
+    {
+        shapeSegments << QLineF(mPreviousPoint, endPoint);
+    }
+    else if (geometry != UBDrawingController::PolygonGeometry)
+    {
+        QPointF delta = endPoint - mPreviousPoint;
+        if (constrainAspectRatio && geometry != UBDrawingController::ArrowGeometry
+                && geometry != UBDrawingController::AxesGeometry
+                && geometry != UBDrawingController::NumberLineGeometry)
+        {
+            const qreal side = qMax(qAbs(delta.x()), qAbs(delta.y()));
+            const qreal signedWidth = delta.x() < 0.0 ? -side : side;
+            const qreal signedHeight = delta.y() < 0.0 ? -side : side;
+            delta = QPointF(signedWidth, signedHeight);
+        }
+
+        const bool lineBasedShape = geometry == UBDrawingController::ArrowGeometry
+                || geometry == UBDrawingController::NumberLineGeometry;
+        const bool validLineBasedShape = lineBasedShape
+                && QLineF(mPreviousPoint, endPoint).length() > 0.01;
+        const bool validBox = qAbs(delta.x()) > 0.01 && qAbs(delta.y()) > 0.01;
+        if (validLineBasedShape || validBox)
+        {
+            const QRectF bounds(mPreviousPoint, mPreviousPoint + delta);
+            const QRectF normalized = bounds.normalized();
+            if (geometry == UBDrawingController::SquareGeometry)
+            {
+                closedPolygon << normalized.topLeft() << normalized.topRight()
+                              << normalized.bottomRight() << normalized.bottomLeft();
+            }
+            else if (geometry == UBDrawingController::CircleGeometry)
+            {
+                const QPointF center = normalized.center();
+                const qreal radiusX = normalized.width() / 2.0;
+                const qreal radiusY = normalized.height() / 2.0;
+                const int segmentCount = 96;
+                const qreal fullCircle = 6.28318530717958647692;
+                for (int i = 0; i < segmentCount; ++i)
+                {
+                    const qreal angle = (fullCircle * i) / segmentCount;
+                    closedPolygon << center + QPointF(radiusX * qCos(angle),
+                            radiusY * qSin(angle));
+                }
+            }
+            else if (geometry == UBDrawingController::TriangleGeometry)
+            {
+                closedPolygon << QPointF(normalized.center().x(), normalized.top())
+                              << normalized.bottomRight() << normalized.bottomLeft();
+            }
+            else if (geometry == UBDrawingController::ArrowGeometry)
+            {
+                QLineF shaft(mPreviousPoint, endPoint);
+                shapeSegments << shaft;
+                const qreal headLength = qBound(12.0, shaft.length() * 0.18, 42.0);
+                appendArrowHead(mPreviousPoint, endPoint, headLength);
+            }
+            else if (geometry == UBDrawingController::AxesGeometry)
+            {
+                const QPointF center = normalized.center();
+                const QPointF left(normalized.left(), center.y());
+                const QPointF right(normalized.right(), center.y());
+                const QPointF top(center.x(), normalized.top());
+                const QPointF bottom(center.x(), normalized.bottom());
+                shapeSegments << QLineF(left, right) << QLineF(bottom, top);
+                const qreal headLength = qBound(10.0,
+                        qMin(normalized.width(), normalized.height()) * 0.10, 28.0);
+                appendArrowHead(left, right, headLength);
+                appendArrowHead(bottom, top, headLength);
+            }
+            else if (geometry == UBDrawingController::ParabolaGeometry)
+            {
+                QPolygonF curve;
+                const bool opensUp = delta.y() >= 0.0;
+                const int segmentCount = 80;
+                for (int i = 0; i <= segmentCount; ++i)
+                {
+                    const qreal t = -1.0 + 2.0 * i / segmentCount;
+                    const qreal x = normalized.center().x()
+                            + t * normalized.width() / 2.0;
+                    const qreal y = opensUp
+                            ? normalized.bottom() - t * t * normalized.height()
+                            : normalized.top() + t * t * normalized.height();
+                    curve << QPointF(x, y);
+                }
+                appendPolyline(curve);
+            }
+            else if (geometry == UBDrawingController::HyperbolaGeometry)
+            {
+                QPolygonF firstBranch;
+                QPolygonF secondBranch;
+                const QPointF center = normalized.center();
+                const qreal radiusX = normalized.width() / 2.0;
+                const qreal radiusY = normalized.height() / 2.0;
+                const int segmentCount = 48;
+                const qreal minimumT = 0.18;
+                for (int i = 0; i <= segmentCount; ++i)
+                {
+                    const qreal t = minimumT
+                            + (1.0 - minimumT) * i / segmentCount;
+                    const qreal x = radiusX * t;
+                    const qreal y = radiusY * minimumT / t;
+                    firstBranch << center + QPointF(x, -y);
+                    secondBranch << center + QPointF(-x, y);
+                }
+                appendPolyline(firstBranch);
+                appendPolyline(secondBranch);
+            }
+            else if (geometry == UBDrawingController::SineGeometry)
+            {
+                QPolygonF curve;
+                const int segmentCount = 96;
+                const qreal fullCircle = 6.28318530717958647692;
+                for (int i = 0; i <= segmentCount; ++i)
+                {
+                    const qreal t = static_cast<qreal>(i) / segmentCount;
+                    const qreal x = normalized.left() + t * normalized.width();
+                    const qreal y = normalized.center().y()
+                            - qSin(fullCircle * t) * normalized.height() / 2.0;
+                    curve << QPointF(x, y);
+                }
+                appendPolyline(curve);
+            }
+            else if (geometry == UBDrawingController::NumberLineGeometry)
+            {
+                const QLineF axis(mPreviousPoint, endPoint);
+                shapeSegments << axis;
+                const qreal headLength = qBound(10.0, axis.length() * 0.07, 26.0);
+                appendArrowHead(mPreviousPoint, endPoint, headLength);
+                appendArrowHead(endPoint, mPreviousPoint, headLength);
+
+                const qreal tickHalfLength = qBound(4.0,
+                        axis.length() * 0.018, 10.0);
+                const QPointF normal(-axis.dy() / axis.length(),
+                        axis.dx() / axis.length());
+                const int tickCount = 9;
+                for (int i = 1; i <= tickCount; ++i)
+                {
+                    const QPointF position = axis.pointAt(
+                            static_cast<qreal>(i) / (tickCount + 1));
+                    shapeSegments << QLineF(position - normal * tickHalfLength,
+                            position + normal * tickHalfLength);
+                }
+            }
+            else if (geometry == UBDrawingController::ParallelogramGeometry)
+            {
+                const qreal skew = normalized.width() * 0.22;
+                closedPolygon << QPointF(normalized.left() + skew, normalized.top())
+                              << normalized.topRight()
+                              << QPointF(normalized.right() - skew, normalized.bottom())
+                              << normalized.bottomLeft();
+            }
+            else if (geometry == UBDrawingController::TrapezoidGeometry)
+            {
+                const qreal inset = normalized.width() * 0.20;
+                closedPolygon << QPointF(normalized.left() + inset, normalized.top())
+                              << QPointF(normalized.right() - inset, normalized.top())
+                              << normalized.bottomRight() << normalized.bottomLeft();
+            }
+            else if (geometry == UBDrawingController::PentagonGeometry)
+            {
+                closedPolygon = regularPolygon(normalized, 5);
+            }
+            else if (geometry == UBDrawingController::HexagonGeometry)
+            {
+                closedPolygon = regularPolygon(normalized, 6);
+            }
+            else if (geometry == UBDrawingController::CubeGeometry
+                    || geometry == UBDrawingController::CuboidGeometry)
+            {
+                QRectF solidBounds = normalized;
+                if (geometry == UBDrawingController::CubeGeometry)
+                {
+                    const qreal side = qMin(normalized.width(), normalized.height());
+                    solidBounds = QRectF(normalized.center().x() - side / 2.0,
+                            normalized.center().y() - side / 2.0, side, side);
+                }
+
+                const qreal depth = qMin(solidBounds.width(), solidBounds.height()) * 0.22;
+                const QPointF frontTopLeft(solidBounds.left(), solidBounds.top() + depth);
+                const QPointF frontTopRight(solidBounds.right() - depth,
+                        solidBounds.top() + depth);
+                const QPointF frontBottomRight(solidBounds.right() - depth,
+                        solidBounds.bottom());
+                const QPointF frontBottomLeft(solidBounds.left(), solidBounds.bottom());
+                const QPointF backTopLeft(solidBounds.left() + depth, solidBounds.top());
+                const QPointF backTopRight(solidBounds.right(), solidBounds.top());
+                const QPointF backBottomRight(solidBounds.right(),
+                        solidBounds.bottom() - depth);
+                const QPointF backBottomLeft(solidBounds.left() + depth,
+                        solidBounds.bottom() - depth);
+
+                closedPolygon << frontBottomLeft << frontTopLeft << backTopLeft
+                              << backTopRight << backBottomRight << frontBottomRight;
+                shapeSegments << QLineF(frontTopLeft, frontTopRight)
+                              << QLineF(frontTopRight, frontBottomRight)
+                              << QLineF(frontTopRight, backTopRight);
+                hiddenShapeSegments << QLineF(backTopLeft, backBottomLeft)
+                                    << QLineF(backBottomLeft, backBottomRight)
+                                    << QLineF(frontBottomLeft, backBottomLeft);
+            }
+            else if (geometry == UBDrawingController::CylinderGeometry)
+            {
+                const qreal ellipseRadiusY = normalized.height() * 0.14;
+                const qreal radiusX = normalized.width() / 2.0;
+                const QPointF topCenter(normalized.center().x(),
+                        normalized.top() + ellipseRadiusY);
+                const QPointF bottomCenter(normalized.center().x(),
+                        normalized.bottom() - ellipseRadiusY);
+                const QPolygonF topEllipse = ellipsePolygon(topCenter, radiusX,
+                        ellipseRadiusY);
+                const QPolygonF bottomEllipse = ellipsePolygon(bottomCenter, radiusX,
+                        ellipseRadiusY);
+                closedPolygon << QPointF(normalized.left(), topCenter.y())
+                              << QPointF(normalized.left(), bottomCenter.y());
+                for (int i = bottomEllipse.size() / 2; i >= 0; --i)
+                    closedPolygon << bottomEllipse.at(i);
+                closedPolygon << QPointF(normalized.right(), topCenter.y());
+                for (int i = topEllipse.size() - 1;
+                     i >= topEllipse.size() / 2; --i)
+                    closedPolygon << topEllipse.at(i);
+                QPolygonF topFrontArc;
+                QPolygonF bottomBackArc;
+                for (int i = 0; i <= topEllipse.size() / 2; ++i)
+                    topFrontArc << topEllipse.at(i);
+                for (int i = bottomEllipse.size() / 2;
+                     i < bottomEllipse.size(); ++i)
+                    bottomBackArc << bottomEllipse.at(i);
+                bottomBackArc << bottomEllipse.first();
+                appendPolyline(topFrontArc);
+                appendHiddenPolyline(bottomBackArc);
+            }
+            else if (geometry == UBDrawingController::ConeGeometry)
+            {
+                const QPointF apex(normalized.center().x(), normalized.top());
+                const qreal ellipseRadiusY = normalized.height() * 0.12;
+                const QPointF baseCenter(normalized.center().x(),
+                        normalized.bottom() - ellipseRadiusY);
+                const QPolygonF baseEllipse = ellipsePolygon(baseCenter,
+                        normalized.width() / 2.0, ellipseRadiusY);
+                closedPolygon << apex << QPointF(normalized.right(), baseCenter.y());
+                for (int i = 0; i <= baseEllipse.size() / 2; ++i)
+                    closedPolygon << baseEllipse.at(i);
+                QPolygonF hiddenBaseArc;
+                for (int i = baseEllipse.size() / 2; i < baseEllipse.size(); ++i)
+                    hiddenBaseArc << baseEllipse.at(i);
+                hiddenBaseArc << baseEllipse.first();
+                appendHiddenPolyline(hiddenBaseArc);
+            }
+            else if (geometry == UBDrawingController::SphereGeometry)
+            {
+                const QPointF center = normalized.center();
+                closedPolygon = ellipsePolygon(center, normalized.width() / 2.0,
+                        normalized.height() / 2.0, 80);
+                const QPolygonF latitude = ellipsePolygon(center,
+                        normalized.width() / 2.0, normalized.height() * 0.14, 64);
+                const QPolygonF longitude = ellipsePolygon(center,
+                        normalized.width() * 0.14, normalized.height() / 2.0, 64);
+                QPolygonF frontLatitude;
+                QPolygonF backLatitude;
+                QPolygonF frontLongitude;
+                QPolygonF backLongitude;
+                for (int i = 0; i <= latitude.size() / 2; ++i)
+                    frontLatitude << latitude.at(i);
+                for (int i = latitude.size() / 2; i < latitude.size(); ++i)
+                    backLatitude << latitude.at(i);
+                backLatitude << latitude.first();
+                for (int i = longitude.size() / 4;
+                     i <= longitude.size() * 3 / 4; ++i)
+                    frontLongitude << longitude.at(i);
+                for (int i = longitude.size() * 3 / 4;
+                     i < longitude.size(); ++i)
+                    backLongitude << longitude.at(i);
+                for (int i = 0; i <= longitude.size() / 4; ++i)
+                    backLongitude << longitude.at(i);
+                appendPolyline(frontLatitude);
+                appendPolyline(frontLongitude);
+                appendHiddenPolyline(backLatitude);
+                appendHiddenPolyline(backLongitude);
+            }
+            else if (geometry == UBDrawingController::PyramidGeometry)
+            {
+                const QPointF apex(normalized.center().x(), normalized.top());
+                const QPointF baseLeft(normalized.left(), normalized.bottom() * 0.85
+                        + normalized.top() * 0.15);
+                const QPointF baseBack(normalized.center().x(), normalized.top()
+                        + normalized.height() * 0.68);
+                const QPointF baseRight(normalized.right(), baseLeft.y());
+                const QPointF baseFront(normalized.center().x(), normalized.bottom());
+                closedPolygon << apex << baseRight << baseFront << baseLeft;
+                shapeSegments << QLineF(apex, baseFront);
+                hiddenShapeSegments << QLineF(baseLeft, baseBack)
+                                    << QLineF(baseBack, baseRight)
+                                    << QLineF(apex, baseBack);
+            }
+            else if (geometry == UBDrawingController::TriangularPrismGeometry)
+            {
+                const qreal depthX = normalized.width() * 0.28;
+                const qreal depthY = normalized.height() * 0.18;
+                const QPointF frontTop(normalized.left() + normalized.width() * 0.35,
+                        normalized.top() + depthY);
+                const QPointF frontLeft(normalized.left(), normalized.bottom());
+                const QPointF frontRight(normalized.right() - depthX,
+                        normalized.bottom());
+                const QPointF backTop(frontTop.x() + depthX, frontTop.y() - depthY);
+                const QPointF backLeft(frontLeft.x() + depthX, frontLeft.y() - depthY);
+                const QPointF backRight(frontRight.x() + depthX, frontRight.y() - depthY);
+                closedPolygon << frontLeft << frontTop << backTop << backRight
+                              << frontRight;
+                shapeSegments << QLineF(frontTop, frontRight);
+                hiddenShapeSegments << QLineF(backTop, backLeft)
+                                    << QLineF(backLeft, backRight)
+                                    << QLineF(frontLeft, backLeft);
+            }
+        }
+    }
+
+    if (!closedPolygon.isEmpty())
+    {
+        QPolygonF outline = closedPolygon;
+        outline << closedPolygon.first();
+        appendPolyline(outline);
+        updateShapeFillPreview(closedPolygon);
+    }
+    else
+    {
+        clearShapeFillPreview();
+    }
+
+    if (!shapeSegments.isEmpty() || !hiddenShapeSegments.isEmpty())
+    {
+        const qreal safeWidth = qMax(width, 0.1);
+        const bool userSelectedDashed = drawingController->linePattern()
+                == UBDrawingController::DashedLinePattern;
+        const qreal antiScale = 1.0
+                / (UBApplication::boardController->systemScaleFactor()
+                   * UBApplication::boardController->currentZoom());
+        const qreal dashLength = 12.0 * antiScale;
+        const qreal gapLength = 7.0 * antiScale;
+        auto addStrokeSegment = [this, safeWidth, &previewDirtyRect](
+                const QPointF& start, const QPointF& finish)
+        {
+            if (QLineF(start, finish).length() <= 0.01)
+                return;
+            UBGraphicsPolygonItem* polygonItem =
+                    lineToPolygonItem(QLineF(start, finish), safeWidth, safeWidth);
+            addPolygonItemToCurrentStroke(polygonItem, false);
+            previewDirtyRect = previewDirtyRect.united(polygonItem->sceneBoundingRect());
+        };
+
+        auto drawSegmentList = [&addStrokeSegment, dashLength, gapLength,
+                userSelectedDashed](const QVector<QLineF>& segments,
+                                    bool forceDashed)
+        {
+            const bool dashed = forceDashed || userSelectedDashed;
+            bool drawingDash = true;
+            qreal patternRemaining = dashLength;
+            for (const QLineF& sourceSegment : segments)
+            {
+                const QPointF segmentStart = sourceSegment.p1();
+                const QPointF segmentEnd = sourceSegment.p2();
+                const QLineF segment = sourceSegment;
+                const qreal segmentLength = segment.length();
+                if (segmentLength <= 0.01)
+                    continue;
+
+                if (!dashed)
+                {
+                    addStrokeSegment(segmentStart, segmentEnd);
+                    continue;
+                }
+
+                qreal consumed = 0.0;
+                while (consumed < segmentLength - 0.001)
+                {
+                    const qreal step = qMin(patternRemaining, segmentLength - consumed);
+                    if (drawingDash)
+                    {
+                        const QPointF start = segment.pointAt(consumed / segmentLength);
+                        const QPointF finish = segment.pointAt(
+                                (consumed + step) / segmentLength);
+                        addStrokeSegment(start, finish);
+                    }
+
+                    consumed += step;
+                    patternRemaining -= step;
+                    if (patternRemaining <= 0.001)
+                    {
+                        drawingDash = !drawingDash;
+                        patternRemaining = drawingDash ? dashLength : gapLength;
+                    }
+                }
+            }
+        };
+
+        drawSegmentList(shapeSegments, false);
+        drawSegmentList(hiddenShapeSegments, true);
+    }
+
+    repaintStrokePreview(previewDirtyRect);
+}
+
+void UBGraphicsScene::updateShapeFillPreview(const QPolygonF& polygon)
+{
+    clearShapeFillPreview();
+
+    UBDrawingController* drawingController = UBDrawingController::drawingController();
+    if (!drawingController->shapeFillEnabled() || polygon.size() < 3)
+        return;
+
+    mShapeFillPreview = new UBGraphicsPolygonItem(polygon);
+    QColor fillColor = drawingController->shapeFillColor();
+    mShapeFillPreview->setColor(fillColor);
+    mShapeFillPreview->setColorOnDarkBackground(fillColor);
+    mShapeFillPreview->setColorOnLightBackground(fillColor);
+    mShapeFillPreview->setData(UBGraphicsItemData::ItemLayerType,
+            QVariant(UBItemLayerType::Graphic));
+    // A live preview can sit directly under the pointer.  It must not become
+    // Qt's mouse grabber because the next vertex rebuilds (and deletes) it
+    // from inside the same mouse event.
+    mShapeFillPreview->setAcceptedMouseButtons(Qt::NoButton);
+    addItem(mShapeFillPreview);
+}
+
+void UBGraphicsScene::clearShapeFillPreview()
+{
+    if (!mShapeFillPreview)
+        return;
+
+    removeItem(mShapeFillPreview);
+    UBCoreGraphicsScene::removeItemFromDeletion(mShapeFillPreview);
+    delete mShapeFillPreview;
+    mShapeFillPreview = nullptr;
+}
+
+bool UBGraphicsScene::polygonDrawingActive() const
+{
+    return !mPolygonVertices.isEmpty();
+}
+
+void UBGraphicsScene::addPolygonVertex(const QPointF& scenePos)
+{
+    UBDrawingController* drawingController = UBDrawingController::drawingController();
+    if (drawingController->lineGeometryMode() != UBDrawingController::PolygonGeometry)
+        return;
+
+    QPointF vertex = scenePos;
+    if (isSnapping())
+        vertex += snap(scenePos);
+
+    mPolygonVertices << vertex;
+    mPolygonHoverPoint = vertex;
+    rebuildPolygonPreview(vertex, false);
+}
+
+void UBGraphicsScene::updatePolygonPreview(const QPointF& scenePos)
+{
+    if (!polygonDrawingActive())
+        return;
+
+    mPolygonHoverPoint = scenePos;
+    rebuildPolygonPreview(scenePos, true);
+}
+
+void UBGraphicsScene::finishPolygonDrawing()
+{
+    if (mPolygonVertices.size() < 3)
+    {
+        cancelPolygonDrawing();
+        return;
+    }
+
+    rebuildPolygonPreview(mPolygonVertices.constLast(), false);
+    commitPolygonDrawing();
+}
+
+void UBGraphicsScene::cancelPolygonDrawing()
+{
+    clearPolygonPreview();
+    mPolygonVertices.clear();
+    mPolygonHoverPoint = QPointF();
+}
+
+void UBGraphicsScene::rebuildPolygonPreview(const QPointF& hoverPoint,
+        bool includeHoverPoint)
+{
+    clearPolygonPreview();
+
+    QPolygonF points;
+    for (const QPointF& vertex : std::as_const(mPolygonVertices))
+        points << vertex;
+    if (includeHoverPoint && !points.isEmpty()
+            && QLineF(points.constLast(), hoverPoint).length() > 0.01)
+    {
+        points << hoverPoint;
+    }
+
+    if (points.isEmpty())
+        return;
+
+    const qreal width = UBDrawingController::drawingController()->currentToolWidth()
+            / UBApplication::boardController->systemScaleFactor()
+            / UBApplication::boardController->currentZoom();
+    const qreal safeWidth = qMax(width, 0.1);
+    const bool dashed = UBDrawingController::drawingController()->linePattern()
+            == UBDrawingController::DashedLinePattern;
+    const qreal antiScale = 1.0
+            / (UBApplication::boardController->systemScaleFactor()
+               * UBApplication::boardController->currentZoom());
+    const qreal dashLength = 12.0 * antiScale;
+    const qreal gapLength = 7.0 * antiScale;
+
+    auto addVisibleSegment = [this, safeWidth](const QPointF& start,
+            const QPointF& finish) {
+        if (QLineF(start, finish).length() <= 0.01)
+            return;
+        UBGraphicsPolygonItem* item = lineToPolygonItem(
+                QLineF(start, finish), safeWidth, safeWidth);
+        item->setAcceptedMouseButtons(Qt::NoButton);
+        addItem(item);
+        mPolygonPreviewItems << item;
+    };
+
+    auto addPatternedSegment = [=](const QPointF& start, const QPointF& finish) {
+        const QLineF segment(start, finish);
+        const qreal length = segment.length();
+        if (length <= 0.01)
+            return;
+        if (!dashed)
+        {
+            addVisibleSegment(start, finish);
+            return;
+        }
+
+        bool drawDash = true;
+        qreal consumed = 0.0;
+        while (consumed < length - 0.001)
+        {
+            const qreal step = qMin(drawDash ? dashLength : gapLength,
+                    length - consumed);
+            if (drawDash)
+            {
+                addVisibleSegment(segment.pointAt(consumed / length),
+                        segment.pointAt((consumed + step) / length));
+            }
+            consumed += step;
+            drawDash = !drawDash;
+        }
+    };
+
+    if (points.size() == 1)
+    {
+        addVisibleSegment(points.first(), points.first() + QPointF(0.01, 0.0));
+    }
+    else
+    {
+        for (int i = 1; i < points.size(); ++i)
+            addPatternedSegment(points.at(i - 1), points.at(i));
+
+        if (points.size() >= 3)
+            addPatternedSegment(points.constLast(), points.constFirst());
+    }
+
+    if (points.size() >= 3)
+        updateShapeFillPreview(points);
+
+    QRectF dirty;
+    for (UBGraphicsPolygonItem* item : std::as_const(mPolygonPreviewItems))
+        dirty = dirty.united(item->sceneBoundingRect());
+    if (mShapeFillPreview)
+        dirty = dirty.united(mShapeFillPreview->sceneBoundingRect());
+    repaintStrokePreview(dirty);
+}
+
+void UBGraphicsScene::clearPolygonPreview()
+{
+    for (UBGraphicsPolygonItem* item : std::as_const(mPolygonPreviewItems))
+    {
+        if (!item)
+            continue;
+        removeItem(item);
+        UBCoreGraphicsScene::removeItemFromDeletion(item);
+        delete item;
+    }
+    mPolygonPreviewItems.clear();
+    clearShapeFillPreview();
+}
+
+void UBGraphicsScene::commitPolygonDrawing()
+{
+    if (mPolygonPreviewItems.isEmpty())
+    {
+        cancelPolygonDrawing();
+        return;
+    }
+
+    UBGraphicsStrokesGroup* group = new UBGraphicsStrokesGroup();
+
+    if (mShapeFillPreview)
+    {
+        UBGraphicsPolygonItem* fill = mShapeFillPreview;
+        mShapeFillPreview = nullptr;
+        removeItem(fill);
+        UBCoreGraphicsScene::removeItemFromDeletion(fill);
+        fill->setAcceptedMouseButtons(Qt::AllButtons);
+        fill->setStrokesGroup(group);
+        group->addToGroup(fill);
+    }
+
+    for (UBGraphicsPolygonItem* item : std::as_const(mPolygonPreviewItems))
+    {
+        removeItem(item);
+        UBCoreGraphicsScene::removeItemFromDeletion(item);
+        item->setAcceptedMouseButtons(Qt::AllButtons);
+        item->setStrokesGroup(group);
+        group->addToGroup(item);
+    }
+
+    mPolygonPreviewItems.clear();
+    mPolygonVertices.clear();
+    mPolygonHoverPoint = QPointF();
+
+    mAddedItems.clear();
+    mRemovedItems.clear();
+    mAddedItems << group;
+    addItem(group);
+
+    if (mUndoRedoStackEnabled && UBApplication::undoStack)
+    {
+        UBApplication::undoStack->push(new UBGraphicsItemUndoCommand(
+                shared_from_this(), mRemovedItems, mAddedItems));
+    }
+
+    mAddedItems.clear();
+    mRemovedItems.clear();
+    setDocumentUpdated();
+}
+
+void UBGraphicsScene::repaintStrokePreview(const QRectF& sceneRect)
+{
+    UBBoardView* view = controlView();
+    if (!view || !view->viewport() || sceneRect.isEmpty())
+        return;
+
+    // QGraphicsScene normally schedules an asynchronous update. During a fast
+    // drag that update can be postponed until mouse release, making the stroke
+    // appear all at once. Repaint only the small area around the live stroke so
+    // the ink follows the pointer without forcing a costly full-screen redraw.
+    QRect dirtyRect = view->mapFromScene(sceneRect).boundingRect().adjusted(-4, -4, 4, 4);
+    dirtyRect = dirtyRect.intersected(view->viewport()->rect());
+    if (!dirtyRect.isEmpty())
+        view->viewport()->repaint(dirtyRect);
 }
 
 void UBGraphicsScene::eraseLineTo(const QPointF &pEndPoint, const qreal &pWidth)
@@ -2437,6 +3264,9 @@ void UBGraphicsScene::stylusToolChanged(int tool, int previousTool)
     if (tool != previousTool)
     {
         hideTool();
+
+        if (polygonDrawingActive() && tool != UBStylusTool::Line)
+            cancelPolygonDrawing();
 
         if (mInputDeviceIsPressed)
         {

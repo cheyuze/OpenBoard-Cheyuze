@@ -203,10 +203,169 @@ QToolButton#ubButtonGroupRight:checked
     padding-left: 4px;
 }
 
+/* Modern, high-contrast choice groups.  The legacy gradient above is kept as
+   a fallback for older Qt styles; these later rules deliberately override it. */
+QToolButton#ubButtonGroupLeft,
+QToolButton#ubButtonGroupCenter,
+QToolButton#ubButtonGroupRight,
+QToolButton#desktop-ubButtonGroupLeft,
+QToolButton#desktop-ubButtonGroupCenter,
+QToolButton#desktop-ubButtonGroupRight
+{
+    background-color: #F8FAFC;
+    background-image: none;
+    margin: 1px;
+    padding: 2px;
+    border: 1px solid #CBD5E1;
+    border-radius: 7px;
+    min-width: 24px;
+    max-width: 24px;
+    min-height: 26px;
+    max-height: 26px;
+}
+
+QToolButton#ubButtonGroupLeft:hover,
+QToolButton#ubButtonGroupCenter:hover,
+QToolButton#ubButtonGroupRight:hover,
+QToolButton#desktop-ubButtonGroupLeft:hover,
+QToolButton#desktop-ubButtonGroupCenter:hover,
+QToolButton#desktop-ubButtonGroupRight:hover
+{
+    background-color: #EFF6FF;
+    border: 1px solid #60A5FA;
+}
+
+QToolButton#ubButtonGroupLeft:checked,
+QToolButton#ubButtonGroupCenter:checked,
+QToolButton#ubButtonGroupRight:checked,
+QToolButton#desktop-ubButtonGroupLeft:checked,
+QToolButton#desktop-ubButtonGroupCenter:checked,
+QToolButton#desktop-ubButtonGroupRight:checked
+{
+    color: #1D4ED8;
+    background-color: #DBEAFE;
+    border: 2px solid #2563EB;
+    padding: 1px;
+}
+
+/* Compact square swatches keep the colour palette readable without consuming
+   the width of five full toolbar buttons. */
+QToolButton[compactColorChoice="true"]
+{
+    background-color: #F8FAFC;
+    margin: 0px;
+    padding: 0px;
+    border: 1px solid #CBD5E1;
+    border-radius: 11px;
+    min-width: 22px;
+    max-width: 22px;
+    min-height: 22px;
+    max-height: 22px;
+}
+
+QToolButton[compactColorChoice="true"]:hover
+{
+    background-color: #EFF6FF;
+    border-color: #60A5FA;
+}
+
+QToolButton[compactColorChoice="true"]:checked
+{
+    background-color: #DBEAFE;
+    border: 2px solid #2563EB;
+    padding: 0px;
+}
+
+QLabel#ubToolbarGroupCaption
+{
+    color: #334155;
+    background: transparent;
+    border: none;
+    margin: 0px;
+    padding: 0px;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+QWidget#ubLineOptions
+{
+    background: transparent;
+}
+
+QToolButton#ubLineOptionMenuButton
+{
+    background-color: #F8FAFC;
+    margin: 2px 1px;
+    padding: 3px 10px 3px 5px;
+    border: 1px solid #CBD5E1;
+    border-radius: 9px;
+    min-width: 44px;
+    max-width: 44px;
+}
+
+QToolButton#ubLineOptionMenuButton:hover,
+QToolButton#ubLineOptionMenuButton:pressed
+{
+    background-color: #EFF6FF;
+    border-color: #60A5FA;
+}
+
+QToolButton#ubLineOptionMenuButton::menu-indicator
+{
+    subcontrol-origin: padding;
+    subcontrol-position: bottom right;
+    right: 3px;
+    bottom: 5px;
+}
+
+QMenu#ubLineOptionMenu
+{
+    background-color: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    padding: 4px;
+}
+
+QMenu#ubLineOptionMenu::item
+{
+    color: #1E293B;
+    padding: 7px 26px 7px 10px;
+    border-radius: 6px;
+}
+
+QMenu#ubLineOptionMenu::item:selected
+{
+    background-color: #EFF6FF;
+}
+
+QMenu#ubLineOptionMenu::item:checked
+{
+    color: #1D4ED8;
+    background-color: #DBEAFE;
+}
+
+QLabel#ubSliderValueLabel
+{
+    color: #334155;
+    background-color: #F8FAFC;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    padding: 2px 1px;
+    font-weight: 600;
+    font-size: 10px;
+}
+
 QToolButton#ubButtonMenu
 {
-    margin-right: 2px;
-    padding-right: 12px;
+    margin-right: 1px;
+    padding-right: 11px;
+}
+
+QToolButton#ubButtonMenu::menu-indicator
+{
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    right: 2px;
 }
 
 QToolButton#ubButtonMenu:pressed,
@@ -420,7 +579,7 @@ QToolBar
     background-color: #ffffff;
     border: none;
     border-bottom: 1px solid #dbe3ef;
-    padding: 3px 6px;
+    padding: 3px 4px;
 }
 
 QToolBar::separator
@@ -428,7 +587,7 @@ QToolBar::separator
     background: #dbe3ef;
     border: none;
     width: 1px;
-    margin: 11px 7px;
+    margin: 9px 4px;
 }
 
 QToolBar QToolButton
@@ -436,10 +595,10 @@ QToolBar QToolButton
     color: #26364d;
     background-color: transparent;
     border: 1px solid transparent;
-    border-radius: 9px;
-    margin: 3px 1px;
-    padding: 2px 7px;
-    height: 54px;
+    border-radius: 8px;
+    margin: 2px 1px;
+    padding: 3px 4px;
+    height: 50px;
 }
 
 QToolBar QToolButton:hover
@@ -455,6 +614,17 @@ QToolBar QToolButton:checked
     color: #0f438f;
     background-color: #dceaff;
     border-color: #a9c9f7;
+}
+
+QWidget#ubPrimaryTools
+{
+    background: transparent;
+}
+
+QToolButton#ubPrimaryToolButton
+{
+    margin: 2px 0px;
+    padding: 3px;
 }
 
 QMenu
@@ -599,4 +769,140 @@ QToolTip
     border: 1px solid #24344d;
     border-radius: 5px;
     padding: 5px;
+}
+
+QFrame#ubBoardZoomControl
+{
+    background-color: rgba(244, 247, 251, 218);
+    border: 1px solid rgba(125, 143, 168, 145);
+    border-radius: 10px;
+}
+
+QFrame#ubBoardUndoRedoControl
+{
+    background-color: rgba(244, 247, 251, 188);
+    border: 1px solid rgba(125, 143, 168, 125);
+    border-radius: 11px;
+}
+
+QToolButton#ubBoardZoomOutButton,
+QToolButton#ubBoardZoomInButton
+{
+    color: #34445b;
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    font-size: 20px;
+    font-weight: 600;
+    padding: 0px;
+}
+
+QToolButton#ubBoardZoomOutButton:hover,
+QToolButton#ubBoardZoomInButton:hover
+{
+    color: #174ea6;
+    background-color: rgba(211, 226, 247, 205);
+}
+
+QToolButton#ubBoardZoomOutButton:pressed,
+QToolButton#ubBoardZoomInButton:pressed
+{
+    background-color: rgba(181, 207, 241, 220);
+}
+
+QToolButton#ubBoardZoomOutButton:disabled,
+QToolButton#ubBoardZoomInButton:disabled
+{
+    color: rgba(91, 106, 126, 90);
+}
+
+QToolButton#ubBoardUndoButton,
+QToolButton#ubBoardRedoButton,
+QToolButton#ubBoardCaptureButton,
+QToolButton#ubBoardKeyboardButton
+{
+    background-color: rgba(255, 255, 255, 72);
+    border: 1px solid rgba(125, 143, 168, 55);
+    border-radius: 7px;
+    padding: 0px;
+}
+
+QToolButton#ubBoardUndoButton:hover,
+QToolButton#ubBoardRedoButton:hover,
+QToolButton#ubBoardCaptureButton:hover,
+QToolButton#ubBoardKeyboardButton:hover
+{
+    background-color: rgba(211, 226, 247, 220);
+    border-color: rgba(57, 118, 194, 125);
+}
+
+QToolButton#ubBoardUndoButton:pressed,
+QToolButton#ubBoardRedoButton:pressed,
+QToolButton#ubBoardCaptureButton:pressed,
+QToolButton#ubBoardKeyboardButton:pressed,
+QToolButton#ubBoardCaptureButton:checked,
+QToolButton#ubBoardKeyboardButton:checked
+{
+    background-color: rgba(181, 207, 241, 220);
+    border-color: rgba(23, 78, 166, 155);
+}
+
+QToolButton#ubBoardUndoButton:disabled,
+QToolButton#ubBoardRedoButton:disabled,
+QToolButton#ubBoardCaptureButton:disabled,
+QToolButton#ubBoardKeyboardButton:disabled
+{
+    background-color: rgba(255, 255, 255, 35);
+    border-color: rgba(125, 143, 168, 30);
+}
+
+QFrame#ubBottomQuickSeparator
+{
+    color: rgba(125, 143, 168, 105);
+    background-color: rgba(125, 143, 168, 105);
+    border: none;
+}
+
+QSlider#ubBoardZoomSlider
+{
+    min-height: 24px;
+    background: transparent;
+}
+
+QSlider#ubBoardZoomSlider::groove:horizontal
+{
+    height: 4px;
+    background: rgba(122, 139, 160, 120);
+    border-radius: 2px;
+}
+
+QSlider#ubBoardZoomSlider::sub-page:horizontal
+{
+    background: rgba(54, 112, 191, 190);
+    border-radius: 2px;
+}
+
+QSlider#ubBoardZoomSlider::handle:horizontal
+{
+    width: 14px;
+    height: 14px;
+    margin: -5px 0px;
+    background: #ffffff;
+    border: 2px solid #3976c2;
+    border-radius: 8px;
+}
+
+QSlider#ubBoardZoomSlider::handle:horizontal:hover
+{
+    background: #eaf2ff;
+    border-color: #174ea6;
+}
+
+QLabel#ubBoardZoomLabel
+{
+    color: #34445b;
+    background: transparent;
+    border: none;
+    font-size: 12px;
+    font-weight: 600;
 }

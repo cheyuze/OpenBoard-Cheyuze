@@ -55,19 +55,6 @@ UBStylusPalette::UBStylusPalette(QWidget *parent, Qt::Orientation orient)
 {
     QList<QAction*> actions;
 
-    actions << UBApplication::mainWindow->actionPen;
-    actions << UBApplication::mainWindow->actionEraser;
-    actions << UBApplication::mainWindow->actionMarker;
-    actions << UBApplication::mainWindow->actionSelector;
-    actions << UBApplication::mainWindow->actionPlay;
-
-    actions << UBApplication::mainWindow->actionHand;
-    actions << UBApplication::mainWindow->actionZoomIn;
-    actions << UBApplication::mainWindow->actionZoomOut;
-
-    actions << UBApplication::mainWindow->actionPointer;
-    actions << UBApplication::mainWindow->actionLine;
-    actions << UBApplication::mainWindow->actionText;
     actions << UBApplication::mainWindow->actionCapture;
 
     QAction* shapesAction = new QAction(QIcon(":/images/libpalette/ShapesCategory.svg"), tr("Shapes"), this);
@@ -86,12 +73,35 @@ UBStylusPalette::UBStylusPalette(QWidget *parent, Qt::Orientation orient)
         UBApplication::mainWindow->actionVirtualKeyboard->setProperty("ungrouped", true);
     }
 
-    actions << UBApplication::mainWindow->actionSnap;
-    UBApplication::mainWindow->actionSnap->setProperty("ungrouped", true);
-
     setActions(actions);
     setButtonIconSize(QSize(42, 42));
-    groupActions();
+
+    // Frequently used actions are now rendered only in the top toolbar, so
+    // they are deliberately absent from the palette's visible action list.
+    // Keep every stylus tool (including the top-only actions) in one
+    // exclusive group to preserve keyboard shortcuts and checked-state sync.
+    const QList<QAction*> exclusiveToolActions {
+        UBApplication::mainWindow->actionPen,
+        UBApplication::mainWindow->actionEraser,
+        UBApplication::mainWindow->actionMarker,
+        UBApplication::mainWindow->actionSelector,
+        UBApplication::mainWindow->actionPlay,
+        UBApplication::mainWindow->actionHand,
+        UBApplication::mainWindow->actionZoomIn,
+        UBApplication::mainWindow->actionZoomOut,
+        UBApplication::mainWindow->actionPointer,
+        UBApplication::mainWindow->actionLine,
+        UBApplication::mainWindow->actionText,
+        UBApplication::mainWindow->actionCapture
+    };
+    mActionGroup = new QActionGroup(this);
+    for (int tool = 0; tool < exclusiveToolActions.size(); ++tool) {
+        QAction* action = exclusiveToolActions.at(tool);
+        action->setProperty("id", tool);
+        mActionGroup->addAction(action);
+    }
+    connect(mActionGroup, SIGNAL(triggered(QAction*)),
+            this, SIGNAL(buttonGroupClicked(QAction*)));
 
     UBShortcutManager::shortcutManager()->addActionGroup(mActionGroup);
 
@@ -144,4 +154,3 @@ void UBStylusPalette::stylusToolDoubleClicked()
 {
     emit stylusToolDoubleClicked(mActionGroup->checkedAction()->property("id").toInt());
 }
-

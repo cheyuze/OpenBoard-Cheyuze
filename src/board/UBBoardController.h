@@ -60,6 +60,10 @@ class UBGraphicsWidgetItem;
 class UBBoardPaletteManager;
 class UBItem;
 class UBGraphicsItem;
+class QFrame;
+class QLabel;
+class QSlider;
+class QToolButton;
 
 
 class UBBoardController : public UBDocumentContainer
@@ -277,8 +281,15 @@ class UBBoardController : public UBDocumentContainer
         void setupToolbar();
         void connectToolbar();
         void initToolbarTexts();
+        void refreshPenVisuals();
         void updateActionStates();
         void updateSystemScaleFactor();
+        void setupZoomControl();
+        void positionZoomControl();
+        void updateZoomControl(qreal zoomFactor);
+        void setZoomPercentage(int percentage);
+        void setupUndoRedoControl();
+        void positionUndoRedoControl();
         QString truncate(QString text, int maxWidth) const;
 
     protected slots:
@@ -307,6 +318,16 @@ class UBBoardController : public UBDocumentContainer
         UBBoardView *mDisplayView;
         QWidget *mControlContainer;
         QHBoxLayout *mControlLayout;
+        QFrame *mZoomControl;
+        QSlider *mZoomSlider;
+        QLabel *mZoomLabel;
+        QToolButton *mZoomOutButton;
+        QToolButton *mZoomInButton;
+        QFrame *mUndoRedoControl;
+        QToolButton *mUndoButton;
+        QToolButton *mRedoButton;
+        QToolButton *mCaptureButton;
+        QToolButton *mVirtualKeyboardButton;
         qreal mZoomFactor;
         bool mIsClosing;
         QColor mPenColorOnDarkBackground;

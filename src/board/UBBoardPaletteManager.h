@@ -118,6 +118,7 @@ class UBBoardPaletteManager : public QObject
         UBBackgroundPalette *mBackgroundsPalette;
         UBActionPalette *mToolsPalette;
         UBActionPalette* mAddItemPalette;
+        QAction* mSaveCapturedImageAction;
         UBActionPalette* mErasePalette;
         UBActionPalette* mPagePalette;
 
@@ -175,6 +176,7 @@ class UBBoardPaletteManager : public QObject
         void addItemToCurrentPage();
         void addItemToNewPage();
         void addItemToLibrary();
+        void saveCapturedImageAs();
 
         void purchaseLinkActivated(const QString&);
 

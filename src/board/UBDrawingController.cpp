@@ -62,6 +62,11 @@ UBDrawingController::UBDrawingController(QObject * parent)
     : QObject(parent)
     , mStylusTool((UBStylusTool::Enum)-1)
     , mLatestDrawingTool((UBStylusTool::Enum)-1)
+    , mLineGeometryMode(StraightLineGeometry)
+    , mLinePattern(SolidLinePattern)
+    , mShapeFillEnabled(false)
+    , mShapeFillColor(QColor(QStringLiteral("#3B82F6")))
+    , mShapeFillOpacity(35)
     , mIsDesktopMode(false)
 {
     connect(UBSettings::settings(), SIGNAL(colorContextChanged()), this, SIGNAL(colorPaletteChanged()));
@@ -230,6 +235,33 @@ void UBDrawingController::setLineWidthIndex(int index)
     }
 
     emit lineWidthIndexChanged(index);
+
+    const qreal minimum = stylusTool() == UBStylusTool::Marker ? 6.0 : 1.0;
+    const qreal maximum = stylusTool() == UBStylusTool::Marker ? 60.0 : 16.0;
+    emit lineWidthValueChanged(qRound(100.0
+            * (currentToolWidth() - minimum) / (maximum - minimum)));
+}
+
+void UBDrawingController::setLineWidthValue(int value)
+{
+    const qreal ratio = qBound(0, value, 100) / 100.0;
+
+    if (stylusTool() == UBStylusTool::Marker)
+    {
+        UBSettings::settings()->setMarkerWidth(6.0 + ratio * 54.0);
+    }
+    else
+    {
+        UBSettings::settings()->setPenWidth(1.0 + ratio * 15.0);
+
+        if (stylusTool() != UBStylusTool::Line
+                && stylusTool() != UBStylusTool::Selector)
+        {
+            setStylusTool(UBStylusTool::Pen);
+        }
+    }
+
+    emit lineWidthValueChanged(qBound(0, value, 100));
 }
 
 
@@ -280,6 +312,95 @@ QColor UBDrawingController::toolColor(bool onDarkBackground)
     }
 }
 
+UBDrawingController::LineGeometryMode UBDrawingController::lineGeometryMode() const
+{
+    return mLineGeometryMode;
+}
+
+UBDrawingController::LinePattern UBDrawingController::linePattern() const
+{
+    return mLinePattern;
+}
+
+bool UBDrawingController::shapeFillEnabled() const
+{
+    return mShapeFillEnabled;
+}
+
+QColor UBDrawingController::shapeFillColor() const
+{
+    QColor color = mShapeFillColor;
+    color.setAlpha(qRound(255.0 * mShapeFillOpacity / 100.0));
+    return color;
+}
+
+int UBDrawingController::shapeFillOpacity() const
+{
+    return mShapeFillOpacity;
+}
+
+void UBDrawingController::setLineGeometryMode(int mode)
+{
+    const LineGeometryMode boundedMode = static_cast<LineGeometryMode>(
+            qBound(static_cast<int>(StraightLineGeometry), mode,
+                   static_cast<int>(TriangularPrismGeometry)));
+    if (mLineGeometryMode != boundedMode)
+    {
+        mLineGeometryMode = boundedMode;
+        emit lineGeometryModeChanged(static_cast<int>(mLineGeometryMode));
+    }
+
+    setStylusTool(UBStylusTool::Line);
+}
+
+void UBDrawingController::setLinePattern(int pattern)
+{
+    const LinePattern boundedPattern = static_cast<LinePattern>(
+            qBound(static_cast<int>(SolidLinePattern), pattern,
+                   static_cast<int>(DashedLinePattern)));
+    if (mLinePattern != boundedPattern)
+    {
+        mLinePattern = boundedPattern;
+        emit linePatternChanged(static_cast<int>(mLinePattern));
+    }
+
+    setStylusTool(UBStylusTool::Line);
+}
+
+void UBDrawingController::setShapeFillEnabled(bool enabled)
+{
+    if (mShapeFillEnabled == enabled)
+        return;
+
+    mShapeFillEnabled = enabled;
+    emit shapeFillEnabledChanged(enabled);
+    setStylusTool(UBStylusTool::Line);
+}
+
+void UBDrawingController::setShapeFillColor(const QColor& color)
+{
+    if (!color.isValid())
+        return;
+
+    QColor opaqueColor = color;
+    opaqueColor.setAlpha(255);
+    if (mShapeFillColor == opaqueColor)
+        return;
+
+    mShapeFillColor = opaqueColor;
+    emit shapeFillColorChanged(mShapeFillColor);
+}
+
+void UBDrawingController::setShapeFillOpacity(int opacity)
+{
+    const int boundedOpacity = qBound(0, opacity, 100);
+    if (mShapeFillOpacity == boundedOpacity)
+        return;
+
+    mShapeFillOpacity = boundedOpacity;
+    emit shapeFillOpacityChanged(mShapeFillOpacity);
+}
+
 
 void UBDrawingController::setColorIndex(int index)
 {
@@ -302,6 +423,16 @@ void UBDrawingController::setEraserWidthIndex(int index)
 {
     setStylusTool(UBStylusTool::Eraser);
     UBSettings::settings()->setEraserWidthIndex(index);
+    emit eraserWidthValueChanged(qRound(100.0
+            * (UBSettings::settings()->currentEraserWidth() - 8.0) / 152.0));
+}
+
+void UBDrawingController::setEraserWidthValue(int value)
+{
+    setStylusTool(UBStylusTool::Eraser);
+    const int boundedValue = qBound(0, value, 100);
+    UBSettings::settings()->setEraserWidth(8.0 + boundedValue / 100.0 * 152.0);
+    emit eraserWidthValueChanged(boundedValue);
 }
 
 void UBDrawingController::setPenColor(bool onDarkBackground, const QColor& color, int pIndex)
@@ -429,7 +560,10 @@ void UBDrawingController::pointerToolSelected(bool checked)
 void UBDrawingController::lineToolSelected(bool checked)
 {
     if (checked)
+    {
+        setLineGeometryMode(StraightLineGeometry);
         setStylusTool(UBStylusTool::Line);
+    }
 }
 
 
@@ -445,4 +579,3 @@ void UBDrawingController::captureToolSelected(bool checked)
     if (checked)
         setStylusTool(UBStylusTool::Capture);
 }
-

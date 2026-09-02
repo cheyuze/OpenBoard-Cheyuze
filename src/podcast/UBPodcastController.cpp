@@ -37,6 +37,8 @@
 #include "core/UBSettings.h"
 #include "core/UBSetting.h"
 #include "core/UBDisplayManager.h"
+#include "desktop/UBCustomCaptureWindow.h"
+#include "desktop/UBDesktopAnnotationController.h"
 
 #include "board/UBBoardController.h"
 #include "board/UBBoardView.h"
@@ -54,13 +56,19 @@
 #include "UBPodcastRecordingPalette.h"
 
 #include <QFileDialog>
+#include <QInputDialog>
 #include <QMessageBox>
 #include <QSaveFile>
+#include <QStandardPaths>
+#include <QTimer>
+#include <algorithm>
+#include <string>
 
 
 
 
 #ifdef Q_OS_WIN
+    #include <windows.h>
     #include "ffmpeg/UBFFmpegVideoEncoder.h"
     #include "windowsmedia/UBWaveRecorder.h"
 #elif defined(Q_OS_OSX)
@@ -72,6 +80,240 @@
 #endif
 
 #include "core/memcheck.h"
+
+namespace
+{
+    QString recordingWorkingDirectory()
+    {
+        QString temporaryRoot = QStandardPaths::writableLocation(
+                QStandardPaths::TempLocation);
+        if (temporaryRoot.isEmpty())
+            temporaryRoot = QDir::tempPath();
+
+        QDir temporaryDirectory(temporaryRoot);
+        const QString recordingDirectory = QStringLiteral("OpenBoard/Recordings");
+        if (temporaryDirectory.mkpath(recordingDirectory))
+            return temporaryDirectory.filePath(recordingDirectory);
+
+        // The system temporary directory should normally be writable.  Keep a
+        // non-desktop fallback so an unusual TEMP configuration never exposes
+        // the in-progress MP4 beside the user's finished lesson videos.
+        const QString applicationData = QStandardPaths::writableLocation(
+                QStandardPaths::AppLocalDataLocation);
+        QDir applicationDataDirectory(applicationData);
+        if (!applicationData.isEmpty()
+                && applicationDataDirectory.mkpath(QStringLiteral("Recordings")))
+        {
+            return applicationDataDirectory.filePath(QStringLiteral("Recordings"));
+        }
+
+        return temporaryRoot;
+    }
+
+    int execCenteredDialog(QDialog *dialog)
+    {
+        if (!dialog)
+            return QDialog::Rejected;
+
+        // Wait until Qt has created and laid out the top-level window.  Moving
+        // it before show() is unreliable because its final frame size is not
+        // known yet, especially with Windows display scaling enabled.
+        QTimer::singleShot(0, dialog, [dialog]() {
+            QScreen *screen = dialog->screen();
+            if (!screen)
+                screen = QGuiApplication::primaryScreen();
+            if (!screen)
+                return;
+
+            QRect dialogGeometry = dialog->frameGeometry();
+            dialogGeometry.moveCenter(screen->availableGeometry().center());
+            dialog->move(dialogGeometry.topLeft());
+        });
+
+        return dialog->exec();
+    }
+
+#ifdef Q_OS_WIN
+    struct CaptureWindowInfo
+    {
+        HWND handle = nullptr;
+        QString title;
+        QRect geometry;
+    };
+
+    BOOL CALLBACK collectCaptureWindows(HWND window, LPARAM data)
+    {
+        QList<CaptureWindowInfo> *windows =
+                reinterpret_cast<QList<CaptureWindowInfo>*>(data);
+
+        if (!windows || !IsWindowVisible(window) || IsIconic(window)
+                || GetAncestor(window, GA_ROOT) != window)
+        {
+            return TRUE;
+        }
+
+        const LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE);
+        const LONG_PTR extendedStyle = GetWindowLongPtrW(window, GWL_EXSTYLE);
+        if (!(style & WS_CAPTION) || (extendedStyle & WS_EX_TOOLWINDOW))
+            return TRUE;
+
+        DWORD processId = 0;
+        GetWindowThreadProcessId(window, &processId);
+        if (processId == GetCurrentProcessId())
+            return TRUE;
+
+        const int titleLength = GetWindowTextLengthW(window);
+        if (titleLength <= 0)
+            return TRUE;
+
+        std::wstring titleBuffer(static_cast<size_t>(titleLength + 1), L'\0');
+        GetWindowTextW(window, titleBuffer.data(), titleLength + 1);
+        const QString title = QString::fromWCharArray(titleBuffer.c_str()).trimmed();
+        if (title.isEmpty())
+            return TRUE;
+
+        RECT nativeRect = {};
+        if (!GetWindowRect(window, &nativeRect))
+            return TRUE;
+
+        const QRect geometry(nativeRect.left, nativeRect.top,
+                nativeRect.right - nativeRect.left,
+                nativeRect.bottom - nativeRect.top);
+        if (geometry.width() < 160 || geometry.height() < 90)
+            return TRUE;
+
+        windows->append({window, title, geometry});
+        return TRUE;
+    }
+
+    QList<CaptureWindowInfo> availableCaptureWindows()
+    {
+        QList<CaptureWindowInfo> windows;
+        EnumWindows(collectCaptureWindows, reinterpret_cast<LPARAM>(&windows));
+        std::sort(windows.begin(), windows.end(),
+                [](const CaptureWindowInfo& left, const CaptureWindowInfo& right) {
+                    return left.title.localeAwareCompare(right.title) < 0;
+                });
+        return windows;
+    }
+
+    QScreen *qtScreenForNativeWindow(HWND window, MONITORINFOEXW *monitorInfo = nullptr)
+    {
+        MONITORINFOEXW info = {};
+        info.cbSize = sizeof(info);
+        const HMONITOR monitor = MonitorFromWindow(window,
+                MONITOR_DEFAULTTONEAREST);
+        if (!monitor || !GetMonitorInfoW(monitor, &info))
+            return QGuiApplication::primaryScreen();
+
+        if (monitorInfo)
+            *monitorInfo = info;
+
+        const QString deviceName = QString::fromWCharArray(info.szDevice);
+        foreach (QScreen *screen, QGuiApplication::screens())
+        {
+            if (screen->name().compare(deviceName, Qt::CaseInsensitive) == 0)
+                return screen;
+        }
+        return QGuiApplication::primaryScreen();
+    }
+
+    QRect nativeWindowGeometry(quintptr windowId)
+    {
+        HWND window = reinterpret_cast<HWND>(windowId);
+        RECT nativeRect = {};
+        if (!window || !IsWindow(window) || !GetWindowRect(window, &nativeRect))
+            return QRect();
+
+        MONITORINFOEXW monitorInfo = {};
+        QScreen *screen = qtScreenForNativeWindow(window, &monitorInfo);
+        if (!screen)
+            return QRect();
+
+        const qreal scale = screen->devicePixelRatio() > 0.0
+                ? screen->devicePixelRatio() : 1.0;
+        const QRect logicalScreen = screen->geometry();
+        return QRect(
+                logicalScreen.left()
+                    + qRound((nativeRect.left - monitorInfo.rcMonitor.left) / scale),
+                logicalScreen.top()
+                    + qRound((nativeRect.top - monitorInfo.rcMonitor.top) / scale),
+                qRound((nativeRect.right - nativeRect.left) / scale),
+                qRound((nativeRect.bottom - nativeRect.top) / scale));
+    }
+
+    QPixmap captureNativeWindow(HWND window)
+    {
+        RECT nativeRect = {};
+        if (!window || !IsWindow(window) || IsIconic(window)
+                || !GetWindowRect(window, &nativeRect))
+            return QPixmap();
+
+        const int width = nativeRect.right - nativeRect.left;
+        const int height = nativeRect.bottom - nativeRect.top;
+        if (width <= 0 || height <= 0)
+            return QPixmap();
+
+        HDC screenDc = GetDC(nullptr);
+        HDC memoryDc = screenDc ? CreateCompatibleDC(screenDc) : nullptr;
+        HBITMAP bitmap = memoryDc
+                ? CreateCompatibleBitmap(screenDc, width, height) : nullptr;
+        if (!screenDc || !memoryDc || !bitmap)
+        {
+            if (bitmap)
+                DeleteObject(bitmap);
+            if (memoryDc)
+                DeleteDC(memoryDc);
+            if (screenDc)
+                ReleaseDC(nullptr, screenDc);
+            return QPixmap();
+        }
+
+        HGDIOBJ previousBitmap = SelectObject(memoryDc, bitmap);
+#ifndef PW_RENDERFULLCONTENT
+#define PW_RENDERFULLCONTENT 0x00000002
+#endif
+        const BOOL printed = PrintWindow(window, memoryDc, PW_RENDERFULLCONTENT);
+        SelectObject(memoryDc, previousBitmap);
+
+        QImage image;
+        if (printed)
+        {
+            image = QImage(width, height, QImage::Format_ARGB32);
+            BITMAPINFO bitmapInfo = {};
+            bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            bitmapInfo.bmiHeader.biWidth = width;
+            bitmapInfo.bmiHeader.biHeight = -height;
+            bitmapInfo.bmiHeader.biPlanes = 1;
+            bitmapInfo.bmiHeader.biBitCount = 32;
+            bitmapInfo.bmiHeader.biCompression = BI_RGB;
+
+            if (!GetDIBits(screenDc, bitmap, 0, height, image.bits(),
+                    &bitmapInfo, DIB_RGB_COLORS))
+            {
+                image = QImage();
+            }
+            else
+            {
+                // GDI leaves the alpha channel undefined for ordinary HWNDs.
+                // Make every captured target-window pixel fully opaque before
+                // compositing OpenBoard's transparent annotation layer.
+                for (int y = 0; y < image.height(); ++y)
+                {
+                    QRgb *line = reinterpret_cast<QRgb*>(image.scanLine(y));
+                    for (int x = 0; x < image.width(); ++x)
+                        line[x] = line[x] | 0xff000000;
+                }
+            }
+        }
+
+        DeleteObject(bitmap);
+        DeleteDC(memoryDc);
+        ReleaseDC(nullptr, screenDc);
+        return image.isNull() ? QPixmap() : QPixmap::fromImage(image);
+    }
+#endif
+}
 
 UBPodcastController* UBPodcastController::sInstance = 0;
 
@@ -100,6 +342,12 @@ UBPodcastController::UBPodcastController(QObject* pParent)
     , mSmallVideoSizeAction(0)
     , mMediumVideoSizeAction(0)
     , mFullVideoSizeAction(0)
+    , mFullScreenCaptureAction(0)
+    , mAreaCaptureAction(0)
+    , mApplicationWindowCaptureAction(0)
+    , mDesktopCaptureMode(FullScreenCapture)
+    , mDesktopCapturePrepared(false)
+    , mDesktopCaptureWindowId(0)
 {
     connect(UBApplication::applicationController, SIGNAL(mainModeChanged(UBApplicationController::MainMode)),
             this, SLOT(applicationMainModeChanged(UBApplicationController::MainMode)));
@@ -114,7 +362,6 @@ UBPodcastController::UBPodcastController(QObject* pParent)
             this, SLOT(applicationAboutToQuit()));
 
 }
-
 
 UBPodcastController::~UBPodcastController()
 {
@@ -274,6 +521,37 @@ void UBPodcastController::start()
         // the user presses Record and size the video from that source.
         const bool desktopRecording = UBApplication::applicationController->isShowingDesktop();
 
+#ifdef Q_OS_WIN
+        // A selected application may have been closed or minimized while the
+        // user was preparing the lesson.  Re-open the picker instead of
+        // silently producing an empty or full-screen recording.
+        if (desktopRecording
+                && mDesktopCaptureMode == ApplicationWindowCapture
+                && mDesktopCapturePrepared)
+        {
+            HWND targetWindow = reinterpret_cast<HWND>(mDesktopCaptureWindowId);
+            if (!targetWindow || !IsWindow(targetWindow) || IsIconic(targetWindow))
+                mDesktopCapturePrepared = false;
+        }
+#endif
+
+        if (desktopRecording && !mDesktopCapturePrepared
+                && !prepareDesktopCapture())
+        {
+            QSignalBlocker blocker(UBApplication::mainWindow->actionPodcastRecord);
+            UBApplication::mainWindow->actionPodcastRecord->setChecked(false);
+            if (mRecordingPalette)
+            {
+                mRecordingPalette->show();
+                mRecordingPalette->raise();
+            }
+            return;
+        }
+
+        const QSize sourceSize = desktopRecording
+                ? currentDesktopCaptureRect().size()
+                : UBApplication::boardController->controlView()->size();
+
         QSize recommendedSize(1024, 768);
 
         int fullBitRate = UBSettings::settings()->podcastWindowsMediaBitsPerSecond->get().toInt();
@@ -290,15 +568,10 @@ void UBPodcastController::start()
         }
         else if (mFullVideoSizeAction && mFullVideoSizeAction->isChecked())
         {
-            recommendedSize = desktopRecording
-                    ? UBApplication::displayManager->screenSize(ScreenRole::Desktop)
-                    : UBApplication::boardController->controlView()->size();
+            recommendedSize = sourceSize;
             mVideoBitsPerSecondAtStart = fullBitRate;
         }
 
-        QSize sourceSize = desktopRecording
-                ? UBApplication::displayManager->screenSize(ScreenRole::Desktop)
-                : UBApplication::boardController->controlView()->size();
         QSize scaledSourceSize = sourceSize;
         scaledSourceSize.scale(recommendedSize, Qt::KeepAspectRatio);
 
@@ -386,15 +659,21 @@ void UBPodcastController::start()
                     mPodcastRecordingPath + "/" + tr("讲题录制-%1").arg(timestamp)
                             + "." + mVideoEncoder->videoFileExtension(), " ");
 
-            // Encode to a unique working file first.  After the encoder has
-            // closed it, encodingFinished() presents Save As and moves the
-            // completed MP4 to the name chosen by the user.
-            videoFileName = mPodcastRecordingPath + "/"
-                    + tr("OpenBoard录制-处理中-%1").arg(
+            // Encode H.264/AAC directly into a unique MP4 under the system
+            // temporary directory.  After the encoder has written the MP4
+            // trailer and closed the file, encodingFinished() presents Save
+            // As and moves the completed video to the user's chosen location.
+            // Keeping the working file away from mPodcastRecordingPath avoids
+            // showing an unfinished recording on the desktop.
+            const QString workingDirectory = recordingWorkingDirectory();
+            videoFileName = QDir(workingDirectory).filePath(
+                    tr("OpenBoard录制-处理中-%1").arg(
                             QDateTime::currentDateTime().toString("yyyyMMdd-HHmmsszzz"))
-                    + "." + mVideoEncoder->videoFileExtension();
+                    + "." + mVideoEncoder->videoFileExtension());
 
             videoFileName = UBFileSystemUtils::nextAvailableFileName(videoFileName, " ");
+
+            qDebug() << "Recording working file:" << videoFileName;
 
             mVideoEncoder->setVideoFileName(videoFileName);
 
@@ -681,9 +960,14 @@ void UBPodcastController::applicationDesktopMode(bool displayed)
         QSignalBlocker blocker(UBApplication::mainWindow->actionPodcast);
         UBApplication::mainWindow->actionPodcast->setChecked(true);
         positionRecordingPalette(true);
+        mRecordingPalette->setNativeOwner(
+                UBApplication::applicationController->uninotesController()->drawingView());
     }
     else
     {
+        mDesktopCapturePrepared = false;
+        if (mRecordingPalette)
+            mRecordingPalette->setNativeOwner(UBApplication::mainWindow);
         applicationMainModeChanged(UBApplication::applicationController->displayMode());
         if (mRecordingPalette && mRecordingPalette->isVisible())
             positionRecordingPalette(false);
@@ -770,29 +1054,59 @@ QString UBPodcastController::saveRecordingAs(const QString& temporaryFilePath)
                                      temporaryInfo.suffix())), " ");
     }
 
-    QWidget* dialogParent = mRecordingPalette
-            ? static_cast<QWidget*>(mRecordingPalette)
-            : static_cast<QWidget*>(UBApplication::mainWindow);
+    // The recording palette is normally docked near the lower-right corner.
+    // Using it as the owner makes Windows place both the native Save As dialog
+    // and the discard confirmation beside the palette.  Own all recording
+    // dialogs from the main window so they are centred on the application (and
+    // therefore on the current screen) regardless of palette position.
+    QWidget* dialogParent = UBApplication::mainWindow;
     QString destination;
     if (!mApplicationIsClosing)
     {
         while (destination.isEmpty())
         {
-            destination = QFileDialog::getSaveFileName(
-                    dialogParent,
-                    tr("保存录制视频"),
-                    suggestedPath,
-                    tr("MP4 视频 (*.mp4)"));
+            QFileDialog saveDialog(dialogParent);
+            saveDialog.setOption(QFileDialog::DontUseNativeDialog, true);
+            saveDialog.setWindowTitle(tr("保存录制视频"));
+            saveDialog.setAcceptMode(QFileDialog::AcceptSave);
+            saveDialog.setFileMode(QFileDialog::AnyFile);
+            saveDialog.setNameFilter(tr("MP4 视频 (*.mp4)"));
+            saveDialog.setDefaultSuffix(QStringLiteral("mp4"));
+            // The Windows file-system model can expose English type names
+            // (for example "File Folder") even when the dialog itself is
+            // translated.  The list view keeps this recording workflow
+            // compact and avoids mixing those system-provided labels into the
+            // otherwise fully Chinese interface.
+            saveDialog.setViewMode(QFileDialog::List);
+            saveDialog.setLabelText(QFileDialog::LookIn,
+                    QStringLiteral("保存位置："));
+            saveDialog.setLabelText(QFileDialog::FileName,
+                    QStringLiteral("文件名："));
+            saveDialog.setLabelText(QFileDialog::FileType,
+                    QStringLiteral("文件类型："));
+            saveDialog.setLabelText(QFileDialog::Accept,
+                    QStringLiteral("保存"));
+            saveDialog.setLabelText(QFileDialog::Reject,
+                    QStringLiteral("取消"));
+            saveDialog.setDirectory(QFileInfo(suggestedPath).absolutePath());
+            saveDialog.selectFile(QFileInfo(suggestedPath).fileName());
+            saveDialog.resize(900, 560);
+
+            if (execCenteredDialog(&saveDialog) == QDialog::Accepted)
+                destination = saveDialog.selectedFiles().value(0);
 
             if (!destination.isEmpty())
                 break;
 
-            const QMessageBox::StandardButton discard = QMessageBox::question(
-                    dialogParent,
+            QMessageBox discardDialog(QMessageBox::Question,
                     tr("放弃录制"),
                     tr("未保存的录制视频将会丢失。是否确认放弃本次录制？"),
                     QMessageBox::Yes | QMessageBox::No,
-                    QMessageBox::No);
+                    dialogParent);
+            discardDialog.setDefaultButton(QMessageBox::No);
+            const QMessageBox::StandardButton discard =
+                    static_cast<QMessageBox::StandardButton>(
+                            execCenteredDialog(&discardDialog));
             if (discard == QMessageBox::Yes)
                 return QString();
         }
@@ -850,9 +1164,13 @@ QString UBPodcastController::saveRecordingAs(const QString& temporaryFilePath)
         return destination;
     }
 
-    QMessageBox::warning(dialogParent, tr("保存录制视频"),
+    QMessageBox saveErrorDialog(QMessageBox::Warning,
+            tr("保存录制视频"),
             tr("无法将视频保存到所选位置。原有文件没有被修改，录制视频仍保存在：\n%1")
-                    .arg(source));
+                    .arg(source),
+            QMessageBox::Ok,
+            dialogParent);
+    execCenteredDialog(&saveErrorDialog);
     return source;
 }
 
@@ -870,17 +1188,15 @@ void UBPodcastController::sendLatestPixmapToEncoder()
 
         if (mIsDesktopMode)
         {
-            QScreen* screen = UBApplication::displayManager->screen(ScreenRole::Control);
-            if (screen)
-                sourceCursorPos = globalCursorPos - screen->geometry().topLeft();
+            sourceCursorPos = globalCursorPos - currentDesktopCaptureRect().topLeft();
         }
         else if (mSourceWidget)
         {
             sourceCursorPos = mSourceWidget->mapFromGlobal(globalCursorPos);
         }
 
-        const QSize sourceSize = mIsDesktopMode && UBApplication::displayManager->screen(ScreenRole::Control)
-                ? UBApplication::displayManager->screen(ScreenRole::Control)->geometry().size()
+        const QSize sourceSize = mIsDesktopMode
+                ? currentDesktopCaptureRect().size()
                 : (mSourceWidget ? mSourceWidget->size() : QSize());
 
         if (QRect(QPoint(0, 0), sourceSize).contains(sourceCursorPos))
@@ -951,7 +1267,12 @@ void UBPodcastController::processScreenGrabingTimerEvent()
 
     if (mIsDesktopMode)
     {
-        widgetContent = UBApplication::displayManager->grab(ScreenRole::Control);
+        widgetContent = grabDesktopCapture();
+        if (widgetContent.isNull())
+        {
+            qWarning() << "Desktop recording frame could not be captured";
+            return;
+        }
     }
     else
     {
@@ -1166,4 +1487,217 @@ QList<QAction*> UBPodcastController::videoSizeActions()
     }
 
     return mVideoSizesActions;
+}
+
+QList<QAction*> UBPodcastController::desktopCaptureModeActions()
+{
+    if (mDesktopCaptureModeActions.isEmpty())
+    {
+        mFullScreenCaptureAction = new QAction(QStringLiteral("全屏"), this);
+        mAreaCaptureAction = new QAction(QStringLiteral("选区"), this);
+        mApplicationWindowCaptureAction = new QAction(QStringLiteral("窗口"), this);
+
+        mFullScreenCaptureAction->setData(static_cast<int>(FullScreenCapture));
+        mAreaCaptureAction->setData(static_cast<int>(AreaCapture));
+        mApplicationWindowCaptureAction->setData(static_cast<int>(ApplicationWindowCapture));
+
+        mDesktopCaptureModeActions << mFullScreenCaptureAction
+                                   << mAreaCaptureAction
+                                   << mApplicationWindowCaptureAction;
+
+        QActionGroup *captureModeGroup = new QActionGroup(this);
+        captureModeGroup->setExclusive(true);
+        foreach (QAction *captureAction, mDesktopCaptureModeActions)
+        {
+            captureAction->setCheckable(true);
+            captureModeGroup->addAction(captureAction);
+        }
+        mFullScreenCaptureAction->setChecked(true);
+
+        connect(captureModeGroup, SIGNAL(triggered(QAction*)),
+                this, SLOT(desktopCaptureModeTriggered(QAction*)));
+    }
+
+    return mDesktopCaptureModeActions;
+}
+
+void UBPodcastController::desktopCaptureModeTriggered(QAction *action)
+{
+    if (!action)
+        return;
+
+    setDesktopCaptureMode(
+            static_cast<DesktopCaptureMode>(action->data().toInt()));
+}
+
+void UBPodcastController::setDesktopCaptureMode(DesktopCaptureMode mode)
+{
+    mDesktopCaptureMode = mode;
+    mDesktopCapturePrepared = false;
+
+    foreach (QAction *captureAction, desktopCaptureModeActions())
+    {
+        const bool selected = captureAction->data().toInt()
+                == static_cast<int>(mode);
+        if (captureAction->isChecked() != selected)
+        {
+            QSignalBlocker blocker(captureAction);
+            captureAction->setChecked(selected);
+        }
+    }
+}
+
+bool UBPodcastController::prepareDesktopCapture()
+{
+    mDesktopCapturePrepared = false;
+    mDesktopCaptureWindowId = 0;
+    mDesktopCaptureWindowTitle.clear();
+
+    QScreen *desktopScreen = UBApplication::displayManager->screen(ScreenRole::Desktop);
+    if (!desktopScreen)
+    {
+        QMessageBox::warning(mRecordingPalette, QStringLiteral("屏幕录制"),
+                QStringLiteral("没有找到可录制的屏幕。"));
+        return false;
+    }
+
+    if (mDesktopCaptureMode == FullScreenCapture)
+    {
+        mDesktopCaptureRect = desktopScreen->geometry();
+        mDesktopCapturePrepared = true;
+        return true;
+    }
+
+    if (mDesktopCaptureMode == AreaCapture)
+    {
+        const QPixmap screenPixmap = UBApplication::displayManager->grab(ScreenRole::Desktop);
+        if (screenPixmap.isNull())
+        {
+            QMessageBox::warning(mRecordingPalette, QStringLiteral("选区录制"),
+                    QStringLiteral("无法获取屏幕画面，请重试。"));
+            return false;
+        }
+
+        UBCustomCaptureWindow captureWindow(nullptr);
+        if (captureWindow.execute(screenPixmap) != QDialog::Accepted)
+            return false;
+
+        const QRect selectedRect = captureWindow.selectedRect();
+        if (selectedRect.width() < 16 || selectedRect.height() < 16)
+            return false;
+
+        mDesktopCaptureRect = QRect(desktopScreen->geometry().topLeft()
+                + selectedRect.topLeft(), selectedRect.size());
+        mDesktopCapturePrepared = true;
+        return true;
+    }
+
+#ifdef Q_OS_WIN
+    const QList<CaptureWindowInfo> windows = availableCaptureWindows();
+    if (windows.isEmpty())
+    {
+        QMessageBox::information(mRecordingPalette, QStringLiteral("应用窗口录制"),
+                QStringLiteral("没有找到可录制的应用窗口。请先打开目标应用。"));
+        return false;
+    }
+
+    QStringList labels;
+    for (int index = 0; index < windows.size(); ++index)
+    {
+        const CaptureWindowInfo &window = windows.at(index);
+        labels << QStringLiteral("%1. %2（%3 × %4）")
+                .arg(index + 1).arg(window.title)
+                .arg(window.geometry.width()).arg(window.geometry.height());
+    }
+
+    bool accepted = false;
+    const QString selected = QInputDialog::getItem(mRecordingPalette,
+            QStringLiteral("选择应用窗口"),
+            QStringLiteral("请选择要录制的应用窗口（录制期间请勿最小化）："),
+            labels, 0, false, &accepted,
+            Qt::Dialog | Qt::WindowStaysOnTopHint);
+    if (!accepted)
+        return false;
+
+    const int selectedIndex = labels.indexOf(selected);
+    if (selectedIndex < 0)
+        return false;
+
+    const CaptureWindowInfo &selectedWindow = windows.at(selectedIndex);
+    mDesktopCaptureWindowId = reinterpret_cast<quintptr>(selectedWindow.handle);
+    mDesktopCaptureWindowTitle = selectedWindow.title;
+    mDesktopCaptureRect = nativeWindowGeometry(mDesktopCaptureWindowId);
+    mDesktopCapturePrepared = !mDesktopCaptureRect.isEmpty();
+    if (!mDesktopCapturePrepared)
+    {
+        QMessageBox::warning(mRecordingPalette, QStringLiteral("应用窗口录制"),
+                QStringLiteral("无法读取所选应用窗口的位置，请重新选择。"));
+        return false;
+    }
+    return true;
+#else
+    QMessageBox::information(mRecordingPalette, QStringLiteral("应用窗口录制"),
+            QStringLiteral("当前系统暂不支持应用窗口录制，请使用全屏或选区录制。"));
+    return false;
+#endif
+}
+
+QRect UBPodcastController::currentDesktopCaptureRect() const
+{
+#ifdef Q_OS_WIN
+    if (mDesktopCaptureMode == ApplicationWindowCapture && mDesktopCaptureWindowId)
+    {
+        const QRect currentGeometry = nativeWindowGeometry(mDesktopCaptureWindowId);
+        if (!currentGeometry.isEmpty())
+            return currentGeometry;
+    }
+#endif
+    return mDesktopCaptureRect;
+}
+
+QPixmap UBPodcastController::grabDesktopCapture() const
+{
+#ifdef Q_OS_WIN
+    if (mDesktopCaptureMode == ApplicationWindowCapture && mDesktopCaptureWindowId)
+    {
+        HWND window = reinterpret_cast<HWND>(mDesktopCaptureWindowId);
+        if (!IsWindow(window) || IsIconic(window))
+            return QPixmap();
+
+        const QRect windowRect = currentDesktopCaptureRect();
+        QScreen *screen = QGuiApplication::screenAt(windowRect.center());
+        if (!screen)
+            screen = QGuiApplication::primaryScreen();
+        if (!screen)
+            return QPixmap();
+
+        // PrintWindow asks the target HWND to render into an off-screen GDI
+        // bitmap.  Unlike QScreen::grabWindow(), this does not copy pixels
+        // from the target's on-screen rectangle, so overlapping windows and
+        // desktop content cannot leak into the recording.
+        QPixmap windowContent = captureNativeWindow(window);
+        if (windowContent.isNull())
+            return QPixmap();
+
+        windowContent.setDevicePixelRatio(screen->devicePixelRatio());
+
+        // Desktop ink lives in OpenBoard's transparent top-level window and
+        // is therefore not part of the target application's native surface.
+        // Render just that annotation layer over the captured window.
+        UBDesktopAnnotationController *desktopController =
+                UBApplication::applicationController->uninotesController();
+        if (desktopController)
+        {
+            const QPixmap annotations = desktopController->grabAnnotations(
+                    windowRect, windowContent.devicePixelRatio());
+            if (!annotations.isNull())
+            {
+                QPainter painter(&windowContent);
+                painter.drawPixmap(QPointF(0, 0), annotations);
+            }
+        }
+        return windowContent;
+    }
+#endif
+    return UBApplication::displayManager->grabGlobal(currentDesktopCaptureRect());
 }

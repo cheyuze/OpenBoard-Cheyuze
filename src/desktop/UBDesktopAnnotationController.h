@@ -69,6 +69,7 @@ class UBDesktopAnnotationController : public QObject
         UBDesktopPalette *desktopPalette();
         QPainterPath desktopPalettePath() const;
         UBBoardView *drawingView();
+        QPixmap grabAnnotations(const QRect& globalRect, qreal devicePixelRatio) const;
 
         void TransparentWidgetResized();
 

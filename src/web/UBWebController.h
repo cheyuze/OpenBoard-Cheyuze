@@ -129,7 +129,6 @@ class UBWebController : public QObject
         void trap();
 
         void onEmbedParsed(QWebEngineView* view, bool hasEmbeddedContent);
-        void onOpenTutorial();
         void onHintsAndTips();
 
         void captureStripe(QPointF pos, QSize size, QPixmap *pix, QPointF scrollPosition);

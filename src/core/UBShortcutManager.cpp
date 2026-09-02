@@ -31,6 +31,7 @@
 
 #include <QAction>
 #include <QDebug>
+#include <QKeySequence>
 #include <QWidget>
 
 // property names
@@ -118,14 +119,12 @@ void UBShortcutManager::addActions(const QString& group, const QList<QAction*> a
 void UBShortcutManager::addMainActions(UBMainWindow *mainWindow)
 {
     addActions(tr("Common"), {
-                   mainWindow->actionStylus,
                    mainWindow->actionBoard,
                    mainWindow->actionWeb,
                    mainWindow->actionDocument,
                    mainWindow->actionDesktop,
                    mainWindow->actionLibrary,
                    mainWindow->actionVirtualKeyboard,
-                   mainWindow->actionOpenTutorial,
                    mainWindow->actionHideApplication,
                    mainWindow->actionCut,
                    mainWindow->actionCopy,
@@ -168,6 +167,19 @@ void UBShortcutManager::addMainActions(UBMainWindow *mainWindow)
     if(UBPlatformUtils::hasVirtualKeyboard())
     {
         addActions(tr("Stylus Palette"),{ mainWindow->actionVirtualKeyboard }, mainWindow);
+    }
+
+    // Ctrl+S is conventionally reserved for saving. Remove the legacy default
+    // from existing profiles while preserving any shortcut chosen by the user.
+    const QString snapShortcutKey = QStringLiteral("Shortcut/actionSnap");
+    QStringList snapShortcutSettings =
+            UBSettings::settings()->value(snapShortcutKey).toStringList();
+    if (snapShortcutSettings.size() == 3
+            && QKeySequence(snapShortcutSettings.at(0))
+                    == QKeySequence(Qt::CTRL | Qt::Key_S))
+    {
+        snapShortcutSettings[0].clear();
+        UBSettings::settings()->setValue(snapShortcutKey, snapShortcutSettings);
     }
 
     addActions(tr("Stylus Palette"),{ mainWindow->actionSnap }, mainWindow);

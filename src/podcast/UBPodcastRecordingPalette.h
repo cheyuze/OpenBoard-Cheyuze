@@ -36,6 +36,8 @@
 #include <QtGui>
 #include <QLabel>
 
+class QAction;
+
 class UBVuMeter;
 
 class UBPodcastRecordingPalette : public UBActionPalette
@@ -51,12 +53,17 @@ class UBPodcastRecordingPalette : public UBActionPalette
         void recordingStateChanged(UBPodcastController::RecordingState);
         void recordingProgressChanged(qint64 ms);
         void audioLevelChanged(quint8 level);
+        void setNativeOwner(QWidget *owner);
 
     protected:
         void paintEvent(QPaintEvent *event) override;
+        void moveEvent(QMoveEvent *event) override;
+        void showEvent(QShowEvent *event) override;
         int radius() override;
 
     private:
+        void ensureSystemTopMost();
+
         QLabel *mTimerLabel;
         UBVuMeter *mLevelMeter;
 };

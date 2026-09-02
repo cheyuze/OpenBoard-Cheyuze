@@ -58,6 +58,17 @@ class UBPodcastController : public QObject
 
         QList<QAction*> audioRecordingDevicesActions();
         QList<QAction*> videoSizeActions();
+        QList<QAction*> desktopCaptureModeActions();
+
+        enum DesktopCaptureMode
+        {
+            FullScreenCapture = 0,
+            AreaCapture,
+            ApplicationWindowCapture
+        };
+
+        void setDesktopCaptureMode(DesktopCaptureMode mode);
+        bool prepareDesktopCapture();
 
         enum RecordingState
         {
@@ -116,12 +127,18 @@ class UBPodcastController : public QObject
 
         void updateActionState();
 
+        void desktopCaptureModeTriggered(QAction* action);
+
     private:
         void widgetSizeChanged(const QSizeF size);
 
         void setRecordingState(RecordingState pRecordingState);
 
         void positionRecordingPalette(bool desktopMode);
+
+        QRect currentDesktopCaptureRect() const;
+
+        QPixmap grabDesktopCapture() const;
 
         void sendLatestPixmapToEncoder();
 
@@ -176,10 +193,21 @@ class UBPodcastController : public QObject
 
         QList<QAction*> mAudioInputDevicesActions;
         QList<QAction*> mVideoSizesActions;
+        QList<QAction*> mDesktopCaptureModeActions;
 
         QAction* mSmallVideoSizeAction;
         QAction* mMediumVideoSizeAction;
         QAction* mFullVideoSizeAction;
+
+        QAction* mFullScreenCaptureAction;
+        QAction* mAreaCaptureAction;
+        QAction* mApplicationWindowCaptureAction;
+
+        DesktopCaptureMode mDesktopCaptureMode;
+        bool mDesktopCapturePrepared;
+        QRect mDesktopCaptureRect;
+        quintptr mDesktopCaptureWindowId;
+        QString mDesktopCaptureWindowTitle;
 
         QString mPodcastRecordingPath;
         QString mSuggestedRecordingFilePath;

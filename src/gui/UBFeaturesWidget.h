@@ -95,6 +95,7 @@ public:
     UBFeaturesController * getFeaturesController() const { return controller; }
     void importImage(const QByteArray& imageData, const QString &fileName = QString());
     void showShapes();
+    void showRoot();
 
     static const int minThumbnailSize = 20;
     static const int maxThumbnailSize = 100;

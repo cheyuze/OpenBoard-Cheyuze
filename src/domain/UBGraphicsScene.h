@@ -142,6 +142,11 @@ class UBGraphicsScene: public UBCoreGraphicsScene, public UBItem, public std::en
         bool inputDevicePress(const QPointF& scenePos, const qreal& pressure = 1.0, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
         bool inputDeviceMove(const QPointF& scenePos, const qreal& pressure = 1.0, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
         bool inputDeviceRelease(int tool = -1, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
+        bool polygonDrawingActive() const;
+        void addPolygonVertex(const QPointF& scenePos);
+        void updatePolygonPreview(const QPointF& scenePos);
+        void finishPolygonDrawing();
+        void cancelPolygonDrawing();
 
         void leaveEvent (QEvent* event);
 
@@ -394,7 +399,15 @@ signals:
         UBGraphicsPolygonItem* arcToPolygonItem(const QLineF& pStartRadius, qreal pSpanAngle, qreal pWidth);
         UBGraphicsPolygonItem* curveToPolygonItem(const QList<QPair<QPointF, qreal> > &points);
         UBGraphicsPolygonItem* curveToPolygonItem(const QList<QPointF> &points, qreal startWidth, qreal endWidth);
-        void addPolygonItemToCurrentStroke(UBGraphicsPolygonItem* polygonItem);
+        void addPolygonItemToCurrentStroke(UBGraphicsPolygonItem* polygonItem, bool repaint = true);
+        void drawConfiguredLineTo(const QPointF& endPoint, qreal width,
+                bool constrainAspectRatio = false);
+        void updateShapeFillPreview(const QPolygonF& polygon);
+        void clearShapeFillPreview();
+        void rebuildPolygonPreview(const QPointF& hoverPoint, bool includeHoverPoint);
+        void clearPolygonPreview();
+        void commitPolygonDrawing();
+        void repaintStrokePreview(const QRectF& sceneRect);
 
         void initPolygonItem(UBGraphicsPolygonItem*);
 
@@ -490,6 +503,10 @@ signals:
         UBZLayerController *mZLayerController;
         UBGraphicsPolygonItem* mpLastPolygon;
         UBGraphicsPolygonItem* mTempPolygon;
+        UBGraphicsPolygonItem* mShapeFillPreview;
+        QList<UBGraphicsPolygonItem*> mPolygonPreviewItems;
+        QVector<QPointF> mPolygonVertices;
+        QPointF mPolygonHoverPoint;
 
         bool mDrawWithCompass;
         UBGraphicsPolygonItem *mCurrentPolygon;

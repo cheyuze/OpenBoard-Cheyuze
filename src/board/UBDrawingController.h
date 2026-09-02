@@ -46,6 +46,38 @@ class UBDrawingController : public QObject
 
     public:
 
+        enum LineGeometryMode
+        {
+            StraightLineGeometry = 0,
+            SquareGeometry,
+            CircleGeometry,
+            TriangleGeometry,
+            ArrowGeometry,
+            AxesGeometry,
+            PolygonGeometry,
+            ParabolaGeometry,
+            HyperbolaGeometry,
+            SineGeometry,
+            NumberLineGeometry,
+            ParallelogramGeometry,
+            TrapezoidGeometry,
+            PentagonGeometry,
+            HexagonGeometry,
+            CubeGeometry,
+            CuboidGeometry,
+            CylinderGeometry,
+            ConeGeometry,
+            SphereGeometry,
+            PyramidGeometry,
+            TriangularPrismGeometry
+        };
+
+        enum LinePattern
+        {
+            SolidLinePattern = 0,
+            DashedLinePattern
+        };
+
         static UBDrawingController* drawingController();
         static void destroy();
 
@@ -60,6 +92,11 @@ class UBDrawingController : public QObject
         int currentToolColorIndex();
         QColor currentToolColor();
         QColor toolColor(bool onDarkBackground);
+        LineGeometryMode lineGeometryMode() const;
+        LinePattern linePattern() const;
+        bool shapeFillEnabled() const;
+        QColor shapeFillColor() const;
+        int shapeFillOpacity() const;
 
         void setPenColor(bool onDarkBackground, const QColor& color, int pIndex);
         void setMarkerColor(bool onDarkBackground, const QColor& color, int pIndex);
@@ -80,20 +117,39 @@ class UBDrawingController : public QObject
 
         void setStylusTool(int tool);
         void setLineWidthIndex(int index);
+        void setLineWidthValue(int value);
         void setColorIndex(int index);
         void setEraserWidthIndex(int index);
+        void setEraserWidthValue(int value);
+        void setLineGeometryMode(int mode);
+        void setLinePattern(int pattern);
+        void setShapeFillEnabled(bool enabled);
+        void setShapeFillColor(const QColor& color);
+        void setShapeFillOpacity(int opacity);
 
     signals:
         void stylusToolChanged(int tool, int previousTool = -1);
         void colorPaletteChanged();
 
         void lineWidthIndexChanged(int index);
+        void lineWidthValueChanged(int value);
+        void eraserWidthValueChanged(int value);
         void colorIndexChanged(int index);
+        void lineGeometryModeChanged(int mode);
+        void linePatternChanged(int pattern);
+        void shapeFillEnabledChanged(bool enabled);
+        void shapeFillColorChanged(const QColor& color);
+        void shapeFillOpacityChanged(int opacity);
 
     private:
         QPointer<UBAbstractDrawRuler> mActiveRuler;
         UBStylusTool::Enum mStylusTool;
         UBStylusTool::Enum mLatestDrawingTool;
+        LineGeometryMode mLineGeometryMode;
+        LinePattern mLinePattern;
+        bool mShapeFillEnabled;
+        QColor mShapeFillColor;
+        int mShapeFillOpacity;
         bool mIsDesktopMode;
 
         static UBDrawingController* sDrawingController;

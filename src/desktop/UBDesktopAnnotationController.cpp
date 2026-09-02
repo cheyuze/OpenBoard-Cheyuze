@@ -305,6 +305,33 @@ UBBoardView* UBDesktopAnnotationController::drawingView()
     return mTransparentDrawingView;
 }
 
+QPixmap UBDesktopAnnotationController::grabAnnotations(
+        const QRect& globalRect, qreal devicePixelRatio) const
+{
+    if (!mTransparentDrawingView || !mTransparentDrawingScene
+            || globalRect.isEmpty())
+        return QPixmap();
+
+    const qreal scale = devicePixelRatio > 0.0 ? devicePixelRatio : 1.0;
+    QPixmap annotations(qRound(globalRect.width() * scale),
+            qRound(globalRect.height() * scale));
+    annotations.setDevicePixelRatio(scale);
+    annotations.fill(Qt::transparent);
+
+    const QRect localRect(
+            mTransparentDrawingView->mapFromGlobal(globalRect.topLeft()),
+            globalRect.size());
+    const QRectF sceneRect =
+            mTransparentDrawingView->mapToScene(localRect).boundingRect();
+
+    QPainter painter(&annotations);
+    painter.setRenderHint(QPainter::Antialiasing);
+    mTransparentDrawingScene->render(&painter,
+            QRectF(QPointF(0, 0), QSizeF(globalRect.size())),
+            sceneRect, Qt::IgnoreAspectRatio);
+    return annotations;
+}
+
 
 void UBDesktopAnnotationController::showWindow()
 {

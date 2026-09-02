@@ -51,6 +51,8 @@ class UBCustomCaptureWindow : public QDialog
         int execute(const QPixmap &pScreenPixmap);
         // return the selected area pixmap.
         QPixmap getSelectedPixmap();
+        // Return the selected area in logical coordinates relative to the screen.
+        QRect selectedRect() const;
 
     protected:
         virtual void showEvent ( QShowEvent * event );

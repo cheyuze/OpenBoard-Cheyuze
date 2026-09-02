@@ -41,10 +41,18 @@
 
 #include "core/memcheck.h"
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
      : UBActionPalette(Qt::Horizontal, parent)
+     , mTimerLabel(nullptr)
+     , mLevelMeter(nullptr)
 {
     setAttribute(Qt::WA_TranslucentBackground);
+    setAttribute(Qt::WA_NoMousePropagation, true);
+    setWindowFlag(Qt::WindowStaysOnTopHint, true);
     setWindowTitle(QStringLiteral("录制控制"));
     setGrip(false);
     setWindowOpacity(0.98);
@@ -140,6 +148,7 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
     }
 
     adjustSize();
+    ensureSystemTopMost();
 }
 
 
@@ -215,8 +224,9 @@ void UBPodcastRecordingPalette::recordingStateChanged(UBPodcastController::Recor
         pauseAction->setEnabled(false);
         UBApplication::mainWindow->actionPodcastConfig->setEnabled(false);
     }
-}
 
+    ensureSystemTopMost();
+}
 
 void UBPodcastRecordingPalette::recordingProgressChanged(qint64 ms)
 {
@@ -297,4 +307,50 @@ void UBPodcastRecordingPalette::paintEvent(QPaintEvent *event)
 int UBPodcastRecordingPalette::radius()
 {
     return 15;
+}
+
+void UBPodcastRecordingPalette::moveEvent(QMoveEvent *event)
+{
+    UBActionPalette::moveEvent(event);
+    ensureSystemTopMost();
+}
+
+void UBPodcastRecordingPalette::showEvent(QShowEvent *event)
+{
+    UBActionPalette::showEvent(event);
+    ensureSystemTopMost();
+}
+
+void UBPodcastRecordingPalette::setNativeOwner(QWidget *owner)
+{
+#ifdef Q_OS_WIN
+    if (!winId())
+        return;
+
+    const HWND ownerWindow = owner
+            ? reinterpret_cast<HWND>(owner->winId()) : nullptr;
+    SetWindowLongPtr(reinterpret_cast<HWND>(winId()), GWLP_HWNDPARENT,
+            reinterpret_cast<LONG_PTR>(ownerWindow));
+    ensureSystemTopMost();
+#else
+    Q_UNUSED(owner);
+#endif
+}
+
+void UBPodcastRecordingPalette::ensureSystemTopMost()
+{
+    if (!isWindow())
+        return;
+
+    if (isVisible())
+        raise();
+
+#ifdef Q_OS_WIN
+    if (winId())
+    {
+        SetWindowPos(reinterpret_cast<HWND>(winId()), HWND_TOPMOST,
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+#endif
 }

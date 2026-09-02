@@ -31,6 +31,8 @@
 
 #include <QtWidgets>
 
+#include <functional>
+
 #include "adaptors/UBMetadataDcSubsetAdaptor.h"
 #include "adaptors/UBSvgSubsetAdaptor.h"
 
@@ -73,6 +75,7 @@
 #include "gui/UBMagnifer.h"
 #include "gui/UBMainWindow.h"
 #include "gui/UBMessageWindow.h"
+#include "gui/UBResources.h"
 #include "gui/UBThumbnailScene.h"
 #include "gui/UBToolWidget.h"
 #include "gui/UBToolbarButtonGroup.h"
@@ -88,6 +91,371 @@
 
 namespace
 {
+    class ZoomPercentageLabel final : public QLabel
+    {
+    public:
+        explicit ZoomPercentageLabel(QWidget* parent = nullptr)
+            : QLabel(parent)
+        {
+            mSingleClickTimer.setSingleShot(true);
+            connect(&mSingleClickTimer, &QTimer::timeout, this, [this]() {
+                if (mSingleClickHandler)
+                    mSingleClickHandler();
+            });
+        }
+
+        void setSingleClickHandler(std::function<void()> handler)
+        {
+            mSingleClickHandler = std::move(handler);
+        }
+
+        void setDoubleClickHandler(std::function<void()> handler)
+        {
+            mDoubleClickHandler = std::move(handler);
+        }
+
+    protected:
+        void mouseReleaseEvent(QMouseEvent* event) override
+        {
+            if (event->button() == Qt::LeftButton)
+            {
+                if (mIgnoreNextRelease)
+                {
+                    mIgnoreNextRelease = false;
+                    event->accept();
+                    return;
+                }
+
+                mSingleClickTimer.start(QApplication::doubleClickInterval());
+                event->accept();
+                return;
+            }
+            QLabel::mouseReleaseEvent(event);
+        }
+
+        void mouseDoubleClickEvent(QMouseEvent* event) override
+        {
+            if (event->button() == Qt::LeftButton)
+            {
+                mSingleClickTimer.stop();
+                mIgnoreNextRelease = true;
+                if (mDoubleClickHandler)
+                    mDoubleClickHandler();
+                event->accept();
+                return;
+            }
+            QLabel::mouseDoubleClickEvent(event);
+        }
+
+    private:
+        QTimer mSingleClickTimer;
+        std::function<void()> mSingleClickHandler;
+        std::function<void()> mDoubleClickHandler;
+        bool mIgnoreNextRelease = false;
+    };
+
+
+    QPixmap historyArrowPixmap(bool redo, const QColor& color)
+    {
+        QPixmap pixmap(32, 32);
+        pixmap.fill(Qt::transparent);
+
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(QPen(color, 2.8, Qt::SolidLine,
+                Qt::RoundCap, Qt::RoundJoin));
+        painter.setBrush(Qt::NoBrush);
+
+        QPainterPath path;
+        path.moveTo(26, 25);
+        path.cubicTo(25, 15, 17, 9, 8, 13);
+        path.moveTo(8, 13);
+        path.lineTo(14, 6);
+        path.moveTo(8, 13);
+        path.lineTo(15, 18);
+
+        if (redo)
+        {
+            QTransform mirror;
+            mirror.translate(32, 0);
+            mirror.scale(-1, 1);
+            path = mirror.map(path);
+        }
+
+        painter.drawPath(path);
+        return pixmap;
+    }
+
+
+    QIcon historyArrowIcon(bool redo)
+    {
+        QIcon icon;
+        icon.addPixmap(historyArrowPixmap(redo,
+                QColor(42, 78, 125, 220)), QIcon::Normal);
+        icon.addPixmap(historyArrowPixmap(redo,
+                QColor(91, 106, 126, 75)), QIcon::Disabled);
+        return icon;
+    }
+
+
+    QPixmap captureQuickPixmap(const QColor& color)
+    {
+        QPixmap pixmap(32, 32);
+        pixmap.fill(Qt::transparent);
+
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(QPen(color, 2.3, Qt::SolidLine,
+                Qt::RoundCap, Qt::RoundJoin));
+        painter.setBrush(Qt::NoBrush);
+
+        painter.drawLine(QPointF(5, 12), QPointF(5, 6));
+        painter.drawLine(QPointF(5, 6), QPointF(11, 6));
+        painter.drawLine(QPointF(21, 6), QPointF(27, 6));
+        painter.drawLine(QPointF(27, 6), QPointF(27, 12));
+        painter.drawLine(QPointF(27, 20), QPointF(27, 26));
+        painter.drawLine(QPointF(27, 26), QPointF(21, 26));
+        painter.drawLine(QPointF(11, 26), QPointF(5, 26));
+        painter.drawLine(QPointF(5, 26), QPointF(5, 20));
+        painter.drawRoundedRect(QRectF(10, 11, 12, 10), 2, 2);
+        painter.drawEllipse(QPointF(16, 16), 2.6, 2.6);
+        return pixmap;
+    }
+
+
+    QPixmap keyboardQuickPixmap(const QColor& color)
+    {
+        QPixmap pixmap(32, 32);
+        pixmap.fill(Qt::transparent);
+
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(QPen(color, 2.0, Qt::SolidLine,
+                Qt::RoundCap, Qt::RoundJoin));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRoundedRect(QRectF(4.5, 7.5, 23, 17), 3, 3);
+
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(color);
+        for (int row = 0; row < 2; ++row)
+        {
+            for (int column = 0; column < 5; ++column)
+                painter.drawRoundedRect(QRectF(7 + column * 4, 11 + row * 4,
+                        2.5, 2.3), 0.7, 0.7);
+        }
+        painter.drawRoundedRect(QRectF(10, 19, 12, 2.3), 0.8, 0.8);
+        return pixmap;
+    }
+
+
+    QIcon quickToolIcon(bool keyboard)
+    {
+        QIcon icon;
+        const auto pixmap = [keyboard](const QColor& color) {
+            return keyboard ? keyboardQuickPixmap(color)
+                    : captureQuickPixmap(color);
+        };
+        icon.addPixmap(pixmap(QColor(42, 78, 125, 220)),
+                QIcon::Normal, QIcon::Off);
+        icon.addPixmap(pixmap(QColor(37, 99, 235, 235)),
+                QIcon::Normal, QIcon::On);
+        icon.addPixmap(pixmap(QColor(91, 106, 126, 75)),
+                QIcon::Disabled, QIcon::Off);
+        return icon;
+    }
+
+
+    QIcon lineOptionIcon(int option)
+    {
+        QPixmap pixmap(24, 24);
+        pixmap.fill(Qt::transparent);
+
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        QPen pen(QColor(QStringLiteral("#1E293B")), 2.0,
+                option == 4 ? Qt::DashLine : Qt::SolidLine,
+                Qt::RoundCap, Qt::RoundJoin);
+        painter.setPen(pen);
+        painter.setBrush(Qt::NoBrush);
+
+        switch (option)
+        {
+        case 1:
+            painter.drawRoundedRect(QRectF(4.5, 4.5, 15, 15), 1.5, 1.5);
+            break;
+        case 2:
+            painter.drawEllipse(QRectF(4.5, 4.5, 15, 15));
+            break;
+        case 5:
+            painter.drawPolygon(QPolygonF()
+                    << QPointF(12, 4) << QPointF(20, 20) << QPointF(4, 20));
+            break;
+        case 6:
+            painter.drawLine(QPointF(4, 12), QPointF(20, 12));
+            painter.drawLine(QPointF(20, 12), QPointF(14, 7));
+            painter.drawLine(QPointF(20, 12), QPointF(14, 17));
+            break;
+        case 7:
+            painter.drawLine(QPointF(4, 16), QPointF(20, 16));
+            painter.drawLine(QPointF(12, 21), QPointF(12, 4));
+            painter.drawLine(QPointF(20, 16), QPointF(16, 13));
+            painter.drawLine(QPointF(20, 16), QPointF(16, 19));
+            painter.drawLine(QPointF(12, 4), QPointF(9, 8));
+            painter.drawLine(QPointF(12, 4), QPointF(15, 8));
+            break;
+        case 8:
+            painter.drawPolygon(QPolygonF() << QPointF(4, 17) << QPointF(8, 5)
+                    << QPointF(17, 7) << QPointF(20, 18) << QPointF(10, 20));
+            break;
+        case 9:
+        {
+            QPainterPath path;
+            path.moveTo(QPointF(4, 5));
+            path.quadTo(QPointF(12, 22), QPointF(20, 5));
+            painter.drawPath(path);
+            break;
+        }
+        case 10:
+        {
+            QPainterPath first;
+            first.moveTo(QPointF(4, 5));
+            first.cubicTo(QPointF(8, 5), QPointF(9, 8), QPointF(10, 11));
+            QPainterPath second;
+            second.moveTo(QPointF(14, 13));
+            second.cubicTo(QPointF(15, 16), QPointF(16, 19), QPointF(20, 19));
+            painter.drawPath(first);
+            painter.drawPath(second);
+            break;
+        }
+        case 11:
+        {
+            QPainterPath path;
+            path.moveTo(QPointF(3, 12));
+            path.cubicTo(QPointF(6, 3), QPointF(9, 3), QPointF(12, 12));
+            path.cubicTo(QPointF(15, 21), QPointF(18, 21), QPointF(21, 12));
+            painter.drawPath(path);
+            break;
+        }
+        case 12:
+            painter.drawLine(QPointF(3, 12), QPointF(21, 12));
+            painter.drawLine(QPointF(3, 12), QPointF(7, 9));
+            painter.drawLine(QPointF(3, 12), QPointF(7, 15));
+            painter.drawLine(QPointF(21, 12), QPointF(17, 9));
+            painter.drawLine(QPointF(21, 12), QPointF(17, 15));
+            for (int x = 8; x <= 16; x += 4)
+                painter.drawLine(QPointF(x, 9), QPointF(x, 15));
+            break;
+        case 13:
+            painter.drawPolygon(QPolygonF() << QPointF(7, 5) << QPointF(21, 5)
+                    << QPointF(17, 19) << QPointF(3, 19));
+            break;
+        case 14:
+            painter.drawPolygon(QPolygonF() << QPointF(8, 5) << QPointF(16, 5)
+                    << QPointF(21, 19) << QPointF(3, 19));
+            break;
+        case 15:
+            painter.drawPolygon(QPolygonF() << QPointF(12, 3) << QPointF(21, 10)
+                    << QPointF(17, 21) << QPointF(7, 21) << QPointF(3, 10));
+            break;
+        case 16:
+            painter.drawPolygon(QPolygonF() << QPointF(7, 3) << QPointF(17, 3)
+                    << QPointF(22, 12) << QPointF(17, 21) << QPointF(7, 21)
+                    << QPointF(2, 12));
+            break;
+        case 17:
+        case 18:
+            painter.drawRect(QRectF(4, 8, 12, 12));
+            painter.drawRect(QRectF(8, 4, 12, 12));
+            painter.drawLine(QPointF(4, 8), QPointF(8, 4));
+            painter.drawLine(QPointF(16, 8), QPointF(20, 4));
+            painter.drawLine(QPointF(16, 20), QPointF(20, 16));
+            break;
+        case 19:
+            painter.drawEllipse(QRectF(4, 3, 16, 6));
+            painter.drawEllipse(QRectF(4, 15, 16, 6));
+            painter.drawLine(QPointF(4, 6), QPointF(4, 18));
+            painter.drawLine(QPointF(20, 6), QPointF(20, 18));
+            break;
+        case 20:
+            painter.drawLine(QPointF(12, 3), QPointF(4, 18));
+            painter.drawLine(QPointF(12, 3), QPointF(20, 18));
+            painter.drawEllipse(QRectF(4, 15, 16, 6));
+            break;
+        case 21:
+            painter.drawEllipse(QRectF(3, 3, 18, 18));
+            painter.drawEllipse(QRectF(3, 9, 18, 6));
+            break;
+        case 22:
+            painter.drawLine(QPointF(12, 3), QPointF(3, 17));
+            painter.drawLine(QPointF(12, 3), QPointF(12, 21));
+            painter.drawLine(QPointF(12, 3), QPointF(21, 17));
+            painter.drawPolygon(QPolygonF() << QPointF(3, 17) << QPointF(12, 13)
+                    << QPointF(21, 17) << QPointF(12, 21));
+            break;
+        case 23:
+            painter.drawPolygon(QPolygonF() << QPointF(3, 19) << QPointF(8, 7)
+                    << QPointF(13, 19));
+            painter.drawPolygon(QPolygonF() << QPointF(11, 15) << QPointF(16, 3)
+                    << QPointF(21, 15));
+            painter.drawLine(QPointF(3, 19), QPointF(11, 15));
+            painter.drawLine(QPointF(8, 7), QPointF(16, 3));
+            painter.drawLine(QPointF(13, 19), QPointF(21, 15));
+            break;
+        default:
+            painter.drawLine(QPointF(4, 12), QPointF(20, 12));
+            break;
+        }
+
+        return QIcon(pixmap);
+    }
+
+    QPixmap shapeToolPixmap(const QColor& color)
+    {
+        QPixmap pixmap(48, 48);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(QPen(color, 2.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRoundedRect(QRectF(5, 7, 17, 14), 2, 2);
+        painter.drawEllipse(QRectF(27, 6, 15, 15));
+        painter.drawPolygon(QPolygonF() << QPointF(13, 27) << QPointF(22, 42)
+                << QPointF(4, 42));
+        painter.drawLine(QPointF(27, 35), QPointF(43, 35));
+        painter.drawLine(QPointF(43, 35), QPointF(38, 30));
+        painter.drawLine(QPointF(43, 35), QPointF(38, 40));
+        return pixmap;
+    }
+
+    QIcon shapeToolIcon()
+    {
+        QIcon icon;
+        icon.addPixmap(shapeToolPixmap(QColor(QStringLiteral("#334155"))),
+                QIcon::Normal, QIcon::Off);
+        icon.addPixmap(shapeToolPixmap(QColor(QStringLiteral("#2563EB"))),
+                QIcon::Normal, QIcon::On);
+        return icon;
+    }
+
+    QIcon fillOptionIcon(bool enabled, const QColor& color, int opacity)
+    {
+        QPixmap pixmap(24, 24);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        QColor visibleColor = color;
+        visibleColor.setAlpha(qRound(255.0 * qBound(0, opacity, 100) / 100.0));
+        painter.setPen(QPen(QColor(QStringLiteral("#64748B")), 1.6));
+        painter.setBrush(enabled ? QBrush(visibleColor) : Qt::NoBrush);
+        painter.drawRoundedRect(QRectF(4, 4, 16, 16), 3, 3);
+        if (!enabled)
+        {
+            painter.setPen(QPen(QColor(QStringLiteral("#EF4444")), 1.8));
+            painter.drawLine(QPointF(5, 19), QPointF(19, 5));
+        }
+        return QIcon(pixmap);
+    }
+
     std::shared_ptr<UBDocumentProxy> findDocumentByUuid(
             UBDocumentTreeNode *node, const QUuid &uuid)
     {
@@ -161,6 +529,16 @@ UBBoardController::UBBoardController(UBMainWindow* mainWindow)
     , mDisplayView(0)
     , mControlContainer(0)
     , mControlLayout(0)
+    , mZoomControl(0)
+    , mZoomSlider(0)
+    , mZoomLabel(0)
+    , mZoomOutButton(0)
+    , mZoomInButton(0)
+    , mUndoRedoControl(0)
+    , mUndoButton(0)
+    , mRedoButton(0)
+    , mCaptureButton(0)
+    , mVirtualKeyboardButton(0)
     , mZoomFactor(1.0)
     , mIsClosing(false)
     , mSystemScaleFactor(1.0)
@@ -217,18 +595,24 @@ void UBBoardController::init()
             ? documentModel->nodeFromIndex(documentModel->myDocumentsIndex()) : nullptr;
 
     std::shared_ptr<UBDocumentProxy> doc;
-    const QString lastDocumentUuid = UBSettings::settings()
-            ->appLastSessionDocumentUUID->get().toString().trimmed();
-    if (!lastDocumentUuid.isEmpty())
-        doc = findDocumentByUuid(myDocumentsNode, QUuid(lastDocumentUuid));
+    const bool createNewAtStartup = UBSettings::settings()
+            ->appStartupBehavior->get().toInt() == UBSettings::CreateNewDocument;
 
-    // Existing installations do not yet have LastSessionDocumentUUID. In
-    // that case open the most recently edited board instead of creating an
-    // empty document on the first launch after upgrading.
-    if (!doc)
+    if (!createNewAtStartup)
     {
-        QDateTime mostRecentUpdate;
-        findMostRecentlyUpdatedDocument(myDocumentsNode, doc, mostRecentUpdate);
+        const QString lastDocumentUuid = UBSettings::settings()
+                ->appLastSessionDocumentUUID->get().toString().trimmed();
+        if (!lastDocumentUuid.isEmpty())
+            doc = findDocumentByUuid(myDocumentsNode, QUuid(lastDocumentUuid));
+
+        // Existing installations do not yet have LastSessionDocumentUUID. In
+        // that case open the most recently edited board instead of creating an
+        // empty document on the first launch after upgrading.
+        if (!doc)
+        {
+            QDateTime mostRecentUpdate;
+            findMostRecentlyUpdatedDocument(myDocumentsNode, doc, mostRecentUpdate);
+        }
     }
 
     if (doc)
@@ -310,6 +694,9 @@ void UBBoardController::setupViews()
     mControlContainer->setObjectName("ubBoardControlContainer");
     mMainWindow->addBoardWidget(mControlContainer);
 
+    setupZoomControl();
+    setupUndoRedoControl();
+
     connect(mControlView, SIGNAL(resized(QResizeEvent*)), this, SLOT(boardViewResized(QResizeEvent*)));
 
     // TODO UB 4.x Optimization do we have to create the display view even if their is
@@ -325,6 +712,253 @@ void UBBoardController::setupViews()
     mMessageWindow->hide();
 
     connect(this, SIGNAL(activeSceneChanged()), mPaletteManager, SLOT(activeSceneChanged()));
+}
+
+
+void UBBoardController::setupZoomControl()
+{
+    mZoomControl = new QFrame(mControlContainer);
+    mZoomControl->setObjectName(QStringLiteral("ubBoardZoomControl"));
+    mZoomControl->setAttribute(Qt::WA_StyledBackground, true);
+    mZoomControl->setFixedHeight(42);
+
+    QHBoxLayout* layout = new QHBoxLayout(mZoomControl);
+    layout->setContentsMargins(8, 5, 8, 5);
+    layout->setSpacing(6);
+
+    auto createButton = [this](const QString& objectName, const QString& text,
+            const QString& tooltip) {
+        QToolButton* button = new QToolButton(mZoomControl);
+        button->setObjectName(objectName);
+        button->setText(text);
+        button->setToolTip(tooltip);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setAutoRaise(true);
+        button->setFocusPolicy(Qt::NoFocus);
+        button->setFixedSize(28, 28);
+        return button;
+    };
+
+    mZoomOutButton = createButton(QStringLiteral("ubBoardZoomOutButton"),
+            QString::fromUtf8("\xE2\x88\x92"), QStringLiteral("缩小画布"));
+    mZoomInButton = createButton(QStringLiteral("ubBoardZoomInButton"),
+            QStringLiteral("+"), QStringLiteral("放大画布"));
+
+    mZoomSlider = new QSlider(Qt::Horizontal, mZoomControl);
+    mZoomSlider->setObjectName(QStringLiteral("ubBoardZoomSlider"));
+    // OpenBoard has no fixed lower zoom constant: the native wheel zoom can
+    // continue below 25%.  Use 1% as the smallest meaningful value the
+    // integer percentage control can represent, while keeping OpenBoard's
+    // native UB_MAX_ZOOM upper bound.
+    mZoomSlider->setRange(1, UB_MAX_ZOOM * 100);
+    mZoomSlider->setSingleStep(5);
+    mZoomSlider->setPageStep(25);
+    mZoomSlider->setValue(100);
+    mZoomSlider->setFixedWidth(150);
+    mZoomSlider->setCursor(Qt::PointingHandCursor);
+    mZoomSlider->setToolTip(QStringLiteral("拖动调整画布缩放比例"));
+
+    ZoomPercentageLabel* zoomLabel = new ZoomPercentageLabel(mZoomControl);
+    mZoomLabel = zoomLabel;
+    mZoomLabel->setText(QStringLiteral("100%"));
+    mZoomLabel->setObjectName(QStringLiteral("ubBoardZoomLabel"));
+    mZoomLabel->setAlignment(Qt::AlignCenter);
+    mZoomLabel->setFixedWidth(48);
+    mZoomLabel->setCursor(Qt::PointingHandCursor);
+    mZoomLabel->setToolTip(QStringLiteral("单击选择缩放比例，双击恢复 100%"));
+
+    QMenu* zoomPresetMenu = new QMenu(mZoomLabel);
+    zoomPresetMenu->setObjectName(QStringLiteral("ubZoomPresetMenu"));
+    QActionGroup* zoomPresetGroup = new QActionGroup(zoomPresetMenu);
+    zoomPresetGroup->setExclusive(true);
+    const QList<int> zoomPresets { 10, 30, 50, 100, 150, 200, 300, 500 };
+    for (int percentage : zoomPresets)
+    {
+        QAction* action = zoomPresetMenu->addAction(
+                QStringLiteral("%1%").arg(percentage));
+        action->setCheckable(true);
+        action->setData(percentage);
+        zoomPresetGroup->addAction(action);
+    }
+    connect(zoomPresetGroup, &QActionGroup::triggered, mZoomControl,
+            [this](QAction* action) {
+        mZoomSlider->setValue(action->data().toInt());
+    });
+    connect(zoomPresetMenu, &QMenu::aboutToShow, mZoomControl,
+            [this, zoomPresetGroup]() {
+        for (QAction* action : zoomPresetGroup->actions())
+            action->setChecked(action->data().toInt() == mZoomSlider->value());
+    });
+    zoomLabel->setSingleClickHandler([this, zoomPresetMenu]() {
+        const QSize menuSize = zoomPresetMenu->sizeHint();
+        const QPoint labelTopLeft = mZoomLabel->mapToGlobal(QPoint(0, 0));
+        const int x = labelTopLeft.x() + mZoomLabel->width() - menuSize.width();
+        const int y = labelTopLeft.y() - menuSize.height() - 4;
+        zoomPresetMenu->popup(QPoint(x, y));
+    });
+    zoomLabel->setDoubleClickHandler([this]() {
+        mZoomSlider->setValue(100);
+    });
+
+    layout->addWidget(mZoomOutButton);
+    layout->addWidget(mZoomSlider);
+    layout->addWidget(mZoomInButton);
+    layout->addWidget(mZoomLabel);
+    mZoomControl->setFixedWidth(layout->sizeHint().width());
+
+    connect(mZoomSlider, &QSlider::valueChanged, mZoomControl,
+            [this](int value) { setZoomPercentage(value); });
+    connect(mZoomOutButton, &QToolButton::clicked, mZoomControl, [this]() {
+        mZoomSlider->setValue(qMax(mZoomSlider->minimum(), mZoomSlider->value() - 10));
+    });
+    connect(mZoomInButton, &QToolButton::clicked, mZoomControl, [this]() {
+        mZoomSlider->setValue(qMin(mZoomSlider->maximum(), mZoomSlider->value() + 10));
+    });
+    connect(this, &UBBoardController::zoomChanged, mZoomControl,
+            [this](qreal zoomFactor) { updateZoomControl(zoomFactor); });
+    connect(this, &UBBoardController::activeSceneChanged, mZoomControl,
+            [this]() { updateZoomControl(currentZoom()); });
+
+    updateZoomControl(1.0);
+    positionZoomControl();
+    mZoomControl->show();
+    mZoomControl->raise();
+}
+
+
+void UBBoardController::positionZoomControl()
+{
+    if (!mZoomControl || !mControlView || !mControlContainer)
+        return;
+
+    const QRect viewportRect = mControlView->viewport()->geometry();
+    const QPoint viewportBottomRight = mControlView->mapTo(
+            mControlContainer, viewportRect.bottomRight());
+    const int margin = 16;
+    const int x = qMax(margin, viewportBottomRight.x() - mZoomControl->width() - margin);
+    const int y = qMax(margin, viewportBottomRight.y() - mZoomControl->height() - margin);
+    mZoomControl->move(x, y);
+    mZoomControl->raise();
+}
+
+
+void UBBoardController::setupUndoRedoControl()
+{
+    mUndoRedoControl = new QFrame(mControlContainer);
+    mUndoRedoControl->setObjectName(QStringLiteral("ubBoardUndoRedoControl"));
+    mUndoRedoControl->setAttribute(Qt::WA_StyledBackground, true);
+    mUndoRedoControl->setFixedHeight(44);
+
+    QHBoxLayout* layout = new QHBoxLayout(mUndoRedoControl);
+    layout->setContentsMargins(8, 5, 8, 5);
+    layout->setSpacing(6);
+
+    auto createButton = [this, layout](const QString& objectName,
+            const QIcon& icon, const QString& tooltip, QAction* action) {
+        QToolButton* button = new QToolButton(mUndoRedoControl);
+        button->setObjectName(objectName);
+        button->setIcon(icon);
+        button->setIconSize(QSize(28, 28));
+        button->setToolTip(tooltip);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setAutoRaise(true);
+        button->setFocusPolicy(Qt::NoFocus);
+        button->setFixedSize(QSize(38, 32));
+        button->setEnabled(action->isEnabled());
+        button->setCheckable(action->isCheckable());
+        button->setChecked(action->isChecked());
+
+        connect(button, &QToolButton::clicked, action, &QAction::trigger);
+        connect(action, &QAction::changed, button, [button, action]() {
+            button->setEnabled(action->isEnabled());
+            button->setChecked(action->isChecked());
+        });
+
+        layout->addWidget(button);
+        return button;
+    };
+
+    mUndoButton = createButton(QStringLiteral("ubBoardUndoButton"),
+            historyArrowIcon(false), QStringLiteral("撤销"),
+            mMainWindow->actionUndo);
+    mRedoButton = createButton(QStringLiteral("ubBoardRedoButton"),
+            historyArrowIcon(true), QStringLiteral("重做"),
+            mMainWindow->actionRedo);
+
+    QFrame* separator = new QFrame(mUndoRedoControl);
+    separator->setObjectName(QStringLiteral("ubBottomQuickSeparator"));
+    separator->setFrameShape(QFrame::VLine);
+    separator->setFixedSize(1, 24);
+    layout->addWidget(separator);
+
+    mCaptureButton = createButton(QStringLiteral("ubBoardCaptureButton"),
+            quickToolIcon(false), QStringLiteral("截屏"),
+            mMainWindow->actionCapture);
+    if (UBPlatformUtils::hasVirtualKeyboard())
+    {
+        mVirtualKeyboardButton = createButton(
+                QStringLiteral("ubBoardKeyboardButton"),
+                quickToolIcon(true), QStringLiteral("虚拟键盘"),
+                mMainWindow->actionVirtualKeyboard);
+    }
+
+    mUndoRedoControl->setFixedWidth(layout->sizeHint().width());
+    positionUndoRedoControl();
+    mUndoRedoControl->show();
+    mUndoRedoControl->raise();
+}
+
+
+void UBBoardController::positionUndoRedoControl()
+{
+    if (!mUndoRedoControl || !mControlView || !mControlContainer)
+        return;
+
+    const QRect viewportRect = mControlView->viewport()->geometry();
+    const QPoint viewportBottomLeft = mControlView->mapTo(
+            mControlContainer, viewportRect.bottomLeft());
+    const int margin = 16;
+    const int x = viewportBottomLeft.x() + margin;
+    const int y = qMax(margin,
+            viewportBottomLeft.y() - mUndoRedoControl->height() - margin);
+    mUndoRedoControl->move(x, y);
+    mUndoRedoControl->raise();
+}
+
+
+void UBBoardController::updateZoomControl(qreal zoomFactor)
+{
+    if (!mZoomSlider || !mZoomLabel)
+        return;
+
+    const int percentage = qBound(mZoomSlider->minimum(),
+            qRound(zoomFactor * 100.0), mZoomSlider->maximum());
+    const QSignalBlocker blocker(mZoomSlider);
+    mZoomSlider->setValue(percentage);
+    mZoomLabel->setText(QStringLiteral("%1%").arg(percentage));
+    mZoomOutButton->setEnabled(percentage > mZoomSlider->minimum());
+    mZoomInButton->setEnabled(percentage < mZoomSlider->maximum());
+}
+
+
+void UBBoardController::setZoomPercentage(int percentage)
+{
+    if (!mControlView || !mZoomSlider)
+        return;
+
+    const qreal minimumZoom = static_cast<qreal>(mZoomSlider->minimum()) / 100.0;
+    const qreal targetZoom = qBound(minimumZoom, percentage / 100.0,
+            static_cast<qreal>(UB_MAX_ZOOM));
+    const qreal existingZoom = currentZoom();
+    if (qFuzzyIsNull(existingZoom) || qFuzzyCompare(targetZoom, existingZoom))
+    {
+        updateZoomControl(targetZoom);
+        return;
+    }
+
+    const QPointF sceneCenter = mControlView->mapToScene(
+            mControlView->viewport()->rect().center());
+    zoom(targetZoom / existingZoom, sceneCenter);
 }
 
 
@@ -436,6 +1070,52 @@ void UBBoardController::setupToolbar()
 {
     UBSettings *settings = UBSettings::settings();
 
+    // The stylus palette is kept internally because it owns the exclusive
+    // tool action group, but its former toolbar entry is no longer part of
+    // the user interface.
+    mMainWindow->actionStylus->setChecked(false);
+    mMainWindow->actionStylus->setVisible(false);
+
+    // The former diagonal-line glyph suggested that this tool could only draw
+    // lines.  Use a compact family-of-shapes icon in both the stylus palette
+    // and its checked state instead.
+    mMainWindow->actionLine->setIcon(shapeToolIcon());
+    mMainWindow->actionLine->setText(QStringLiteral("形状"));
+    mMainWindow->actionLine->setToolTip(QStringLiteral("绘制直线和常用几何图形"));
+
+    // Keep the four most frequently used classroom tools within immediate
+    // reach on the main toolbar.  Reuse the existing actions so shortcuts,
+    // checked state and the dynamically coloured pen icon stay synchronized.
+    QWidget* primaryTools = new QWidget(mMainWindow->boardToolBar);
+    primaryTools->setObjectName(QStringLiteral("ubPrimaryTools"));
+    primaryTools->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    QHBoxLayout* primaryToolsLayout = new QHBoxLayout(primaryTools);
+    primaryToolsLayout->setSizeConstraint(QLayout::SetFixedSize);
+    primaryToolsLayout->setContentsMargins(3, 0, 5, 0);
+    primaryToolsLayout->setSpacing(2);
+
+    const QList<QAction*> primaryToolActions {
+        mMainWindow->actionPen,
+        mMainWindow->actionMarker,
+        mMainWindow->actionEraser,
+        mMainWindow->actionSelector,
+        mMainWindow->actionPlay,
+        mMainWindow->actionPointer,
+        mMainWindow->actionText
+    };
+    for (QAction* action : primaryToolActions) {
+        QToolButton* button = new QToolButton(primaryTools);
+        button->setObjectName(QStringLiteral("ubPrimaryToolButton"));
+        button->setDefaultAction(action);
+        button->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        button->setIconSize(QSize(30, 30));
+        button->setFixedSize(QSize(44, 54));
+        button->setCursor(Qt::PointingHandCursor);
+        primaryToolsLayout->addWidget(button, 0, Qt::AlignVCenter);
+    }
+    mMainWindow->boardToolBar->insertWidget(mMainWindow->actionBackgrounds,
+            primaryTools);
+
     // Setup color choice widget
     QList<QAction *> colorActions;
     colorActions.append(mMainWindow->actionColor0);
@@ -480,12 +1160,264 @@ void UBBoardController::setupToolbar()
 
     connect(UBDrawingController::drawingController(), SIGNAL(lineWidthIndexChanged(int))
             , lineWidthChoice, SLOT(setCurrentIndex(int)));
+    connect(UBDrawingController::drawingController(), SIGNAL(colorPaletteChanged())
+            , lineWidthChoice, SLOT(colorPaletteChanged()));
 
     lineWidthChoice->displayText(QVariant(settings->appToolBarDisplayText->get().toBool()));
     lineWidthChoice->setCurrentIndex(settings->penWidthIndex());
     lineWidthActions.at(settings->penWidthIndex())->setChecked(true);
 
-    mMainWindow->boardToolBar->insertWidget(mMainWindow->actionBackgrounds, lineWidthChoice);
+    QAction* lineWidthChoiceAction =
+            mMainWindow->boardToolBar->insertWidget(mMainWindow->actionBackgrounds, lineWidthChoice);
+
+    // Contextual geometry and line-style controls. Keep only the current
+    // selection visible in the toolbar; the complete choices live in menus.
+    // This remains readable at 100%-200% Windows display scaling and avoids
+    // making five state buttons visually dominate the toolbar.
+    QWidget* lineOptions = new QWidget(mMainWindow->boardToolBar);
+    lineOptions->setObjectName(QStringLiteral("ubLineOptions"));
+    lineOptions->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    QHBoxLayout* lineOptionsLayout = new QHBoxLayout(lineOptions);
+    lineOptionsLayout->setSizeConstraint(QLayout::SetFixedSize);
+    lineOptionsLayout->setContentsMargins(4, 0, 4, 0);
+    lineOptionsLayout->setSpacing(7);
+
+    auto makeOptionMenuButton = [lineOptions, lineOptionsLayout](
+            const QString& text, const QString& tooltip) {
+        QToolButton* button = new QToolButton(lineOptions);
+        button->setObjectName(QStringLiteral("ubLineOptionMenuButton"));
+        button->setText(text);
+        button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        button->setPopupMode(QToolButton::InstantPopup);
+        button->setIconSize(QSize(20, 20));
+        button->setCursor(Qt::PointingHandCursor);
+        button->setToolTip(tooltip);
+        button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+
+        QMenu* menu = new QMenu(button);
+        menu->setObjectName(QStringLiteral("ubLineOptionMenu"));
+        button->setMenu(menu);
+        lineOptionsLayout->addWidget(button, 0, Qt::AlignVCenter);
+        return qMakePair(button, menu);
+    };
+
+    const auto geometryControl = makeOptionMenuButton(QStringLiteral("形状"),
+            QStringLiteral("选择基础图形和常用数学图形"));
+    const auto patternControl = makeOptionMenuButton(QStringLiteral("线型"),
+            QStringLiteral("选择实线或虚线"));
+    const auto fillControl = makeOptionMenuButton(QStringLiteral("填充"),
+            QStringLiteral("设置闭合图形的填充颜色和透明度"));
+
+    auto addMenuChoice = [](QMenu* menu, QActionGroup* group, int iconOption,
+            const QString& text, int value, const QString& tooltip) {
+        QAction* action = menu->addAction(lineOptionIcon(iconOption), text);
+        action->setCheckable(true);
+        action->setData(value);
+        action->setProperty("lineIconOption", iconOption);
+        action->setToolTip(tooltip);
+        group->addAction(action);
+        return action;
+    };
+
+    QActionGroup* geometryGroup = new QActionGroup(lineOptions);
+    geometryGroup->setExclusive(true);
+    geometryControl.second->addSection(QStringLiteral("基础图形"));
+    addMenuChoice(geometryControl.second, geometryGroup, 0,
+            QStringLiteral("直线"), UBDrawingController::StraightLineGeometry,
+            QStringLiteral("绘制直线"));
+    addMenuChoice(geometryControl.second, geometryGroup, 1,
+            QStringLiteral("长方形"), UBDrawingController::SquareGeometry,
+            QStringLiteral("自由绘制长方形；按住 Shift 绘制正方形"));
+    addMenuChoice(geometryControl.second, geometryGroup, 2,
+            QStringLiteral("椭圆"), UBDrawingController::CircleGeometry,
+            QStringLiteral("自由绘制椭圆；按住 Shift 绘制圆形"));
+    addMenuChoice(geometryControl.second, geometryGroup, 5,
+            QStringLiteral("三角形"), UBDrawingController::TriangleGeometry,
+            QStringLiteral("自由绘制三角形；按住 Shift 保持等宽等高"));
+    addMenuChoice(geometryControl.second, geometryGroup, 6,
+            QStringLiteral("箭头"), UBDrawingController::ArrowGeometry,
+            QStringLiteral("拖动绘制带箭头的指示线"));
+    addMenuChoice(geometryControl.second, geometryGroup, 8,
+            QStringLiteral("多边形"), UBDrawingController::PolygonGeometry,
+            QStringLiteral("单击添加顶点，右击闭合并结束"));
+
+    geometryControl.second->addSection(QStringLiteral("数学图形"));
+    addMenuChoice(geometryControl.second, geometryGroup, 12,
+            QStringLiteral("数轴"), UBDrawingController::NumberLineGeometry,
+            QStringLiteral("拖动绘制带刻度和双向箭头的数轴"));
+    addMenuChoice(geometryControl.second, geometryGroup, 7,
+            QStringLiteral("坐标轴"), UBDrawingController::AxesGeometry,
+            QStringLiteral("拖动绘制带正方向箭头的横纵坐标轴"));
+    addMenuChoice(geometryControl.second, geometryGroup, 9,
+            QStringLiteral("抛物线"), UBDrawingController::ParabolaGeometry,
+            QStringLiteral("拖动确定范围；向下拖动绘制开口向上的抛物线"));
+    addMenuChoice(geometryControl.second, geometryGroup, 10,
+            QStringLiteral("双曲线"), UBDrawingController::HyperbolaGeometry,
+            QStringLiteral("拖动确定双曲线的范围"));
+    addMenuChoice(geometryControl.second, geometryGroup, 11,
+            QStringLiteral("正弦曲线"), UBDrawingController::SineGeometry,
+            QStringLiteral("拖动确定一个完整周期的范围"));
+
+    geometryControl.second->addSeparator();
+    QMenu* moreGeometryMenu = geometryControl.second->addMenu(QStringLiteral("更多"));
+    moreGeometryMenu->setObjectName(QStringLiteral("ubMoreGeometryMenu"));
+    moreGeometryMenu->addSection(QStringLiteral("平面图形"));
+    addMenuChoice(moreGeometryMenu, geometryGroup, 13,
+            QStringLiteral("平行四边形"), UBDrawingController::ParallelogramGeometry,
+            QStringLiteral("拖动绘制平行四边形"));
+    addMenuChoice(moreGeometryMenu, geometryGroup, 14,
+            QStringLiteral("梯形"), UBDrawingController::TrapezoidGeometry,
+            QStringLiteral("拖动绘制梯形"));
+    addMenuChoice(moreGeometryMenu, geometryGroup, 15,
+            QStringLiteral("五边形"), UBDrawingController::PentagonGeometry,
+            QStringLiteral("拖动绘制正五边形"));
+    addMenuChoice(moreGeometryMenu, geometryGroup, 16,
+            QStringLiteral("六边形"), UBDrawingController::HexagonGeometry,
+            QStringLiteral("拖动绘制正六边形"));
+    moreGeometryMenu->addSection(QStringLiteral("立体图形"));
+    addMenuChoice(moreGeometryMenu, geometryGroup, 17,
+            QStringLiteral("正方体"), UBDrawingController::CubeGeometry,
+            QStringLiteral("拖动绘制正方体"));
+    addMenuChoice(moreGeometryMenu, geometryGroup, 18,
+            QStringLiteral("长方体"), UBDrawingController::CuboidGeometry,
+            QStringLiteral("拖动绘制长方体"));
+    addMenuChoice(moreGeometryMenu, geometryGroup, 19,
+            QStringLiteral("圆柱体"), UBDrawingController::CylinderGeometry,
+            QStringLiteral("拖动绘制圆柱体"));
+    addMenuChoice(moreGeometryMenu, geometryGroup, 20,
+            QStringLiteral("圆锥体"), UBDrawingController::ConeGeometry,
+            QStringLiteral("拖动绘制圆锥体"));
+    addMenuChoice(moreGeometryMenu, geometryGroup, 21,
+            QStringLiteral("球体"), UBDrawingController::SphereGeometry,
+            QStringLiteral("拖动绘制球体"));
+    addMenuChoice(moreGeometryMenu, geometryGroup, 22,
+            QStringLiteral("四棱锥"), UBDrawingController::PyramidGeometry,
+            QStringLiteral("拖动绘制四棱锥"));
+    addMenuChoice(moreGeometryMenu, geometryGroup, 23,
+            QStringLiteral("三棱柱"), UBDrawingController::TriangularPrismGeometry,
+            QStringLiteral("拖动绘制三棱柱"));
+
+    QActionGroup* patternGroup = new QActionGroup(lineOptions);
+    patternGroup->setExclusive(true);
+    addMenuChoice(patternControl.second, patternGroup, 3,
+            QStringLiteral("实线"), UBDrawingController::SolidLinePattern,
+            QStringLiteral("绘制实线"));
+    addMenuChoice(patternControl.second, patternGroup, 4,
+            QStringLiteral("虚线"), UBDrawingController::DashedLinePattern,
+            QStringLiteral("绘制虚线"));
+
+    UBDrawingController* drawingController = UBDrawingController::drawingController();
+
+    QAction* fillEnabledAction = fillControl.second->addAction(
+            QStringLiteral("启用填充"));
+    fillEnabledAction->setCheckable(true);
+    fillEnabledAction->setToolTip(QStringLiteral("仅对长方形、椭圆、三角形和多边形生效"));
+
+    QAction* fillColorAction = fillControl.second->addAction(
+            QStringLiteral("选择填充颜色…"));
+    fillControl.second->addSeparator();
+
+    QWidgetAction* opacityAction = new QWidgetAction(fillControl.second);
+    QWidget* opacityWidget = new QWidget(fillControl.second);
+    QHBoxLayout* opacityLayout = new QHBoxLayout(opacityWidget);
+    opacityLayout->setContentsMargins(12, 6, 12, 8);
+    opacityLayout->setSpacing(8);
+    QLabel* opacityCaption = new QLabel(QStringLiteral("透明度"), opacityWidget);
+    QSlider* opacitySlider = new QSlider(Qt::Horizontal, opacityWidget);
+    opacitySlider->setRange(0, 100);
+    opacitySlider->setSingleStep(1);
+    opacitySlider->setPageStep(10);
+    opacitySlider->setFixedWidth(120);
+    QLabel* opacityValue = new QLabel(opacityWidget);
+    opacityValue->setMinimumWidth(38);
+    opacityValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    opacityLayout->addWidget(opacityCaption);
+    opacityLayout->addWidget(opacitySlider);
+    opacityLayout->addWidget(opacityValue);
+    opacityAction->setDefaultWidget(opacityWidget);
+    fillControl.second->addAction(opacityAction);
+
+    auto updateMenuButton = [](QToolButton* button, QActionGroup* group,
+            int value, const QString& prefix) {
+        for (QAction* action : group->actions()) {
+            const bool selected = action->data().toInt() == value;
+            action->setChecked(selected);
+            if (selected) {
+                button->setIcon(action->icon());
+                button->setToolTip(prefix + action->text());
+            }
+        }
+    };
+
+    auto updateGeometryButton = [geometryControl, geometryGroup, updateMenuButton](int mode) {
+        updateMenuButton(geometryControl.first, geometryGroup, mode,
+                QStringLiteral("当前形状："));
+    };
+    auto updatePatternButton = [patternControl, patternGroup, updateMenuButton](int pattern) {
+        updateMenuButton(patternControl.first, patternGroup, pattern,
+                QStringLiteral("当前线型："));
+    };
+    auto updateFillButton = [fillControl, fillEnabledAction, fillColorAction,
+            opacitySlider, opacityValue, drawingController]() {
+        const bool enabled = drawingController->shapeFillEnabled();
+        const QColor color = drawingController->shapeFillColor();
+        const int opacity = drawingController->shapeFillOpacity();
+        fillEnabledAction->setChecked(enabled);
+        fillColorAction->setIcon(fillOptionIcon(true, color, opacity));
+        opacitySlider->setValue(opacity);
+        opacityValue->setText(QStringLiteral("%1%").arg(opacity));
+        fillControl.first->setIcon(fillOptionIcon(enabled, color, opacity));
+        fillControl.first->setToolTip(enabled
+                ? QStringLiteral("填充：%1，透明度 %2%").arg(color.name().toUpper()).arg(opacity)
+                : QStringLiteral("填充：无"));
+    };
+
+    connect(geometryGroup, &QActionGroup::triggered, lineOptions,
+            [drawingController](QAction* action) {
+        drawingController->setLineGeometryMode(action->data().toInt());
+    });
+    connect(patternGroup, &QActionGroup::triggered, lineOptions,
+            [drawingController](QAction* action) {
+        drawingController->setLinePattern(action->data().toInt());
+    });
+    connect(fillEnabledAction, &QAction::toggled, lineOptions,
+            [drawingController](bool enabled) {
+        drawingController->setShapeFillEnabled(enabled);
+    });
+    connect(fillColorAction, &QAction::triggered, lineOptions,
+            [this, drawingController]() {
+        QColor initial = drawingController->shapeFillColor();
+        initial.setAlpha(255);
+        const QColor selected = QColorDialog::getColor(initial, mMainWindow,
+                QStringLiteral("选择填充颜色"), QColorDialog::ShowAlphaChannel);
+        if (!selected.isValid())
+            return;
+        drawingController->setShapeFillColor(selected);
+        drawingController->setShapeFillOpacity(
+                qRound(selected.alphaF() * 100.0));
+        drawingController->setShapeFillEnabled(true);
+    });
+    connect(opacitySlider, &QSlider::valueChanged, lineOptions,
+            [drawingController](int value) {
+        drawingController->setShapeFillOpacity(value);
+    });
+    connect(drawingController, &UBDrawingController::lineGeometryModeChanged,
+            lineOptions, updateGeometryButton);
+    connect(drawingController, &UBDrawingController::linePatternChanged,
+            lineOptions, updatePatternButton);
+    connect(drawingController, &UBDrawingController::shapeFillEnabledChanged,
+            lineOptions, [updateFillButton](bool) { updateFillButton(); });
+    connect(drawingController, &UBDrawingController::shapeFillColorChanged,
+            lineOptions, [updateFillButton](const QColor&) { updateFillButton(); });
+    connect(drawingController, &UBDrawingController::shapeFillOpacityChanged,
+            lineOptions, [updateFillButton](int) { updateFillButton(); });
+
+    updateGeometryButton(drawingController->lineGeometryMode());
+    updatePatternButton(drawingController->linePattern());
+    updateFillButton();
+
+    QAction* lineOptionsAction =
+            mMainWindow->boardToolBar->insertWidget(mMainWindow->actionBackgrounds, lineOptions);
 
     //-----------------------------------------------------------//
     // Setup eraser width choice widget
@@ -498,7 +1430,8 @@ void UBBoardController::setupToolbar()
     UBToolbarButtonGroup *eraserWidthChoice =
             new UBToolbarButtonGroup(mMainWindow->boardToolBar, eraserWidthActions);
 
-    mMainWindow->boardToolBar->insertWidget(mMainWindow->actionBackgrounds, eraserWidthChoice);
+    QAction* eraserWidthChoiceAction =
+            mMainWindow->boardToolBar->insertWidget(lineOptionsAction, eraserWidthChoice);
 
     connect(settings->appToolBarDisplayText, SIGNAL(changed(QVariant)), eraserWidthChoice, SLOT(displayText(QVariant)));
     connect(eraserWidthChoice, SIGNAL(activated(int)), UBDrawingController::drawingController(), SLOT(setEraserWidthIndex(int)));
@@ -507,11 +1440,77 @@ void UBBoardController::setupToolbar()
     eraserWidthChoice->setCurrentIndex(settings->eraserWidthIndex());
     eraserWidthActions.at(settings->eraserWidthIndex())->setChecked(true);
 
-    mMainWindow->boardToolBar->insertSeparator(mMainWindow->actionBackgrounds);
+    QAction* shapeLibraryAction = new QAction(
+            QIcon(QStringLiteral(":/images/libpalette/home.png")),
+            QStringLiteral("库"), mMainWindow->boardToolBar);
+    shapeLibraryAction->setToolTip(QStringLiteral("打开完整资源库"));
+    connect(shapeLibraryAction, &QAction::triggered, mMainWindow->boardToolBar,
+            [this]() {
+        if (!mPaletteManager)
+            return;
+        mPaletteManager->featuresWidget()->showRoot();
+        mPaletteManager->rightPalette()->activateWidget(
+                mPaletteManager->featuresWidget());
+    });
+    mMainWindow->boardToolBar->insertAction(
+            mMainWindow->actionBackgrounds, shapeLibraryAction);
+
+    auto updateContextControls = [lineOptionsAction, geometryControl,
+            patternControl, fillControl, lineOptions, lineWidthChoiceAction,
+            eraserWidthChoiceAction](int tool) {
+        const bool lineTool = tool == UBStylusTool::Line;
+        // Shape, line pattern and fill are global shortcuts. Keep all three
+        // visible from startup so their availability does not depend on the
+        // user selecting a shape once.
+        lineOptionsAction->setVisible(true);
+        geometryControl.first->setVisible(true);
+        patternControl.first->setVisible(true);
+        fillControl.first->setVisible(true);
+        lineOptions->updateGeometry();
+        lineWidthChoiceAction->setVisible(tool == UBStylusTool::Pen
+                || tool == UBStylusTool::Marker || lineTool);
+        eraserWidthChoiceAction->setVisible(tool == UBStylusTool::Eraser);
+    };
+    connect(drawingController, &UBDrawingController::stylusToolChanged,
+            lineOptions, [updateContextControls](int tool, int) {
+        updateContextControls(tool);
+    });
+    updateContextControls(drawingController->stylusTool());
+
+    // Keep property controls compact on the left and navigation/application
+    // controls consistently aligned to the right. The spacer collapses first
+    // on narrower displays, so the toolbar still remains on one row.
+    QWidget* toolbarSpacer = new QWidget(mMainWindow->boardToolBar);
+    toolbarSpacer->setObjectName(QStringLiteral("ubBoardToolbarSpacer"));
+    toolbarSpacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    mMainWindow->boardToolBar->insertWidget(mMainWindow->actionBackgrounds,
+            toolbarSpacer);
 
     //-----------------------------------------------------------//
 
     UBApplication::app()->decorateActionMenu(mMainWindow->actionMenu);
+
+    // These actions remain available through the Settings menu or the
+    // floating canvas controls, but no longer consume toolbar space.
+    const QList<QAction*> toolbarActions = mMainWindow->boardToolBar->actions();
+    const int backgroundIndex = toolbarActions.indexOf(mMainWindow->actionBackgrounds);
+    const int pagesIndex = toolbarActions.indexOf(mMainWindow->actionPages);
+    QList<QAction*> obsoleteSeparators;
+    if (backgroundIndex >= 0 && pagesIndex > backgroundIndex)
+    {
+        for (int index = backgroundIndex; index < pagesIndex; ++index)
+        {
+            QAction* action = toolbarActions.at(index);
+            if (action->isSeparator())
+                obsoleteSeparators.append(action);
+        }
+    }
+
+    mMainWindow->boardToolBar->removeAction(mMainWindow->actionBackgrounds);
+    mMainWindow->boardToolBar->removeAction(mMainWindow->actionUndo);
+    mMainWindow->boardToolBar->removeAction(mMainWindow->actionRedo);
+    for (QAction* separator : obsoleteSeparators)
+        mMainWindow->boardToolBar->removeAction(separator);
 
     mMainWindow->actionBoard->setVisible(false);
 
@@ -522,6 +1521,7 @@ void UBBoardController::setupToolbar()
     initToolbarTexts();
 
     UBApplication::app()->toolBarDisplayTextChanged(QVariant(settings->appToolBarDisplayText->get().toBool()));
+    refreshPenVisuals();
 }
 
 
@@ -686,7 +1686,7 @@ void UBBoardController::setToolbarTexts()
     if (mMainWindow->width() <= 1280)
         iconSize = QSize(24, 24);
     else
-        iconSize = QSize(48, 32);
+        iconSize = QSize(32, 26);
 
     mMainWindow->boardToolBar->setIconSize(iconSize);
     mMainWindow->webToolBar->setIconSize(iconSize);
@@ -2035,6 +3035,10 @@ void UBBoardController::boardViewResized(QResizeEvent* event)
 
     mPaletteManager->containerResized();
 
+    updateZoomControl(currentZoom());
+    positionZoomControl();
+    positionUndoRedoControl();
+
     UBApplication::boardController->controlView()->scene()->moveMagnifier();
 
 }
@@ -2056,6 +3060,8 @@ void UBBoardController::setDisabled(bool disable)
 {
     mMainWindow->boardToolBar->setDisabled(disable);
     mControlView->setDisabled(disable);
+    if (mUndoRedoControl)
+        mUndoRedoControl->setDisabled(disable);
 }
 
 
@@ -2230,6 +3236,8 @@ void UBBoardController::setColorIndex(int pColorIndex)
         mMarkerColorOnDarkBackground = UBSettings::settings()->markerColors(true).at(pColorIndex);
         mMarkerColorOnLightBackground = UBSettings::settings()->markerColors(false).at(pColorIndex);
     }
+
+    refreshPenVisuals();
 }
 
 void UBBoardController::chooseCustomColor()
@@ -2317,6 +3325,26 @@ void UBBoardController::colorPaletteChanged()
     mPenColorOnLightBackground = UBSettings::settings()->penColor(false);
     mMarkerColorOnDarkBackground = UBSettings::settings()->markerColor(true);
     mMarkerColorOnLightBackground = UBSettings::settings()->markerColor(false);
+    refreshPenVisuals();
+}
+
+void UBBoardController::refreshPenVisuals()
+{
+    UBResources *resources = UBResources::resources();
+    resources->updatePenColor(UBSettings::settings()->currentPenColor());
+    resources->updateMarkerColor(UBSettings::settings()->currentMarkerColor());
+
+    const bool desktopMode = UBApplication::applicationController
+            && UBApplication::applicationController->isShowingDesktop();
+    if (mMainWindow && mMainWindow->actionPen)
+        mMainWindow->actionPen->setIcon(resources->coloredPenIcon(desktopMode));
+    if (mMainWindow && mMainWindow->actionMarker)
+        mMainWindow->actionMarker->setIcon(resources->coloredMarkerIcon(desktopMode));
+
+    const int tool = UBDrawingController::drawingController()->stylusTool();
+    if (tool == UBStylusTool::Pen || tool == UBStylusTool::Line
+            || tool == UBStylusTool::Marker)
+        setToolCursor(tool);
 }
 
 

@@ -82,7 +82,6 @@ UBWebController::UBWebController(UBMainWindow* mainWindow)
     , mToolsPalettePositionned(false)
     , mDownloadViewIsVisible(false)
 {
-    connect(mMainWindow->actionOpenTutorial, SIGNAL(triggered()), this, SLOT(onOpenTutorial()));
     connect(mMainWindow->actionHintsAndTips, SIGNAL(triggered()), this, SLOT(onHintsAndTips()));
 
     bool privateBrowsing = UBSettings::settings()->webPrivateBrowsing->get().toBool();
@@ -839,11 +838,6 @@ void UBWebController::onEmbedParsed(QWebEngineView *view, bool hasEmbeddedConten
 
         updateEmbeddableContent(view);
     }
-}
-
-void UBWebController::onOpenTutorial()
-{
-    loadUrl(QUrl(UBSettings::settings()->tutorialUrl->get().toString()));
 }
 
 void UBWebController::onHintsAndTips()

@@ -39,6 +39,10 @@ class UBResources : public QObject
     public:
          static UBResources* resources();
          QStringList customFontList() { return mCustomFontList; }
+         void updatePenColor(const QColor& color);
+         QIcon coloredPenIcon(bool desktopArrow = false) const;
+         void updateMarkerColor(const QColor& color);
+         QIcon coloredMarkerIcon(bool desktopArrow = false) const;
 
 
     private:
@@ -49,13 +53,21 @@ class UBResources : public QObject
 
          static UBResources* sSingleton;
          void buildFontList();
+         QPixmap renderColoredPen(const QString& resourcePath,
+                 const QColor& color) const;
+         QPixmap renderColoredMarker(const QString& resourcePath,
+                 const QColor& color) const;
+         QPixmap renderMarkerBrushIcon(bool selected, bool desktopArrow) const;
          QStringList mCustomFontList;
+         QColor mPenColor;
+         QColor mMarkerColor;
 
     public:
 
          QCursor penCursor;
          QCursor eraserCursor;
          QCursor markerCursor;
+         QCursor captureCursor;
          QCursor pointerCursor;
          QCursor handCursor;
          QCursor zoomInCursor;

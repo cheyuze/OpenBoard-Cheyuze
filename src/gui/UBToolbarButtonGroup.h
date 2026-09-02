@@ -36,12 +36,22 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QActionGroup>
+#include <QSlider>
+#include <QLabel>
 
 class UBToolbarButtonGroup : public QWidget
 {
     Q_OBJECT;
 
     public:
+        enum PreviewType
+        {
+            ActionIconPreview,
+            ColorSwatchPreview,
+            LineWidthPreview,
+            EraserSizePreview
+        };
+
         UBToolbarButtonGroup(QToolBar *toolbar, const QList<QAction*> &actions = QList<QAction*>(), QString objectNameprefix = "");
         virtual ~UBToolbarButtonGroup();
 
@@ -49,6 +59,7 @@ class UBToolbarButtonGroup : public QWidget
         void setColor(const QColor &color, int index);
         int currentIndex() const;
         void setLabel(const QString& label);
+        void setPreviewType(PreviewType type);
 
     protected:
         void paintEvent(QPaintEvent *);
@@ -61,14 +72,29 @@ class UBToolbarButtonGroup : public QWidget
         int                  mCurrentIndex;
         bool                 mDisplayLabel;
         QActionGroup*        mActionGroup;
+        PreviewType          mPreviewType;
+        QSlider*             mSlider;
+        QLabel*              mSliderValueLabel;
+        QLabel*              mCaptionLabel;
+
+        void refreshPreviewIcons();
+        QIcon colorSwatchIcon(const QColor& color) const;
+        QIcon lineWidthIcon(const QColor& color, int index) const;
+        QIcon eraserSizeIcon(int index) const;
+        bool usesContinuousSlider() const;
+        int normalizedSliderValue() const;
+        void updateSliderAppearance();
+        void updateSliderValueLabel();
 
     public slots:
         void setCurrentIndex(int index);
+        void setSliderValue(int value);
         void colorPaletteChanged();
         void displayText(QVariant display);
 
     private slots:
         void selected(QAction *action);
+        void sliderMoved(int value);
 
     signals:
         void activated(int index);

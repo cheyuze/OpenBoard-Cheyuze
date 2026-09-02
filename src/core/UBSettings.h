@@ -55,6 +55,13 @@ class UBSettings : public QObject
 
     public:
 
+        enum StartupBehavior
+        {
+            RestoreLastDocument = 0,
+            CreateNewDocument = 1,
+            ShowDocumentHistory = 2
+        };
+
         QStringList* supportedKeyboardSizes;
         void InitKeyboardPaletteKeyBtnSizes();
         void ValidateKeyboardPaletteKeyBtnSize();
@@ -64,6 +71,7 @@ class UBSettings : public QObject
         int penWidthIndex();
 
         qreal currentPenWidth();
+        void setPenWidth(qreal width);
 
         int penColorIndex();
         QColor currentPenColor();
@@ -73,6 +81,7 @@ class UBSettings : public QObject
         // Marker related
         int markerWidthIndex();
         qreal currentMarkerWidth();
+        void setMarkerWidth(qreal width);
         int markerColorIndex();
         QColor currentMarkerColor();
         QColor markerColor(bool onDarkBackground);
@@ -84,6 +93,7 @@ class UBSettings : public QObject
         qreal eraserMediumWidth();
         qreal eraserStrongWidth();
         qreal currentEraserWidth();
+        void setEraserWidth(qreal width);
 
         // Background related
         bool isDarkBackground();
@@ -298,6 +308,7 @@ class UBSettings : public QObject
         UBSetting* boardKeyboardPaletteKeyBtnSize;
 
         UBSetting* appStartMode;
+        UBSetting* appStartupBehavior;
 
         UBSetting* featureSliderPosition;
 

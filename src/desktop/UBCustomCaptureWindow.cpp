@@ -40,7 +40,7 @@
 #include "core/memcheck.h"
 
 UBCustomCaptureWindow::UBCustomCaptureWindow(QWidget *parent)
-    : QDialog(parent, Qt::FramelessWindowHint  | Qt::Window)
+    : QDialog(parent, Qt::FramelessWindowHint | Qt::Window | Qt::WindowStaysOnTopHint)
     , mSelectionBand(0)
     , mRubberBandStyle(0)
     , mOrigin(0,0)
@@ -72,6 +72,11 @@ QPixmap UBCustomCaptureWindow::getSelectedPixmap()
     {
         return QPixmap();
     }
+}
+
+QRect UBCustomCaptureWindow::selectedRect() const
+{
+    return mSelectionBand ? mSelectionBand->geometry().normalized() : QRect();
 }
 
 
@@ -172,4 +177,16 @@ void UBCustomCaptureWindow::paintEvent(QPaintEvent *event)
     Q_UNUSED(event);
     QPainter painter(this);
     painter.drawPixmap(0,0, mWholeScreenPixmap);
+
+    painter.setRenderHint(QPainter::Antialiasing);
+    const QRect hintRect((width() - 360) / 2, 24, 360, 48);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(15, 23, 42, 220));
+    painter.drawRoundedRect(hintRect, 12, 12);
+    painter.setPen(Qt::white);
+    QFont hintFont = painter.font();
+    hintFont.setPixelSize(16);
+    hintFont.setBold(true);
+    painter.setFont(hintFont);
+    painter.drawText(hintRect, Qt::AlignCenter, QStringLiteral("拖动选择录制区域，按 Esc 取消"));
 }

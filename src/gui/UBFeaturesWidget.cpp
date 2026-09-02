@@ -122,6 +122,12 @@ void UBFeaturesWidget::showShapes()
     centralWidget->switchTo(UBFeaturesCentralWidget::MainList);
 }
 
+void UBFeaturesWidget::showRoot()
+{
+    controller->siftElements(UBFeaturesController::rootPath);
+    centralWidget->switchTo(UBFeaturesCentralWidget::MainList);
+}
+
 void UBFeaturesWidget::searchStarted(const QString &pattern)
 {
     controller->searchStarted(pattern, centralWidget->listView());

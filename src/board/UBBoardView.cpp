@@ -176,6 +176,7 @@ void UBBoardView::init ()
 
     mTabletStylusIsPressed = false;
     mMouseButtonIsPressed = false;
+    mMiddleButtonPanActive = false;
     mPendingStylusReleaseEvent = false;
 
     setCacheMode (QGraphicsView::CacheBackground);
@@ -1110,6 +1111,21 @@ void UBBoardView::mousePressEvent (QMouseEvent *event)
         return;
     }
 
+    // Holding the mouse wheel temporarily pans the page without changing the
+    // selected stylus tool. Releasing it restores that tool's cursor.
+    if (event->button() == Qt::MiddleButton && isInteractive())
+    {
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+        mPreviousPoint = event->position();
+#else
+        mPreviousPoint = event->localPos();
+#endif
+        mMiddleButtonPanActive = true;
+        viewport()->setCursor(QCursor(Qt::ClosedHandCursor));
+        event->accept();
+        return;
+    }
+
     setMultiselection(event->modifiers() & Qt::ControlModifier);
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
@@ -1197,6 +1213,21 @@ void UBBoardView::mousePressEvent (QMouseEvent *event)
             break;
 
         default:
+            if (currentTool == UBStylusTool::Line
+                    && UBDrawingController::drawingController()->lineGeometryMode()
+                       == UBDrawingController::PolygonGeometry)
+            {
+                // itemAt() above can resolve to the live segment ending at the
+                // pointer.  Adding this vertex rebuilds (and deletes) that
+                // preview, so drop the tracked item while it is still valid.
+                // Otherwise the release event dereferences a stale pointer.
+                setMovingItem(nullptr);
+                mMouseButtonIsPressed = false;
+                scene()->addPolygonVertex(mapToScene(
+                        UBGeometryUtils::pointConstrainedInRect(event->pos(), rect())));
+                event->accept();
+                break;
+            }
             if (UBDrawingController::drawingController()->activeRuler() == nullptr) {
                 if (currentTool == UBStylusTool::Pen || currentTool == UBStylusTool::Line)
                     viewport()->setCursor(UBResources::resources()->penCursor);
@@ -1217,6 +1248,22 @@ void UBBoardView::mousePressEvent (QMouseEvent *event)
     {
         // forward right-click events to items
         int currentTool = (UBStylusTool::Enum)UBDrawingController::drawingController ()->stylusTool ();
+
+        if (currentTool == UBStylusTool::Line
+                && UBDrawingController::drawingController()->lineGeometryMode()
+                   == UBDrawingController::PolygonGeometry)
+        {
+            // The hover-preview item may currently be tracked as the moving
+            // item. Clear that reference while the preview still exists;
+            // finishPolygonDrawing() replaces the preview with committed
+            // items, so clearing it afterwards could dereference a deleted
+            // graphics item.
+            setMovingItem(nullptr);
+            if (scene())
+                scene()->finishPolygonDrawing();
+            event->accept();
+            return;
+        }
 
         switch (currentTool)
         {
@@ -1253,6 +1300,20 @@ void UBBoardView::mouseMoveEvent (QMouseEvent *event)
     //    }
 
     //  QTime mouseMoveTime = QTime::currentTime();
+    if (mMiddleButtonPanActive)
+    {
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+        const QPointF eventPosition = event->position();
+#else
+        const QPointF eventPosition = event->localPos();
+#endif
+        mController->handScroll(eventPosition.x() - mPreviousPoint.x(),
+                eventPosition.y() - mPreviousPoint.y());
+        mPreviousPoint = eventPosition;
+        event->accept();
+        return;
+    }
+
     if(!mIsDragInProgress && ((mapToScene(event->pos()) - mLastPressedMousePos).manhattanLength() < QApplication::startDragDistance())) {
         return;
     }
@@ -1373,7 +1434,15 @@ void UBBoardView::mouseMoveEvent (QMouseEvent *event)
 
     default:
         if (!mTabletStylusIsPressed && scene()) {
-            scene()->inputDeviceMove(mapToScene(UBGeometryUtils::pointConstrainedInRect(event->pos(), rect())) , mMouseButtonIsPressed, event->modifiers());
+            const QPointF scenePosition = mapToScene(
+                    UBGeometryUtils::pointConstrainedInRect(event->pos(), rect()));
+            if (currentTool == UBStylusTool::Line
+                    && UBDrawingController::drawingController()->lineGeometryMode()
+                       == UBDrawingController::PolygonGeometry)
+                scene()->updatePolygonPreview(scenePosition);
+            else
+                scene()->inputDeviceMove(scenePosition, mMouseButtonIsPressed,
+                        event->modifiers());
         }
         event->accept ();
     }
@@ -1392,9 +1461,34 @@ void UBBoardView::mouseReleaseEvent (QMouseEvent *event)
 {
     UBStylusTool::Enum currentTool = (UBStylusTool::Enum)UBDrawingController::drawingController ()->stylusTool ();
 
+    if (event->button() == Qt::MiddleButton && mMiddleButtonPanActive)
+    {
+        mMiddleButtonPanActive = false;
+        setToolCursor(currentTool);
+        event->accept();
+        return;
+    }
+
+    const bool polygonTool = currentTool == UBStylusTool::Line
+            && UBDrawingController::drawingController()->lineGeometryMode()
+               == UBDrawingController::PolygonGeometry;
+
+    // Polygon clicks are discrete vertex operations, not drag operations.
+    // Their press handler may rebuild or commit all preview items, so never
+    // send either mouse-button release through the generic item cleanup.
+    if (polygonTool)
+    {
+        mMouseButtonIsPressed = false;
+        mPendingStylusReleaseEvent = false;
+        mTabletStylusIsPressed = false;
+        mLongPressTimer.stop();
+        event->accept();
+        return;
+    }
+
     setToolCursor (currentTool);
     // first/ propagate device release to the scene
-    if (scene())
+    if (scene() && !polygonTool)
         scene()->inputDeviceRelease(currentTool, event->modifiers());
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
@@ -2035,7 +2129,7 @@ void UBBoardView::setToolCursor (int tool)
         controlViewport->setCursor (UBResources::resources ()->textCursor);
         break;
     case UBStylusTool::Capture:
-        controlViewport->setCursor (UBResources::resources ()->penCursor);
+        controlViewport->setCursor (UBResources::resources ()->captureCursor);
         break;
     default:
         Q_ASSERT (false);

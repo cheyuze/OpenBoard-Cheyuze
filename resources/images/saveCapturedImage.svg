@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fcfcfc"/>
+      <stop offset="1" stop-color="#e6e6e6"/>
+    </linearGradient>
+    <linearGradient id="disk" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8dd6ff"/>
+      <stop offset="1" stop-color="#1689dd"/>
+    </linearGradient>
+    <linearGradient id="arrow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8dc00"/>
+      <stop offset="1" stop-color="#f39a23"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="23" width="108" height="80" rx="13" fill="url(#panel)" stroke="#b0b9c4" stroke-width="3.5"/>
+  <path d="M39 48h48l10 10v35H39z" fill="url(#disk)" stroke="#2477ad" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M50 49h31v18H50z" fill="#f7fbff" stroke="#5d8eae" stroke-width="2"/>
+  <path d="M50 75h36v18H50z" fill="#ffffff" stroke="#5d8eae" stroke-width="2"/>
+  <path d="M68 15c-4.4 0-8 3.6-8 8v22H49l19 22 19-22H76V23c0-4.4-3.6-8-8-8z" fill="url(#arrow)" stroke="#e76e34" stroke-width="2.6" stroke-linejoin="round"/>
+</svg>

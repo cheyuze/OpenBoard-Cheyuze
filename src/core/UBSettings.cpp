@@ -276,6 +276,7 @@ void UBSettings::init()
     appStartupHintsEnabled = new UBSetting(this,"App","EnableStartupHints",false);
 
     appStartMode = new UBSetting(this, "App", "StartMode", "");
+    appStartupBehavior = new UBSetting(this, "App", "StartupBehavior", RestoreLastDocument);
     appRunInWindow = new UBSetting(this, "App", "RunInWindow", true);
 
     featureSliderPosition = new UBSetting(this, "Board", "FeatureSliderPosition", 40);
@@ -607,6 +608,19 @@ void UBSettings::setPenWidthIndex(int index)
     {
         setValue("Board/PenLineWidthIndex", index);
     }
+
+    switch (index)
+    {
+        case UBWidth::Fine:
+            setPenWidth(boardPenFineWidth->get().toDouble());
+            break;
+        case UBWidth::Medium:
+            setPenWidth(boardPenMediumWidth->get().toDouble());
+            break;
+        case UBWidth::Strong:
+            setPenWidth(boardPenStrongWidth->get().toDouble());
+            break;
+    }
 }
 
 
@@ -632,7 +646,12 @@ qreal UBSettings::currentPenWidth()
             break;
     }
 
-    return width;
+    return value("Board/PenContinuousWidth", width).toDouble();
+}
+
+void UBSettings::setPenWidth(qreal width)
+{
+    setValue("Board/PenContinuousWidth", qBound<qreal>(1.0, width, 16.0));
 }
 
 
@@ -689,6 +708,19 @@ void UBSettings::setMarkerWidthIndex(int index)
     {
         setValue("Board/MarkerLineWidthIndex", index);
     }
+
+    switch (index)
+    {
+        case UBWidth::Fine:
+            setMarkerWidth(boardMarkerFineWidth->get().toDouble());
+            break;
+        case UBWidth::Medium:
+            setMarkerWidth(boardMarkerMediumWidth->get().toDouble());
+            break;
+        case UBWidth::Strong:
+            setMarkerWidth(boardMarkerStrongWidth->get().toDouble());
+            break;
+    }
 }
 
 
@@ -714,7 +746,12 @@ qreal UBSettings::currentMarkerWidth()
             break;
     }
 
-    return width;
+    return value("Board/MarkerContinuousWidth", width).toDouble();
+}
+
+void UBSettings::setMarkerWidth(qreal width)
+{
+    setValue("Board/MarkerContinuousWidth", qBound<qreal>(6.0, width, 60.0));
 }
 
 
@@ -769,6 +806,19 @@ int UBSettings::eraserWidthIndex()
 void UBSettings::setEraserWidthIndex(int index)
 {
     setValue("Board/EraserCircleWidthIndex", index);
+
+    switch (index)
+    {
+        case UBWidth::Fine:
+            setEraserWidth(eraserFineWidth());
+            break;
+        case UBWidth::Medium:
+            setEraserWidth(eraserMediumWidth());
+            break;
+        case UBWidth::Strong:
+            setEraserWidth(eraserStrongWidth());
+            break;
+    }
 }
 
 qreal UBSettings::eraserFineWidth()
@@ -823,7 +873,12 @@ qreal UBSettings::currentEraserWidth()
             break;
     }
 
-    return width;
+    return value("Board/EraserContinuousWidth", width).toDouble();
+}
+
+void UBSettings::setEraserWidth(qreal width)
+{
+    setValue("Board/EraserContinuousWidth", qBound<qreal>(8.0, width, 160.0));
 }
 
 bool UBSettings::isDarkBackground()

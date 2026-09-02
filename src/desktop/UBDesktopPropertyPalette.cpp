@@ -90,6 +90,7 @@ UBDesktopPenPalette::UBDesktopPenPalette(QWidget *parent, UBRightPalette* rightP
     connect(lineWidthChoice, SIGNAL(activated(int)), this, SLOT(close()));
     connect(UBDrawingController::drawingController(), SIGNAL(lineWidthIndexChanged(int)), lineWidthChoice, SLOT(setCurrentIndex(int)));
     connect(UBDrawingController::drawingController(), SIGNAL(lineWidthIndexChanged(int)), this, SLOT(close()));
+    connect(UBDrawingController::drawingController(), SIGNAL(colorPaletteChanged()), lineWidthChoice, SLOT(colorPaletteChanged()));
 
     onParentMaximized();
 
@@ -184,7 +185,7 @@ UBDesktopMarkerPalette::UBDesktopMarkerPalette(QWidget *parent, UBRightPalette* 
     connect(lineWidthChoice, SIGNAL(activated(int)), this, SLOT(close()));
     connect(UBDrawingController::drawingController(), SIGNAL(lineWidthIndexChanged(int)), lineWidthChoice, SLOT(setCurrentIndex(int)));
     connect(UBDrawingController::drawingController(), SIGNAL(lineWidthIndexChanged(int)), this, SLOT(close()));
+    connect(UBDrawingController::drawingController(), SIGNAL(colorPaletteChanged()), lineWidthChoice, SLOT(colorPaletteChanged()));
 
     layout()->addWidget(lineWidthChoice);
 }
-

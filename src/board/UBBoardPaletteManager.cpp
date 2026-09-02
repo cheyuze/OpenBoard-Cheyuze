@@ -74,6 +74,9 @@
 #include "core/UBPersistenceManager.h"
 #include "core/memcheck.h"
 
+#include <QtWidgets/QFileDialog>
+#include <QtWidgets/QMessageBox>
+
 inline constexpr int longpress_interval = 350;
 
 UBBoardPaletteManager::UBBoardPaletteManager(QWidget* container, UBBoardController* pBoardController)
@@ -90,6 +93,7 @@ UBBoardPaletteManager::UBBoardPaletteManager(QWidget* container, UBBoardControll
     , mBackgroundsPalette(0)
     , mToolsPalette(0)
     , mAddItemPalette(0)
+    , mSaveCapturedImageAction(0)
     , mErasePalette(NULL)
     , mPagePalette(NULL)
     , mPendingPageButtonPressed(false)
@@ -238,11 +242,9 @@ void UBBoardPaletteManager::setupPalettes()
     // Add the other palettes
     mStylusPalette = new UBStylusPalette(mContainer, UBSettings::settings()->appToolBarOrientationVertical->get().toBool() ? Qt::Vertical : Qt::Horizontal);
     connect(mStylusPalette, SIGNAL(stylusToolDoubleClicked(int)), UBApplication::boardController, SLOT(stylusToolDoubleClicked(int)));
-    mStylusPalette->show(); // always show stylus palette at startup
-
-    mZoomPalette = new UBZoomPalette(mContainer);
-
-    mStylusPalette->stackUnder(mZoomPalette);
+    // Keep the palette object for its tool action group, but the visible tool
+    // panel has been replaced by the top toolbar and bottom quick controls.
+    mStylusPalette->hide();
 
     mTipPalette = new UBStartupHintsPalette(mContainer);
     QList<QAction*> backgroundsActions;
@@ -273,6 +275,11 @@ void UBBoardPaletteManager::setupPalettes()
     addItemActions << UBApplication::mainWindow->actionAddItemToCurrentPage;
     addItemActions << UBApplication::mainWindow->actionAddItemToNewPage;
     addItemActions << UBApplication::mainWindow->actionAddItemToLibrary;
+    mSaveCapturedImageAction = new QAction(QIcon(QStringLiteral(":/images/saveCapturedImage.svg")),
+            QStringLiteral("另存为"), this);
+    mSaveCapturedImageAction->setToolTip(QStringLiteral("将截图保存到电脑"));
+    mSaveCapturedImageAction->setVisible(false);
+    addItemActions << mSaveCapturedImageAction;
 
     mAddItemPalette = new UBActionPalette(addItemActions, Qt::Horizontal, mContainer);
     mAddItemPalette->setButtonIconSize(QSize(128, 128));
@@ -463,6 +470,7 @@ void UBBoardPaletteManager::connectPalettes()
     connect(UBApplication::mainWindow->actionAddItemToCurrentPage, SIGNAL(triggered()), this, SLOT(addItemToCurrentPage()));
     connect(UBApplication::mainWindow->actionAddItemToNewPage, SIGNAL(triggered()), this, SLOT(addItemToNewPage()));
     connect(UBApplication::mainWindow->actionAddItemToLibrary, SIGNAL(triggered()), this, SLOT(addItemToLibrary()));
+    connect(mSaveCapturedImageAction, SIGNAL(triggered()), this, SLOT(saveCapturedImageAs()));
 
     connect(UBApplication::mainWindow->actionEraseItems, SIGNAL(triggered()), mErasePalette, SLOT(close()));
     connect(UBApplication::mainWindow->actionEraseAnnotations, SIGNAL(triggered()), mErasePalette, SLOT(close()));
@@ -672,6 +680,7 @@ void UBBoardPaletteManager::addItem(const QUrl& pUrl)
     mPixmap = QPixmap();
     mPos = QPointF(0, 0);
     mScaleFactor = 1.;
+    mSaveCapturedImageAction->setVisible(false);
 
     mAddItemPalette->show();
     mAddItemPalette->adjustSizeAndPosition();
@@ -859,6 +868,7 @@ void UBBoardPaletteManager::addItem(const QPixmap& pPixmap, const QPointF& pos, 
     mPixmap = pPixmap;
     mPos = pos;
     mScaleFactor = scaleFactor;
+    mSaveCapturedImageAction->setVisible(!mPixmap.isNull());
 
     mAddItemPalette->show();
     mAddItemPalette->adjustSizeAndPosition();
@@ -935,6 +945,66 @@ void UBBoardPaletteManager::addItemToLibrary()
     }
 
     mAddItemPalette->hide();
+}
+
+void UBBoardPaletteManager::saveCapturedImageAs()
+{
+    if (mPixmap.isNull())
+        return;
+
+    const QString picturesPath = QStandardPaths::writableLocation(
+            QStandardPaths::PicturesLocation);
+    const QString defaultName = QStringLiteral("OpenBoard截图-%1.png")
+            .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")));
+
+    QFileDialog dialog(mContainer);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    dialog.setWindowTitle(QStringLiteral("另存截图为"));
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDirectory(picturesPath.isEmpty() ? QDir::homePath() : picturesPath);
+    dialog.selectFile(defaultName);
+    dialog.setNameFilters(QStringList()
+            << QStringLiteral("PNG 图片 (*.png)")
+            << QStringLiteral("JPEG 图片 (*.jpg *.jpeg)")
+            << QStringLiteral("BMP 图片 (*.bmp)"));
+    dialog.selectNameFilter(QStringLiteral("PNG 图片 (*.png)"));
+    dialog.setLabelText(QFileDialog::LookIn, QStringLiteral("保存位置："));
+    dialog.setLabelText(QFileDialog::FileName, QStringLiteral("文件名："));
+    dialog.setLabelText(QFileDialog::FileType, QStringLiteral("文件类型："));
+    dialog.setLabelText(QFileDialog::Accept, QStringLiteral("保存"));
+    dialog.setLabelText(QFileDialog::Reject, QStringLiteral("取消"));
+    dialog.resize(760, 520);
+
+    QTimer::singleShot(0, &dialog, [this, &dialog]() {
+        const QPoint center = mContainer->mapToGlobal(mContainer->rect().center());
+        dialog.move(center.x() - dialog.width() / 2,
+                center.y() - dialog.height() / 2);
+    });
+
+    if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty())
+        return;
+
+    QString fileName = dialog.selectedFiles().constFirst();
+    QString suffix = QFileInfo(fileName).suffix().toLower();
+    if (suffix.isEmpty())
+    {
+        fileName += QStringLiteral(".png");
+        suffix = QStringLiteral("png");
+    }
+
+    const QByteArray format = suffix == QStringLiteral("jpeg")
+            ? QByteArrayLiteral("JPG") : suffix.toUpper().toLatin1();
+    if (!mPixmap.save(fileName, format.constData()))
+    {
+        QMessageBox::warning(mContainer, QStringLiteral("保存失败"),
+                QStringLiteral("无法保存截图，请检查保存位置和文件名后重试。"));
+        return;
+    }
+
+    mAddItemPalette->hide();
+    UBDrawingController::drawingController()->setStylusTool(UBStylusTool::Selector);
+    UBApplication::showMessage(QStringLiteral("截图已保存"));
 }
 
 void UBBoardPaletteManager::zoomButtonPressed()

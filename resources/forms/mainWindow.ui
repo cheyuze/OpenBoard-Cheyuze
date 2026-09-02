@@ -66,7 +66,6 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="actionStylus"/>
    <addaction name="actionBackgrounds"/>
    <addaction name="separator"/>
    <addaction name="actionUndo"/>
@@ -78,11 +77,11 @@
    <addaction name="separator"/>
    <addaction name="actionErase"/>
    <addaction name="separator"/>
-   <addaction name="actionMenu"/>
    <addaction name="actionPodcast"/>
    <addaction name="actionBoard"/>
-   <addaction name="actionDocument"/>
    <addaction name="actionDesktop"/>
+   <addaction name="actionDocument"/>
+   <addaction name="actionMenu"/>
   </widget>
   <widget class="QToolBar" name="webToolBar">
    <property name="font">
@@ -193,7 +192,7 @@
     <bool>true</bool>
    </property>
    <property name="checked">
-    <bool>true</bool>
+    <bool>false</bool>
    </property>
    <property name="icon">
     <iconset resource="../OpenBoard.qrc">
@@ -209,9 +208,6 @@
     <font>
      <pointsize>9</pointsize>
     </font>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+T</string>
    </property>
   </action>
   <action name="actionBackgrounds">
@@ -736,10 +732,10 @@
      <normaloff>:/images/toolbar/menu.png</normaloff>:/images/toolbar/menu.png</iconset>
    </property>
    <property name="text">
-    <string>OpenBoard</string>
+    <string>Preferences</string>
    </property>
    <property name="toolTip">
-    <string>OpenBoard</string>
+    <string>Preferences</string>
    </property>
    <property name="font">
     <font>
@@ -1898,18 +1894,6 @@
     <string>Remove the backgound</string>
    </property>
   </action>
-  <action name="actionOpenTutorial">
-   <property name="icon">
-    <iconset resource="../OpenBoard.qrc">
-     <normaloff>:/images/toolbar/tutorial.png</normaloff>:/images/toolbar/tutorial.png</iconset>
-   </property>
-   <property name="text">
-    <string>Open Tutorial</string>
-   </property>
-   <property name="toolTip">
-    <string>Open the tutorial web page</string>
-   </property>
-  </action>
   <action name="actionDefaultGridSize">
    <property name="icon">
     <iconset resource="../OpenBoard.qrc">
@@ -1985,9 +1969,6 @@
    </property>
    <property name="toolTip">
     <string>Snap to grid and angle</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+S</string>
    </property>
   </action>
  </widget>

@@ -1370,6 +1370,11 @@ bool UBSvgSubsetAdaptor::UBSvgSubsetWriter::persistScene(std::shared_ptr<UBDocum
             else if (polygonItem->isNominalLine())
                 polygonItemToSvgLine(polygonItem, groupHoldsInfo);
 
+            else if (!stroke)
+            {
+                polygonItemToSvgPolygon(polygonItem, groupHoldsInfo);
+            }
+
 
             continue;
         }

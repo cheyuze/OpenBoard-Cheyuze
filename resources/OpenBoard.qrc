@@ -219,6 +219,7 @@
         <file>images/addItemToCurrentPage.svg</file>
         <file>images/addItemToNewPage.svg</file>
         <file>images/addItemToLibrary.svg</file>
+        <file>images/saveCapturedImage.svg</file>
         <file>style/treeview-branch-closed.png</file>
         <file>style/treeview-branch-open.png</file>
         <file>webbrowser/closetab.png</file>

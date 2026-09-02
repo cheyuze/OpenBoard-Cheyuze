@@ -66,6 +66,8 @@
 #include "frameworks/UBCryptoUtils.h"
 #include "tools/UBToolsManager.h"
 
+#include "podcast/UBPodcastController.h"
+
 #include "UBDisplayManager.h"
 #include "core/memcheck.h"
 
@@ -248,11 +250,16 @@ void UBApplication::setupTranslators(QStringList args)
         if (mApplicationTranslator->load(UBPlatformUtils::translationPath(QString("OpenBoard_"),language)))
             installTranslator(mApplicationTranslator);
 
-        QString qtGuiTranslationPath = UBPlatformUtils::translationPath("qt_", language);
+        // Qt 6 keeps common widget translations (including QFileDialog) in
+        // qtbase_*.qm.  Prefer the copy shipped with OpenBoard so installed
+        // builds do not depend on a developer Qt installation being present.
+        QString qtGuiTranslationPath = UBPlatformUtils::translationPath(
+                "qtbase_", language);
 
         if(!QFile(qtGuiTranslationPath).exists())
         {
-            qtGuiTranslationPath = UBPlatformUtils::translationPath("qt_", language.left(2));
+            qtGuiTranslationPath = UBPlatformUtils::translationPath(
+                    "qtbase_", language.left(2));
 
             if(!QFile(qtGuiTranslationPath).exists())
             {
@@ -270,11 +277,15 @@ void UBApplication::setupTranslators(QStringList args)
 
         if (qtGuiTranslationPath.isEmpty())
         {
-            loaded = mQtGuiTranslator->load(locale, "qt", "_", qtTranslationPath, ".qm");
+            loaded = mQtGuiTranslator->load(
+                    locale, "qtbase", "_", qtTranslationPath, ".qm");
+            if (!loaded)
+                loaded = mQtGuiTranslator->load(
+                        locale, "qt", "_", qtTranslationPath, ".qm");
         }
         else
         {
-            loaded = mQtGuiTranslator->load(qtGuiTranslationPath, UBPlatformUtils::applicationResourcesDirectory() + "/" + "i18n", "_", ".qm");
+            loaded = mQtGuiTranslator->load(qtGuiTranslationPath);
         }
 
         if (loaded)
@@ -377,8 +388,48 @@ int UBApplication::exec(const QString& pFileToImport)
     connect(applicationController, SIGNAL(mainModeChanged(UBApplicationController::MainMode))
           , boardController,       SLOT(appMainModeChanged(UBApplicationController::MainMode)));
 
-    connect(mainWindow->actionDesktop, SIGNAL(triggered(bool)), applicationController, SLOT(showDesktop(bool)));
-    connect(mainWindow->actionDesktop, SIGNAL(triggered(bool)), this, SLOT(stopScript()));
+    // Desktop capture range is chosen before entering desktop mode.  Keeping
+    // this menu on the main Desktop button avoids duplicating capture options
+    // on the compact recording palette.
+    QMenu *desktopCaptureMenu = new QMenu(mainWindow);
+    UBPodcastController *podcastController = UBPodcastController::instance();
+    const QList<QAction*> desktopCaptureActions =
+            podcastController->desktopCaptureModeActions();
+    foreach (QAction *captureAction, desktopCaptureActions)
+    {
+        desktopCaptureMenu->addAction(captureAction);
+        connect(captureAction, &QAction::triggered, this,
+                [this, podcastController, captureAction](bool) {
+            podcastController->setDesktopCaptureMode(
+                    static_cast<UBPodcastController::DesktopCaptureMode>(
+                            captureAction->data().toInt()));
+            applicationController->showDesktop(false);
+            stopScript();
+
+            // The desktop and recording palette need to be visible before an
+            // area selector or application picker is displayed.  Prepare the
+            // chosen range immediately after entering desktop mode so the
+            // user knows what will be recorded before pressing Record.
+            QTimer::singleShot(0, this, [this, podcastController]() {
+                if (!podcastController->prepareDesktopCapture())
+                    showBoard();
+            });
+        });
+    }
+
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    foreach (QObject *desktopWidget, mainWindow->actionDesktop->associatedObjects())
+#else
+    foreach (QWidget *desktopWidget, mainWindow->actionDesktop->associatedWidgets())
+#endif
+    {
+        if (QToolButton *desktopButton = qobject_cast<QToolButton*>(desktopWidget))
+        {
+            desktopButton->setObjectName("ubButtonMenu");
+            desktopButton->setPopupMode(QToolButton::InstantPopup);
+            desktopButton->setMenu(desktopCaptureMenu);
+        }
+    }
 #if defined(Q_OS_OSX) || defined(Q_OS_LINUX)
     connect(mainWindow->actionHideApplication, SIGNAL(triggered()), this, SLOT(showMinimized()));
 #else
@@ -414,9 +465,8 @@ int UBApplication::exec(const QString& pFileToImport)
             applicationController->showMessage(tr("Cannot open your UBX file directly. Please import it in Documents mode instead"), false);
     }
 
-    if (UBSettings::settings()->appStartMode->get().toInt() == 1)
-        applicationController->showDesktop();
-    else if (UBSettings::settings()->appStartMode->get().toInt() == 2)
+    if (UBSettings::settings()->appStartupBehavior->get().toInt()
+            == UBSettings::ShowDocumentHistory)
         applicationController->showDocument();
     else
         applicationController->showBoard();
@@ -590,18 +640,60 @@ void UBApplication::decorateActionMenu(QAction* action)
             menu->addAction(mainWindow->actionSleep);
 
             menu->addSeparator();
-            menu->addAction(mainWindow->actionOpenTutorial);
             menu->addAction(mainWindow->actionHintsAndTips);
             menu->addSeparator();
             menu->addAction(mainWindow->actionPreferences);
+            menu->addAction(mainWindow->actionBackgrounds);
+
+            QAction* snapAction = mainWindow->actionSnap;
+            if (!snapAction->property("ubSnapMenuBaseText").isValid())
+                snapAction->setProperty("ubSnapMenuBaseText", snapAction->text());
+
+            const QString snapBaseText =
+                    snapAction->property("ubSnapMenuBaseText").toString();
+            const auto updateSnapMenuText = [snapAction, snapBaseText](bool checked) {
+                snapAction->setText(checked
+                        ? snapBaseText + QStringLiteral("  ") + QChar(0x2713)
+                        : snapBaseText);
+            };
+            connect(snapAction, &QAction::toggled, menu, updateSnapMenuText);
+            updateSnapMenuText(snapAction->isChecked());
+            menu->addAction(snapAction);
+
+            QMenu* startupSettingsMenu = menu->addMenu(
+                    QIcon(":/images/toolbar/settings.png"), tr("Startup Settings"));
+            QActionGroup* startupBehaviorGroup = new QActionGroup(startupSettingsMenu);
+            startupBehaviorGroup->setExclusive(true);
+
+            const int startupBehavior = UBSettings::settings()->appStartupBehavior->get().toInt();
+            const QList<QPair<QString, int> > startupBehaviorOptions = {
+                qMakePair(tr("Restore the last whiteboard"),
+                          static_cast<int>(UBSettings::RestoreLastDocument)),
+                qMakePair(tr("Create a new whiteboard"),
+                          static_cast<int>(UBSettings::CreateNewDocument)),
+                qMakePair(tr("Show document history"),
+                          static_cast<int>(UBSettings::ShowDocumentHistory))
+            };
+
+            for (const QPair<QString, int>& option : startupBehaviorOptions)
+            {
+                QAction* startupAction = startupSettingsMenu->addAction(option.first);
+                startupAction->setCheckable(true);
+                startupAction->setData(option.second);
+                startupAction->setChecked(option.second == startupBehavior);
+                startupBehaviorGroup->addAction(startupAction);
+            }
+
+            connect(startupBehaviorGroup, &QActionGroup::triggered, this,
+                    [](QAction* selectedAction) {
+                if (selectedAction)
+                    UBSettings::settings()->appStartupBehavior->setInt(
+                            selectedAction->data().toInt());
+            });
+
             menu->addAction(mainWindow->actionMultiScreen);
             if (!UBSettings::settings()->appHideCheckForSoftwareUpdate->get().toBool())
                 menu->addAction(mainWindow->actionCheckUpdate);
-            menu->addSeparator();
-
-            menu->addAction(mainWindow->actionPodcast);
-            mainWindow->actionPodcast->setText(tr("Record Video"));
-
             menu->addSeparator();
             menu->addAction(mainWindow->actionQuit);
 
