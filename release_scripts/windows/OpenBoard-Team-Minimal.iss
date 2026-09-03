@@ -46,7 +46,9 @@ LaunchProgram=运行 %1
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "{#ProductRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Keep local diagnostic/backup binaries in the build folder, but never ship
+; them in the public installer.
+Source: "{#ProductRoot}\*"; DestDir: "{app}"; Excludes: "OpenBoard-before-*.exe,OpenBoard-inuse-backup.exe,OpenBoard-pre-*.exe,OpenBoard-*test*.exe,OpenBoard-*test*.exp,OpenBoard-*test*.lib,OpenBoard.exp,OpenBoard.lib"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\OpenBoard 车厘子定制版"; Filename: "{app}\OpenBoard.exe"

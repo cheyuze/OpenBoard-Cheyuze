@@ -10,9 +10,9 @@
   "baiduUrl": "https://pan.baidu.com/s/11ndlHH_WY8nQY3JBfDiOtg?pwd=edeu",
   "baiduPassword": "edeu",
   "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.8.4",
-  "publishedAt": "2026-08-21",
+  "publishedAt": "2026-09-03",
   "required": false,
-  "sha256": "9AFA8EA3721E2DC7512071F2F128865A1EDAF4E6AD85769F55DD0535AF92B7E7",
+  "sha256": "A1EEE074CD406E8A6466AFD19297785D15EEEFB1A0AE6DF325AB7C1A3F62128C",
   "notes": [
     "点击桌面按钮直接选择全屏、选区或窗口录制范围",
     "修复桌面模式画笔无法在应用和桌面上圈画的问题",
