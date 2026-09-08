@@ -59,6 +59,7 @@ public:
     int thumbnailCount() const;
     UBThumbnail* thumbnailAt(int index);
     UBThumbnail* lastSelectedThumbnail() const;
+    void renameThumbnail(int index, const QString& name);
 
 protected:
     // only to be called from UBDocument

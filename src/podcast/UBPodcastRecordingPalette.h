@@ -37,6 +37,7 @@
 #include <QLabel>
 
 class QAction;
+class QMenu;
 
 class UBVuMeter;
 
@@ -54,6 +55,10 @@ class UBPodcastRecordingPalette : public UBActionPalette
         void recordingProgressChanged(qint64 ms);
         void audioLevelChanged(quint8 level);
         void setNativeOwner(QWidget *owner);
+        void setCameraChecked(bool checked);
+
+    signals:
+        void cameraToggled(bool enabled);
 
     protected:
         void paintEvent(QPaintEvent *event) override;
@@ -63,9 +68,17 @@ class UBPodcastRecordingPalette : public UBActionPalette
 
     private:
         void ensureSystemTopMost();
+        void populateMicrophoneMenu();
+        void populateSpeakerMenu();
+        void populateCameraMenu();
 
         QLabel *mTimerLabel;
         UBVuMeter *mLevelMeter;
+        QAction *mCameraAction;
+        QAction *mCameraEnabledAction;
+        QMenu *mMicrophoneMenu;
+        QMenu *mSpeakerMenu;
+        QMenu *mCameraMenu;
 };
 
 

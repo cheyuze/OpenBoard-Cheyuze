@@ -34,6 +34,7 @@
 #include <QSvgRenderer>
 
 #include "core/UBApplication.h"
+#include "core/UB.h"
 #include "core/UBSettings.h"
 #include "frameworks/UBFileSystemUtils.h"
 #include "core/memcheck.h"
@@ -63,6 +64,38 @@ UBResources* UBResources::resources()
 
     return sSingleton;
 
+}
+
+QCursor UBResources::cursorForTool(int tool) const
+{
+    switch (tool)
+    {
+    case UBStylusTool::Pen:
+    case UBStylusTool::Line:
+        return penCursor;
+    case UBStylusTool::Eraser:
+        return eraserCursor;
+    case UBStylusTool::Marker:
+        return markerCursor;
+    case UBStylusTool::Pointer:
+        return pointerCursor;
+    case UBStylusTool::Hand:
+        return handCursor;
+    case UBStylusTool::ZoomIn:
+        return zoomInCursor;
+    case UBStylusTool::ZoomOut:
+        return zoomOutCursor;
+    case UBStylusTool::Selector:
+        return arrowCursor;
+    case UBStylusTool::Play:
+        return playCursor;
+    case UBStylusTool::Text:
+        return textCursor;
+    case UBStylusTool::Capture:
+        return captureCursor;
+    default:
+        return penCursor;
+    }
 }
 
 void UBResources::init()

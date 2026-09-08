@@ -86,6 +86,21 @@ UBMainWindow::UBMainWindow(QWidget *parent, Qt::WindowFlags flags)
 #endif
 
     UBShortcutManager::shortcutManager()->addMainActions(this);
+
+    // Dark board backgrounds were removed from the streamlined interface.
+    const QList<QAction*> darkBackgroundActions {
+        actionPlainDarkBackground,
+        actionCrossedDarkBackground,
+        actionRuledDarkBackground,
+        actionSeyesRuledDarkBackground
+    };
+    for (QAction* action : darkBackgroundActions)
+    {
+        action->setChecked(false);
+        action->setEnabled(false);
+        action->setVisible(false);
+        action->setShortcut(QKeySequence());
+    }
 }
 
 UBMainWindow::~UBMainWindow()

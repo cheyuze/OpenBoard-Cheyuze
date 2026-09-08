@@ -445,6 +445,8 @@ void UBSettings::init()
     podcastFramesPerSecond = new UBSetting(this, "Podcast", "FramesPerSecond", 10);
     podcastVideoSize = new UBSetting(this, "Podcast", "VideoSize", "Medium");
     podcastAudioRecordingDevice = new UBSetting(this, "Podcast", "AudioRecordingDevice", "Default");
+    podcastAudioOutputDevice = new UBSetting(this, "Podcast", "AudioOutputDevice", "Default");
+    podcastCameraDevice = new UBSetting(this, "Podcast", "CameraDevice", "Default");
 
     podcastWindowsMediaBitsPerSecond = new UBSetting(this, "Podcast", "WindowsMediaBitsPerSecond", 1700000);
     podcastQuickTimeQuality = new UBSetting(this, "Podcast", "QuickTimeQuality", "High");
@@ -883,7 +885,9 @@ void UBSettings::setEraserWidth(qreal width)
 
 bool UBSettings::isDarkBackground()
 {
-    return value("Board/DarkBackground", 0).toBool();
+    // The classroom interface uses one consistent light canvas.  Keep the
+    // legacy setting on disk readable, but never expose a dark colour context.
+    return false;
 }
 
 
@@ -906,7 +910,8 @@ bool UBSettings::isSeyesRuledBackground()
 
 void UBSettings::setDarkBackground(bool isDarkBackground)
 {
-    setValue("Board/DarkBackground", isDarkBackground);
+    Q_UNUSED(isDarkBackground);
+    setValue("Board/DarkBackground", false);
     emit colorContextChanged();
 }
 

@@ -98,6 +98,8 @@ QObject* UBApplication::staticMemoryCleaner = 0;
 
 
 UBApplication::UBApplication(const QString &id, int &argc, char **argv) : SingleApplication(argc, argv, true)
+  , mTabletCursorOverrideActive(false)
+  , mPointerInputDevice(PointerInputDevice::Unknown)
   , mPreferencesController(NULL)
   , mApplicationTranslator(NULL)
   , mQtGuiTranslator(NULL)
@@ -149,6 +151,28 @@ UBApplication::UBApplication(const QString &id, int &argc, char **argv) : Single
 #endif
 
     setStyle("fusion");
+
+    // Keep the application chrome and standard dialogs readable regardless of
+    // the Windows light/dark theme.  Individual board backgrounds and custom
+    // drawing colours are managed separately and are intentionally unaffected.
+    QPalette lightPalette;
+    lightPalette.setColor(QPalette::Window, QColor("#ffffff"));
+    lightPalette.setColor(QPalette::WindowText, QColor("#202124"));
+    lightPalette.setColor(QPalette::Base, QColor("#ffffff"));
+    lightPalette.setColor(QPalette::AlternateBase, QColor("#f4f7fb"));
+    lightPalette.setColor(QPalette::ToolTipBase, QColor("#ffffdc"));
+    lightPalette.setColor(QPalette::ToolTipText, QColor("#202124"));
+    lightPalette.setColor(QPalette::Text, QColor("#202124"));
+    lightPalette.setColor(QPalette::Button, QColor("#ffffff"));
+    lightPalette.setColor(QPalette::ButtonText, QColor("#202124"));
+    lightPalette.setColor(QPalette::BrightText, QColor("#ffffff"));
+    lightPalette.setColor(QPalette::Highlight, QColor("#3278d4"));
+    lightPalette.setColor(QPalette::HighlightedText, QColor("#ffffff"));
+    lightPalette.setColor(QPalette::Link, QColor("#174ea6"));
+    lightPalette.setColor(QPalette::Disabled, QPalette::WindowText, QColor("#7a8493"));
+    lightPalette.setColor(QPalette::Disabled, QPalette::Text, QColor("#7a8493"));
+    lightPalette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor("#7a8493"));
+    setPalette(lightPalette);
 
     QString css = UBFileSystemUtils::readTextFile(UBPlatformUtils::applicationEtcDirectory() + "/"+ qApp->applicationName()+".css");
     if (css.length() > 0)
@@ -759,10 +783,81 @@ bool UBApplication::eventFilter(QObject *obj, QEvent *event)
         }
     }
 
+    else if (event->type() == QEvent::TabletEnterProximity)
+    {
+        // Proximity alone must not take control away from a physical mouse.
+        // It is safe to initialise stylus ownership when no pointing device
+        // has been observed yet; after that, TabletPress is the authoritative
+        // hand-off from mouse to stylus.
+        if (boardController && boardController->controlView()
+                && boardController->controlView()->isVisible()
+                && mPointerInputDevice == PointerInputDevice::Unknown)
+        {
+            mPointerInputDevice = PointerInputDevice::Stylus;
+            setTabletCursorOverride(true);
+        }
+    }
+
     else if (event->type() == QEvent::TabletLeaveProximity)
     {
         if (boardController && boardController->controlView())
             boardController->controlView()->forcedTabletRelease();
+
+        if (mPointerInputDevice == PointerInputDevice::Stylus)
+        {
+            setTabletCursorOverride(false);
+            mPointerInputDevice = PointerInputDevice::Unknown;
+        }
+    }
+
+    else if (event->type() == QEvent::TabletPress)
+    {
+        QTabletEvent *tabletEvent = static_cast<QTabletEvent *>(event);
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+        const bool eraserTip = tabletEvent->pointerType()
+                == QPointingDevice::PointerType::Eraser;
+#else
+        const bool eraserTip = tabletEvent->pointerType()
+                == QTabletEvent::Eraser;
+#endif
+        mPointerInputDevice = PointerInputDevice::Stylus;
+        if (!eraserTip)
+            activateStylusInput();
+        else
+            setTabletCursorOverride(true);
+    }
+
+    else if (event->type() == QEvent::TabletMove
+            && mPointerInputDevice == PointerInputDevice::Stylus)
+    {
+        updateTabletCursorOverride(
+                UBDrawingController::drawingController()->stylusTool());
+    }
+
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    else if (event->type() == QEvent::Enter)
+    {
+        // QEnterEvent has no MouseEventSource. Its pointing device is still
+        // sufficient for cursor ownership, but it is deliberately not used
+        // to change tools; a genuine QMouseEvent below performs that action.
+        QEnterEvent *enterEvent = static_cast<QEnterEvent *>(event);
+        const QInputDevice *device = enterEvent->pointingDevice();
+        if (device && (device->type() == QInputDevice::DeviceType::Mouse
+                       || device->type() == QInputDevice::DeviceType::TouchPad))
+        {
+            mPointerInputDevice = PointerInputDevice::Mouse;
+            setTabletCursorOverride(false);
+        }
+    }
+#endif
+
+    else if (event->type() == QEvent::MouseMove
+            || event->type() == QEvent::MouseButtonPress
+            || event->type() == QEvent::MouseButtonRelease)
+    {
+        QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
+        if (isGenuineMouseEvent(mouseEvent))
+            activateMouseInput();
     }
 
 
@@ -794,6 +889,72 @@ bool UBApplication::eventFilter(QObject *obj, QEvent *event)
     }
 
     return result;
+}
+
+bool UBApplication::isGenuineMouseEvent(const QMouseEvent *event) const
+{
+    if (!event || event->source() != Qt::MouseEventNotSynthesized)
+        return false;
+
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    const QInputDevice *device = event->pointingDevice();
+    return device && (device->type() == QInputDevice::DeviceType::Mouse
+            || device->type() == QInputDevice::DeviceType::TouchPad);
+#else
+    return true;
+#endif
+}
+
+void UBApplication::activateMouseInput()
+{
+    mPointerInputDevice = PointerInputDevice::Mouse;
+
+    // Removing the application override is what allows the toolbar,
+    // recording palette, capture control and page strip to expose their own
+    // cursors. The board viewport already owns the current tool cursor.
+    setTabletCursorOverride(false);
+}
+
+void UBApplication::activateStylusInput()
+{
+    mPointerInputDevice = PointerInputDevice::Stylus;
+    setTabletCursorOverride(true);
+}
+
+void UBApplication::setTabletCursorOverride(bool enabled)
+{
+    if (enabled)
+    {
+        if (!boardController || !boardController->controlView())
+            return;
+
+        const int tool = UBDrawingController::drawingController()->stylusTool();
+        const QCursor cursor = UBResources::resources()->cursorForTool(tool);
+        if (mTabletCursorOverrideActive && QApplication::overrideCursor())
+            QApplication::changeOverrideCursor(cursor);
+        else
+        {
+            QApplication::setOverrideCursor(cursor);
+            mTabletCursorOverrideActive = true;
+        }
+    }
+    else if (mTabletCursorOverrideActive)
+    {
+        QApplication::restoreOverrideCursor();
+        mTabletCursorOverrideActive = false;
+    }
+}
+
+void UBApplication::updateTabletCursorOverride(int tool)
+{
+    if (!mTabletCursorOverrideActive)
+        return;
+
+    const QCursor cursor = UBResources::resources()->cursorForTool(tool);
+    if (QApplication::overrideCursor())
+        QApplication::changeOverrideCursor(cursor);
+    else
+        QApplication::setOverrideCursor(cursor);
 }
 
 

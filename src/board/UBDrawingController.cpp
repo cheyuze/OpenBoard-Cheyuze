@@ -103,7 +103,6 @@ int UBDrawingController::latestDrawingTool()
     return mLatestDrawingTool;
 }
 
-
 void UBDrawingController::setStylusTool(int tool)
 {
     if (tool != mStylusTool)
@@ -507,53 +506,61 @@ void UBDrawingController::penToolSelected(bool checked)
 
 void UBDrawingController::eraserToolSelected(bool checked)
 {
-    if (checked)
+    if (checked) {
         setStylusTool(UBStylusTool::Eraser);
+    }
 }
 
 void UBDrawingController::markerToolSelected(bool checked)
 {
-    if (checked)
+    if (checked) {
         setStylusTool(UBStylusTool::Marker);
+    }
 }
 
 void UBDrawingController::selectorToolSelected(bool checked)
 {
-    if (checked)
+    if (checked) {
         setStylusTool(UBStylusTool::Selector);
+    }
 }
 
 void UBDrawingController::playToolSelected(bool checked)
 {
-    if (checked)
+    if (checked) {
         setStylusTool(UBStylusTool::Play);
+    }
 }
 
 void UBDrawingController::handToolSelected(bool checked)
 {
-    if (checked)
+    if (checked) {
         setStylusTool(UBStylusTool::Hand);
+    }
 }
 
 
 void UBDrawingController::zoomInToolSelected(bool checked)
 {
-    if (checked)
+    if (checked) {
         setStylusTool(UBStylusTool::ZoomIn);
+    }
 }
 
 
 void UBDrawingController::zoomOutToolSelected(bool checked)
 {
-    if (checked)
+    if (checked) {
         setStylusTool(UBStylusTool::ZoomOut);
+    }
 }
 
 
 void UBDrawingController::pointerToolSelected(bool checked)
 {
-    if (checked)
+    if (checked) {
         setStylusTool(UBStylusTool::Pointer);
+    }
 }
 
 
@@ -569,13 +576,15 @@ void UBDrawingController::lineToolSelected(bool checked)
 
 void UBDrawingController::textToolSelected(bool checked)
 {
-    if (checked)
+    if (checked) {
         setStylusTool(UBStylusTool::Text);
+    }
 }
 
 
 void UBDrawingController::captureToolSelected(bool checked)
 {
-    if (checked)
+    if (checked) {
         setStylusTool(UBStylusTool::Capture);
+    }
 }

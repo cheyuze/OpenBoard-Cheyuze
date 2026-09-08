@@ -14,7 +14,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DefaultDirName={autopf}\OpenBoard 车厘子定制版
 DefaultGroupName=OpenBoard 车厘子定制版
 OutputDir=..\..\install\win32
-OutputBaseFilename=OpenBoard-cheyuze-1.8.4-x64
+OutputBaseFilename=OpenBoard-cheyuze-1.8.5-x64
 SetupIconFile=..\..\resources\win\OpenBoard.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -48,7 +48,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; Keep local diagnostic/backup binaries in the build folder, but never ship
 ; them in the public installer.
-Source: "{#ProductRoot}\*"; DestDir: "{app}"; Excludes: "OpenBoard-before-*.exe,OpenBoard-inuse-backup.exe,OpenBoard-pre-*.exe,OpenBoard-*test*.exe,OpenBoard-*test*.exp,OpenBoard-*test*.lib,OpenBoard.exp,OpenBoard.lib"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ProductRoot}\*"; DestDir: "{app}"; Excludes: "OpenBoard-before-*.exe,OpenBoard-inuse-backup.exe,OpenBoard-pre-*.exe,OpenBoard-toggle.*,OpenBoard-*test*.exe,OpenBoard-*test*.exp,OpenBoard-*test*.lib,OpenBoard.exp,OpenBoard.lib"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\OpenBoard 车厘子定制版"; Filename: "{app}\OpenBoard.exe"

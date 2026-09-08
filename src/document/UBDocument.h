@@ -23,6 +23,7 @@
 #pragma once
 
 #include <QList>
+#include <QStringList>
 
 #include <memory>
 
@@ -62,16 +63,23 @@ public:
     std::shared_ptr<UBGraphicsScene> createPage(int index, bool useUndoRedoStack = true);
     void persistPage(std::shared_ptr<UBGraphicsScene> scene, const int index, bool isAutomaticBackup = false,
                      bool forceImmediateSaving = false);
+    QString pageName(int index) const;
+    void renamePage(int index, const QString& name);
     UBThumbnailScene* thumbnailScene() const;
 
     static std::shared_ptr<UBDocument> getDocument(std::shared_ptr<UBDocumentProxy> proxy);
 
 private:
     static std::shared_ptr<UBDocument> findDocument(std::shared_ptr<UBDocumentProxy> proxy);
+    void loadPageNames();
+    void savePageNames() const;
+    void normalizePageNames();
+    void insertPageName(int index, const QString& name = QString());
 
 private:
     std::shared_ptr<UBDocumentProxy> mProxy{nullptr};
     UBThumbnailScene* mThumbnailScene{nullptr};
+    QStringList mPageNames{};
 
     static QList<std::weak_ptr<UBDocument>> sDocuments;
 };

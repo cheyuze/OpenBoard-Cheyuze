@@ -43,8 +43,9 @@ UBThumbnail::UBThumbnail()
 {
     mTextItem->setParentItem(this);
 
-    // accept hover to show/hide UI buttons
-    setAcceptHoverEvents(true);
+    // Page operations are available from the thumbnail context menu.  Avoid
+    // overlaying small, ambiguous action icons on the page preview.
+    setAcceptHoverEvents(false);
 
     // make it selectable
     setFlag(QGraphicsItem::ItemIsSelectable, true);
@@ -73,12 +74,32 @@ QPixmap UBThumbnail::pixmap() const
 void UBThumbnail::setSceneIndex(int sceneIndex)
 {
     mIndex = sceneIndex;
-    mTextItem->setPageNumber(sceneIndex + 1);
+    if (mPageName.isEmpty())
+    {
+        mTextItem->setPageNumber(sceneIndex + 1);
+    }
+    else
+    {
+        mTextItem->setText(mPageName);
+    }
 }
 
 int UBThumbnail::sceneIndex() const
 {
     return mIndex;
+}
+
+void UBThumbnail::setPageName(const QString& pageName)
+{
+    mPageName = pageName.trimmed();
+    if (mPageName.isEmpty())
+    {
+        mTextItem->setPageNumber(mIndex + 1);
+    }
+    else
+    {
+        mTextItem->setText(mPageName);
+    }
 }
 
 void UBThumbnail::setThumbnailSize(QSizeF size)
@@ -248,45 +269,16 @@ QVariant UBThumbnail::itemChange(GraphicsItemChange change, const QVariant& valu
 
 void UBThumbnail::hoverEnterEvent(QGraphicsSceneHoverEvent* event)
 {
-    auto thumbnailScene = dynamic_cast<UBThumbnailScene*>(scene());
-
-    if (thumbnailScene)
-    {
-        mEditable = thumbnailScene->currentThumbnailArranger()->isUIEnabled();
-    }
-
     QGraphicsRectItem::hoverEnterEvent(event);
 }
 
 void UBThumbnail::hoverLeaveEvent(QGraphicsSceneHoverEvent* event)
 {
-    mEditable = false;
     QGraphicsRectItem::hoverLeaveEvent(event);
 }
 
 void UBThumbnail::mousePressEvent(QGraphicsSceneMouseEvent* event)
 {
-    auto thumbnailScene = dynamic_cast<UBThumbnailScene*>(scene());
-
-    if (thumbnailScene)
-    {
-        using namespace UBThumbnailUI;
-
-        const auto p = event->pos() - mPixmapItem->pos();
-
-        if (mDeletable && getIcon("close")->triggered(p))
-        {
-            // deleting must be performed later, don't kill yourself
-            QTimer::singleShot(0, [this, thumbnailScene]() { thumbnailScene->document()->deletePages({mIndex}); });
-            return;
-        }
-        else if (getIcon("duplicate")->triggered(p))
-        {
-            thumbnailScene->document()->duplicatePage(mIndex);
-            return;
-        }
-    }
-
     event->ignore();
 }
 
@@ -298,16 +290,6 @@ void UBThumbnail::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
         const auto selectionRect = mapRectFromItem(mPixmapItem, mPixmapItem->boundingRect()) + cSelectionMargins;
         painter->setPen(pen());
         painter->drawRect(selectionRect);
-    }
-
-    // paint the buttons
-    if (mEditable)
-    {
-        using namespace UBThumbnailUI; //should be reworked so icons' scale adapts to what's needed
-        const UBThumbnailUIIcon& closeThumbnailIcon = *UBThumbnailUI::getIcon(mDeletable ? "close" : "closeDisabled");
-        const UBThumbnailUIIcon& duplicateThumbnailIcon = *UBThumbnailUI::getIcon("duplicate");
-        painter->drawPixmap(mPixmapItem->x() + (closeThumbnailIcon.pos() * (ICONSIZE + ICONSPACING)), 0, ICONSIZE, ICONSIZE, closeThumbnailIcon);
-        painter->drawPixmap(mPixmapItem->x() + (duplicateThumbnailIcon.pos() * (ICONSIZE + ICONSPACING)), 0, ICONSIZE, ICONSIZE, duplicateThumbnailIcon);
     }
 
     // do not call superclass - do not paint the rectangle itself or the default dashed selection rectangle

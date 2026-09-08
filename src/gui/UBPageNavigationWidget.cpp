@@ -32,6 +32,7 @@
 
 #include "board/UBBoardController.h"
 #include "globals/UBGlobals.h"
+#include "gui/UBMainWindow.h"
 
 #include "core/memcheck.h"
 
@@ -42,6 +43,7 @@
  */
 UBPageNavigationWidget::UBPageNavigationWidget(QWidget *parent, const char *name):UBDockPaletteWidget(parent)
   , mNavigator(NULL)
+  , mImportButton(NULL)
   , mLayout(NULL)
   , mHLayout(NULL)
   , mPageNbr(NULL)
@@ -58,7 +60,32 @@ UBPageNavigationWidget::UBPageNavigationWidget(QWidget *parent, const char *name
 
     // Build the gui
     mLayout = new QVBoxLayout(this);
+    mLayout->setContentsMargins(12, 12, 12, 6);
+    mLayout->setSpacing(10);
     setLayout(mLayout);
+
+    mImportButton = new QPushButton(QIcon(":/images/toolbar/import.png"), tr("Import PPT/PDF"), this);
+    mImportButton->setObjectName("PageImportButton");
+    mImportButton->setMinimumHeight(46);
+    mImportButton->setIconSize(QSize(28, 28));
+    mImportButton->setCursor(Qt::PointingHandCursor);
+    mImportButton->setToolTip(tr("Import PPT, PPTX, PDF or image files"));
+    mImportButton->setStyleSheet(QStringLiteral(
+        "QPushButton#PageImportButton {"
+        " color: #17324d; background-color: rgba(255, 255, 255, 225);"
+        " border: 1px solid #b8c9dc; border-radius: 8px;"
+        " padding: 7px 12px; font-size: 15px; font-weight: 600; text-align: left;"
+        "}"
+        "QPushButton#PageImportButton:hover {"
+        " background-color: white; border-color: #4e8ed8;"
+        "}"
+        "QPushButton#PageImportButton:pressed {"
+        " background-color: #e3edf8; border-color: #2f73c7;"
+        "}"
+    ));
+    connect(mImportButton, &QPushButton::clicked,
+            UBApplication::mainWindow->actionImportPage, &QAction::trigger);
+    mLayout->addWidget(mImportButton, 0);
 
     mNavigator = new UBBoardThumbnailsView(this);
     mLayout->addWidget(mNavigator, 1);
@@ -95,6 +122,11 @@ UBPageNavigationWidget::~UBPageNavigationWidget()
 {
     killTimer(mTimerID);
 
+    if(NULL != mImportButton)
+    {
+        delete mImportButton;
+        mImportButton = NULL;
+    }
     if(NULL != mClock)
     {
         delete mClock;
@@ -168,4 +200,3 @@ int UBPageNavigationWidget::border()
 {
     return 15;
 }
-

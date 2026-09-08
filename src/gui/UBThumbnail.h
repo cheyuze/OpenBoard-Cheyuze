@@ -46,6 +46,7 @@ public:
     QPixmap pixmap() const;
     void setSceneIndex(int sceneIndex);
     int sceneIndex() const;
+    void setPageName(const QString& pageName);
     void setThumbnailSize(QSizeF size);
 
     void setColumn(int column);
@@ -82,6 +83,7 @@ private:
     QTransform mTransform{};
     bool mEditable{false};
     bool mDeletable{true};
+    QString mPageName{};
 };
 
 namespace UBThumbnailUI

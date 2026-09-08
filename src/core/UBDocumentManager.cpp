@@ -37,6 +37,7 @@
 #include "adaptors/UBExportDocumentSetAdaptor.h"
 #include "adaptors/UBImportDocument.h"
 #include "adaptors/UBImportPDF.h"
+#include "adaptors/UBImportPowerPoint.h"
 #include "adaptors/UBImportImage.h"
 #include "adaptors/UBImportCFF.h"
 #include "adaptors/UBImportDocumentSetAdaptor.h"
@@ -99,6 +100,8 @@ UBDocumentManager::UBDocumentManager(QObject *parent)
     mImportAdaptors.append(documentSetImport);
     UBImportPDF* pdfImport = new UBImportPDF(this);
     mImportAdaptors.append(pdfImport);
+    UBImportPowerPoint* powerPointImport = new UBImportPowerPoint(this);
+    mImportAdaptors.append(powerPointImport);
     UBImportImage* imageImport = new UBImportImage(this);
     mImportAdaptors.append(imageImport);
     UBImportCFF* cffImport = new UBImportCFF(this);

@@ -39,6 +39,7 @@
 class UBGraphicsScene;
 class WebView;
 class UBPodcastRecordingPalette;
+class UBCameraPreviewWindow;
 
 
 class UBPodcastController : public QObject
@@ -55,6 +56,14 @@ class UBPodcastController : public QObject
         virtual bool eventFilter(QObject *obj, QEvent *event);
 
         virtual QStringList audioRecordingDevices();
+        QStringList audioOutputDevices() const;
+        QStringList cameraDevices() const;
+        QString selectedAudioInputDevice() const;
+        QString selectedAudioOutputDevice() const;
+        QString selectedCameraDevice() const;
+        void selectAudioInputDevice(const QString &deviceName);
+        void selectAudioOutputDevice(const QString &deviceName);
+        void selectCameraDevice(const QString &deviceName);
 
         QList<QAction*> audioRecordingDevicesActions();
         QList<QAction*> videoSizeActions();
@@ -129,12 +138,20 @@ class UBPodcastController : public QObject
 
         void desktopCaptureModeTriggered(QAction* action);
 
+        void cameraToggled(bool enabled);
+
     private:
         void widgetSizeChanged(const QSizeF size);
 
         void setRecordingState(RecordingState pRecordingState);
 
         void positionRecordingPalette(bool desktopMode);
+
+        void positionCameraPreview();
+
+        QRect cameraPreviewSourceRect() const;
+
+        void compositeCameraPreview(QImage &frame);
 
         QRect currentDesktopCaptureRect() const;
 
@@ -180,6 +197,7 @@ class UBPodcastController : public QObject
         void startNextChapter();
 
         UBPodcastRecordingPalette *mRecordingPalette;
+        UBCameraPreviewWindow *mCameraPreview;
 
         RecordingState mRecordingState;
 

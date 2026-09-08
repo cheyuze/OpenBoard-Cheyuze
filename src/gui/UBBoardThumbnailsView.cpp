@@ -36,6 +36,15 @@
 #include <QGraphicsItem>
 #include <QGraphicsPixmapItem>
 #include <QPainter>
+#include <QContextMenuEvent>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMenu>
+#include <QPushButton>
+#include <QVBoxLayout>
 
 #include "UBBoardThumbnailsView.h"
 
@@ -173,6 +182,13 @@ void UBBoardThumbnailsView::resizeEvent(QResizeEvent *event)
 
 void UBBoardThumbnailsView::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::RightButton)
+    {
+        // The context menu targets the clicked thumbnail without opening it.
+        event->accept();
+        return;
+    }
+
     // remember currently selected item
     auto selection = scene()->selectedItems();
     // first ask the thumbnails to process the event for the UI buttons
@@ -280,6 +296,140 @@ void UBBoardThumbnailsView::mouseReleaseEvent(QMouseEvent *event)
 void UBBoardThumbnailsView::mouseDoubleClickEvent(QMouseEvent* event)
 {
     // do not forward event to QGraphicsView to avoid change of selection
+}
+
+void UBBoardThumbnailsView::contextMenuEvent(QContextMenuEvent* event)
+{
+    QGraphicsItem* graphicsItem = itemAt(event->pos());
+    UBThumbnail* thumbnail = nullptr;
+    while (graphicsItem && !thumbnail)
+    {
+        thumbnail = dynamic_cast<UBThumbnail*>(graphicsItem);
+        graphicsItem = graphicsItem->parentItem();
+    }
+
+    if (!thumbnail || !mDocument)
+    {
+        event->ignore();
+        return;
+    }
+
+    const int pageIndex = thumbnail->sceneIndex();
+    mDocument->thumbnailScene()->hightlightItem(pageIndex, true);
+    viewport()->update();
+
+    QMenu menu(this);
+    menu.setObjectName(QStringLiteral("ubPageContextMenu"));
+    QAction* renameAction = menu.addAction(
+            QIcon(QStringLiteral(":/images/toolbar/rename.png")),
+            tr("Rename Page"));
+    QAction* duplicateAction = menu.addAction(
+            QIcon(QStringLiteral(":/images/addItemToNewPage.svg")),
+            tr("Duplicate Page"));
+    QAction* deleteAction = menu.addAction(
+            QIcon(QStringLiteral(":/images/toolbar/deleteDocument.png")),
+            tr("Delete Page"));
+    deleteAction->setEnabled(mDocument->proxy()->pageCount() > 1);
+
+    QAction* selectedAction = menu.exec(event->globalPos());
+    if (selectedAction == renameAction)
+    {
+        QDialog dialog(this);
+        dialog.setObjectName(QStringLiteral("ubPageRenameDialog"));
+        dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+        dialog.setModal(true);
+        dialog.setMinimumWidth(420);
+        dialog.setAttribute(Qt::WA_StyledBackground, true);
+        dialog.setStyleSheet(QStringLiteral(
+                "QDialog#ubPageRenameDialog { color: #202124; background-color: #ffffff; "
+                "border: 1px solid #9eafc6; border-radius: 9px; }"
+                "QDialog#ubPageRenameDialog QLabel { color: #202124; background: transparent; }"
+                "QLabel#ubPageRenameTitle { color: #202124; font-size: 15px; font-weight: 600; }"
+                "QLineEdit#ubPageRenameEditor { color: #202124; background-color: #ffffff; "
+                "border: 1px solid #9eafc6; border-radius: 7px; padding: 7px 9px; "
+                "selection-color: #ffffff; selection-background-color: #3278d4; }"
+                "QLineEdit#ubPageRenameEditor:focus { border: 2px solid #3278d4; padding: 6px 8px; }"
+                "QPushButton#ubPageRenameCloseButton { color: #34445b; background: transparent; "
+                "border: 1px solid transparent; border-radius: 6px; padding: 0; font-size: 22px; }"
+                "QPushButton#ubPageRenameCloseButton:hover { color: #174ea6; background-color: #e8f1ff; "
+                "border-color: #a9c9f7; }"
+                "QDialogButtonBox#ubPageRenameButtons QPushButton { min-width: 74px; color: #202124; "
+                "background-color: #ffffff; border: 1px solid #9eafc6; border-radius: 7px; "
+                "padding: 6px 12px; }"
+                "QDialogButtonBox#ubPageRenameButtons QPushButton:hover { color: #174ea6; "
+                "background-color: #e8f1ff; border-color: #6b9fe5; }"
+                "QDialogButtonBox#ubPageRenameButtons QPushButton:default { color: #202124; "
+                "background-color: #ffffff; border: 2px solid #3278d4; padding: 5px 11px; }"));
+
+        auto* dialogLayout = new QVBoxLayout(&dialog);
+        dialogLayout->setContentsMargins(18, 14, 18, 16);
+        dialogLayout->setSpacing(10);
+
+        auto* titleLayout = new QHBoxLayout;
+        titleLayout->setContentsMargins(0, 0, 0, 0);
+        auto* titleLabel = new QLabel(tr("Rename Page"), &dialog);
+        titleLabel->setObjectName(QStringLiteral("ubPageRenameTitle"));
+        auto* closeButton = new QPushButton(QStringLiteral("\u00d7"), &dialog);
+        closeButton->setObjectName(QStringLiteral("ubPageRenameCloseButton"));
+        closeButton->setFixedSize(30, 30);
+        closeButton->setToolTip(tr("Cancel"));
+        titleLayout->addWidget(titleLabel);
+        titleLayout->addStretch();
+        titleLayout->addWidget(closeButton);
+        dialogLayout->addLayout(titleLayout);
+
+        auto* nameLabel = new QLabel(tr("Page name:"), &dialog);
+        auto* nameEditor = new QLineEdit(&dialog);
+        nameEditor->setObjectName(QStringLiteral("ubPageRenameEditor"));
+        nameEditor->setClearButtonEnabled(true);
+        dialogLayout->addWidget(nameLabel);
+        dialogLayout->addWidget(nameEditor);
+
+        auto* buttonBox = new QDialogButtonBox(
+                QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                Qt::Horizontal, &dialog);
+        buttonBox->setObjectName(QStringLiteral("ubPageRenameButtons"));
+        buttonBox->button(QDialogButtonBox::Ok)->setText(tr("Rename"));
+        buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("Cancel"));
+        buttonBox->button(QDialogButtonBox::Ok)->setDefault(true);
+        dialogLayout->addWidget(buttonBox);
+
+        connect(closeButton, &QPushButton::clicked, &dialog, &QDialog::reject);
+        connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+        connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        connect(nameEditor, &QLineEdit::returnPressed, &dialog, &QDialog::accept);
+
+        QString currentName = mDocument->pageName(pageIndex);
+        if (currentName.isEmpty())
+        {
+            currentName = tr("Page %1").arg(pageIndex + 1);
+        }
+        nameEditor->setText(currentName);
+        nameEditor->selectAll();
+
+        QTimer::singleShot(0, &dialog, [&dialog]() {
+            dialog.adjustSize();
+            QWidget* parentWindow = dialog.parentWidget()
+                    ? dialog.parentWidget()->window() : nullptr;
+            if (parentWindow)
+            {
+                const QPoint center = parentWindow->frameGeometry().center();
+                dialog.move(center.x() - dialog.width() / 2,
+                            center.y() - dialog.height() / 2);
+            }
+        });
+
+        if (dialog.exec() == QDialog::Accepted)
+        {
+            mDocument->renamePage(pageIndex, nameEditor->text());
+        }
+    }
+    else if (selectedAction == duplicateAction)
+        mDocument->duplicatePage(pageIndex);
+    else if (selectedAction == deleteAction)
+        mDocument->deletePages({pageIndex});
+
+    event->accept();
 }
 
 void UBBoardThumbnailsView::scrollContentsBy(int dx, int dy)

@@ -43,6 +43,7 @@ class UBResources : public QObject
          QIcon coloredPenIcon(bool desktopArrow = false) const;
          void updateMarkerColor(const QColor& color);
          QIcon coloredMarkerIcon(bool desktopArrow = false) const;
+         QCursor cursorForTool(int tool) const;
 
 
     private:

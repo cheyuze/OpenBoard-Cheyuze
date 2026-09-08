@@ -29,12 +29,14 @@
 UBThumbnailTextItem::UBThumbnailTextItem()
     : QGraphicsTextItem()
 {
+    setDefaultTextColor(QColor(QStringLiteral("#26364d")));
 }
 
 UBThumbnailTextItem::UBThumbnailTextItem(int index)
     : QGraphicsTextItem()
     , mUnelidedText(toPlainText())
 {
+    setDefaultTextColor(QColor(QStringLiteral("#26364d")));
     setPageNumber(index + 1);
 }
 
@@ -42,6 +44,7 @@ UBThumbnailTextItem::UBThumbnailTextItem(const QString& text)
     : QGraphicsTextItem(text)
     , mUnelidedText(text)
 {
+    setDefaultTextColor(QColor(QStringLiteral("#26364d")));
     setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
 }
 

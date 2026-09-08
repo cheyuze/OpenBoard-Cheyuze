@@ -70,6 +70,7 @@ typedef enum
 }eUBDockTabOrientation;
 
 class UBDockPalette;
+class UBDockResizeHandle;
 
 class UBTabDockPalette : public QWidget
 {
@@ -106,6 +107,7 @@ class UBDockPalette : public QWidget
 {
     Q_OBJECT
     friend class UBTabDockPalette;
+    friend class UBDockResizeHandle;
 
 public:
     UBDockPalette(eUBDockPaletteType paletteType, QWidget* parent=0, const char* name="UBDockPalette");
@@ -116,6 +118,8 @@ public:
     void setTabsOrientation(eUBDockTabOrientation orientation);
     void showTabWidget(int tabIndex);
     void activateWidget(UBDockPaletteWidget* widget);
+    bool toggleWidget(UBDockPaletteWidget* widget);
+    void setTabPaletteVisible(bool visible);
     QRect getTabPaletteRect();
 
     virtual void assignParent(QWidget *widget);
@@ -210,14 +214,20 @@ private slots:
 
 private:
     void tabClicked(int tabIndex);
-    int tabSpacing();
+    int tabSpacing() const;
     void toggleCollapseExpand();
     void moveTabs();
     void resizeTabs();
+    void updateResizeHandleGeometry();
+    int tabHeightAt(int index) const;
+    int totalTabsHeight() const;
+    int tabIndexAt(int y) const;
 
 private:
     eUBDockPaletteType mPaletteType;
     UBTabDockPalette *mTabPalette;
+    UBDockResizeHandle* mResizeHandle;
+    bool mTabPaletteVisible;
 };
 
 #endif // UBDOCKPALETTE_H

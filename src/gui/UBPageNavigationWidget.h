@@ -36,6 +36,7 @@
 #include <QResizeEvent>
 #include <QTimerEvent>
 #include <QLabel>
+#include <QPushButton>
 #include <QString>
 
 #include "UBBoardThumbnailsView.h"
@@ -71,6 +72,8 @@ private:
 
     /** The thumbnails navigator widget */
     UBBoardThumbnailsView* mNavigator;
+    /** A discoverable entry point for importing presentations and documents. */
+    QPushButton* mImportButton;
     /** The layout */
     QVBoxLayout* mLayout;
     QHBoxLayout* mHLayout;

@@ -534,11 +534,16 @@ UBBoardController::UBBoardController(UBMainWindow* mainWindow)
     , mZoomLabel(0)
     , mZoomOutButton(0)
     , mZoomInButton(0)
+    , mPageNavigationControl(0)
+    , mPageNavigationLabel(0)
+    , mPreviousPageButton(0)
+    , mNextPageButton(0)
     , mUndoRedoControl(0)
     , mUndoButton(0)
     , mRedoButton(0)
     , mCaptureButton(0)
     , mVirtualKeyboardButton(0)
+    , mClearAllPagesAction(0)
     , mZoomFactor(1.0)
     , mIsClosing(false)
     , mSystemScaleFactor(1.0)
@@ -695,6 +700,7 @@ void UBBoardController::setupViews()
     mMainWindow->addBoardWidget(mControlContainer);
 
     setupZoomControl();
+    setupPageNavigationControl();
     setupUndoRedoControl();
 
     connect(mControlView, SIGNAL(resized(QResizeEvent*)), this, SLOT(boardViewResized(QResizeEvent*)));
@@ -839,6 +845,105 @@ void UBBoardController::positionZoomControl()
     const int y = qMax(margin, viewportBottomRight.y() - mZoomControl->height() - margin);
     mZoomControl->move(x, y);
     mZoomControl->raise();
+}
+
+
+void UBBoardController::setupPageNavigationControl()
+{
+    mPageNavigationControl = new QFrame(mControlContainer);
+    mPageNavigationControl->setObjectName(
+            QStringLiteral("ubBoardPageNavigationControl"));
+    mPageNavigationControl->setAttribute(Qt::WA_StyledBackground, true);
+    mPageNavigationControl->setFixedHeight(44);
+
+    QHBoxLayout* layout = new QHBoxLayout(mPageNavigationControl);
+    layout->setContentsMargins(8, 5, 8, 5);
+    layout->setSpacing(8);
+
+    auto createButton = [this](const QString& objectName, QAction* action,
+            const QString& tooltip) {
+        QToolButton* button = new QToolButton(mPageNavigationControl);
+        button->setObjectName(objectName);
+        button->setIcon(action->icon());
+        button->setIconSize(QSize(20, 20));
+        button->setText(action->text());
+        button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        button->setToolTip(tooltip);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setAutoRaise(true);
+        button->setFocusPolicy(Qt::NoFocus);
+        button->setFixedSize(QSize(86, 32));
+        button->setEnabled(action->isEnabled());
+
+        connect(button, &QToolButton::clicked, action, &QAction::trigger);
+        connect(action, &QAction::changed, button, [button, action]() {
+            button->setEnabled(action->isEnabled());
+            button->setText(action->text());
+            button->setIcon(action->icon());
+        });
+        return button;
+    };
+
+    mPreviousPageButton = createButton(
+            QStringLiteral("ubBoardPreviousPageButton"),
+            mMainWindow->actionBack, tr("Previous Page"));
+    mNextPageButton = createButton(
+            QStringLiteral("ubBoardNextPageButton"),
+            mMainWindow->actionForward, tr("Next Page"));
+
+    mPageNavigationLabel = new QLabel(mPageNavigationControl);
+    mPageNavigationLabel->setObjectName(
+            QStringLiteral("ubBoardPageNavigationLabel"));
+    mPageNavigationLabel->setAlignment(Qt::AlignCenter);
+    mPageNavigationLabel->setFixedWidth(68);
+    mPageNavigationLabel->setText(QStringLiteral("0 / 0"));
+
+    layout->addWidget(mPreviousPageButton);
+    layout->addWidget(mPageNavigationLabel);
+    layout->addWidget(mNextPageButton);
+    mPageNavigationControl->setFixedWidth(layout->sizeHint().width());
+
+    updatePageNavigationControl();
+    positionPageNavigationControl();
+    mPageNavigationControl->show();
+    mPageNavigationControl->raise();
+}
+
+
+void UBBoardController::positionPageNavigationControl()
+{
+    if (!mPageNavigationControl || !mControlView || !mControlContainer)
+        return;
+
+    const QRect viewportRect = mControlView->viewport()->geometry();
+    const QPoint viewportBottomLeft = mControlView->mapTo(
+            mControlContainer, viewportRect.bottomLeft());
+    const QPoint viewportBottomRight = mControlView->mapTo(
+            mControlContainer, viewportRect.bottomRight());
+    const int margin = 16;
+    const int viewportCenterX = (viewportBottomLeft.x()
+            + viewportBottomRight.x()) / 2;
+    const int x = qMax(margin,
+            viewportCenterX - mPageNavigationControl->width() / 2);
+    const int y = qMax(margin, viewportBottomLeft.y()
+            - mPageNavigationControl->height() - margin);
+    mPageNavigationControl->move(x, y);
+    mPageNavigationControl->raise();
+}
+
+
+void UBBoardController::updatePageNavigationControl()
+{
+    if (!mPageNavigationLabel)
+        return;
+
+    const std::shared_ptr<UBDocumentProxy> document = selectedDocument();
+    const int totalPages = document ? document->pageCount() : 0;
+    const int currentPage = totalPages > 0
+            ? qBound(1, pageFromSceneIndex(mActiveSceneIndex), totalPages)
+            : 0;
+    mPageNavigationLabel->setText(
+            QStringLiteral("%1 / %2").arg(currentPage).arg(totalPages));
 }
 
 
@@ -1443,14 +1548,21 @@ void UBBoardController::setupToolbar()
     QAction* shapeLibraryAction = new QAction(
             QIcon(QStringLiteral(":/images/libpalette/home.png")),
             QStringLiteral("库"), mMainWindow->boardToolBar);
+    shapeLibraryAction->setCheckable(true);
     shapeLibraryAction->setToolTip(QStringLiteral("打开完整资源库"));
     connect(shapeLibraryAction, &QAction::triggered, mMainWindow->boardToolBar,
-            [this]() {
+            [this, shapeLibraryAction]() {
         if (!mPaletteManager)
             return;
-        mPaletteManager->featuresWidget()->showRoot();
-        mPaletteManager->rightPalette()->activateWidget(
-                mPaletteManager->featuresWidget());
+        UBFeaturesWidget* library = mPaletteManager->featuresWidget();
+        UBRightPalette* rightPalette = mPaletteManager->rightPalette();
+        const bool opening = rightPalette->toggleWidget(library);
+        if (opening)
+            library->showRoot();
+        shapeLibraryAction->setChecked(opening);
+        shapeLibraryAction->setToolTip(opening
+                ? QStringLiteral("关闭完整资源库")
+                : QStringLiteral("打开完整资源库"));
     });
     mMainWindow->boardToolBar->insertAction(
             mMainWindow->actionBackgrounds, shapeLibraryAction);
@@ -1486,9 +1598,46 @@ void UBBoardController::setupToolbar()
     mMainWindow->boardToolBar->insertWidget(mMainWindow->actionBackgrounds,
             toolbarSpacer);
 
+    QAction* newDocumentAction = new QAction(
+            QIcon(QStringLiteral(":/images/toolbar/newPage.png")),
+            QStringLiteral("新建文档"), mMainWindow->boardToolBar);
+    newDocumentAction->setObjectName(QStringLiteral("actionBoardNewDocument"));
+    newDocumentAction->setToolTip(QStringLiteral("新建文档"));
+    connect(newDocumentAction, &QAction::triggered, mMainWindow->boardToolBar,
+            [this]() {
+        if (!UBApplication::documentController)
+            return;
+
+        UBApplication::documentController->createNewDocument();
+        const std::shared_ptr<UBDocumentProxy> document =
+                UBApplication::documentController->selectedDocument();
+        if (!document)
+            return;
+
+        setActiveDocumentScene(document, 0, true);
+        if (UBApplication::applicationController)
+            UBApplication::applicationController->showBoard();
+    });
+    mMainWindow->boardToolBar->insertAction(
+            mMainWindow->actionPages, newDocumentAction);
+
     //-----------------------------------------------------------//
 
     UBApplication::app()->decorateActionMenu(mMainWindow->actionMenu);
+
+    mClearAllPagesAction = new QAction(mMainWindow->actionClearPage->icon(),
+            tr("Clear All Pages"), mMainWindow);
+    mClearAllPagesAction->setToolTip(
+            tr("Clear content from every page"));
+    const QList<QAction*> actionsBeforeClearAll =
+            mMainWindow->boardToolBar->actions();
+    const int eraseActionIndex = actionsBeforeClearAll.indexOf(
+            mMainWindow->actionErase);
+    QAction* insertBefore = eraseActionIndex >= 0
+            && eraseActionIndex + 1 < actionsBeforeClearAll.size()
+            ? actionsBeforeClearAll.at(eraseActionIndex + 1) : nullptr;
+    mMainWindow->boardToolBar->insertAction(insertBefore,
+            mClearAllPagesAction);
 
     // These actions remain available through the Settings menu or the
     // floating canvas controls, but no longer consume toolbar space.
@@ -1509,6 +1658,8 @@ void UBBoardController::setupToolbar()
     mMainWindow->boardToolBar->removeAction(mMainWindow->actionBackgrounds);
     mMainWindow->boardToolBar->removeAction(mMainWindow->actionUndo);
     mMainWindow->boardToolBar->removeAction(mMainWindow->actionRedo);
+    mMainWindow->boardToolBar->removeAction(mMainWindow->actionBack);
+    mMainWindow->boardToolBar->removeAction(mMainWindow->actionForward);
     for (QAction* separator : obsoleteSeparators)
         mMainWindow->boardToolBar->removeAction(separator);
 
@@ -1531,6 +1682,8 @@ void UBBoardController::setToolCursor(int tool)
         mActiveScene->setToolCursor(tool);
 
     mControlView->setToolCursor(tool);
+    if (UBApplication::app())
+        UBApplication::app()->updateTabletCursorOverride(tool);
 }
 
 
@@ -1541,6 +1694,8 @@ void UBBoardController::connectToolbar()
     connect(mMainWindow->actionDuplicatePage, SIGNAL(triggered()), this, SLOT(duplicateScene()));
 
     connect(mMainWindow->actionClearPage, SIGNAL(triggered()), this, SLOT(clearScene()));
+    connect(mClearAllPagesAction, &QAction::triggered,
+            this, &UBBoardController::clearAllScenes);
     connect(mMainWindow->actionEraseItems, SIGNAL(triggered()), this, SLOT(clearSceneItems()));
     connect(mMainWindow->actionEraseAnnotations, SIGNAL(triggered()), this, SLOT(clearSceneAnnotation()));
     connect(mMainWindow->actionEraseBackground,SIGNAL(triggered()),this,SLOT(clearSceneBackground()));
@@ -2026,6 +2181,73 @@ void UBBoardController::clearScene()
         mActiveScene->clearContent(UBGraphicsScene::clearItemsAndAnnotations);
         updateActionStates();
     }
+}
+
+
+void UBBoardController::clearAllScenes()
+{
+    const std::shared_ptr<UBDocumentProxy> proxy = selectedDocument();
+    if (!proxy || proxy->pageCount() <= 0)
+        return;
+
+    const int pageTotal = proxy->pageCount();
+    const bool confirmed = mMainWindow->yesNoQuestion(
+            tr("Clear All Pages"),
+            tr("Clear the content of all %1 pages? This action cannot be undone.")
+                    .arg(pageTotal),
+            mMainWindow->actionClearPage->icon().pixmap(QSize(64, 64)));
+    if (!confirmed)
+        return;
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    persistCurrentScene(false, true);
+
+    const int activeIndex = mActiveSceneIndex;
+    const std::shared_ptr<UBDocument> document = UBDocument::getDocument(proxy);
+    for (int pageIndex = 0; pageIndex < pageTotal; ++pageIndex)
+    {
+        UBApplication::showMessage(
+                tr("Clearing page %1 of %2").arg(pageIndex + 1).arg(pageTotal),
+                true);
+        const std::shared_ptr<UBGraphicsScene> scene = pageIndex == activeIndex
+                ? mActiveScene
+                : UBPersistenceManager::persistenceManager()
+                        ->loadDocumentScene(proxy, pageIndex);
+        if (!scene)
+            continue;
+
+        scene->clearContent(UBGraphicsScene::clearItemsAndAnnotations);
+        document->persistPage(scene, pageIndex, false, true);
+    }
+
+    // The operation spans multiple scenes, so a cross-page undo sequence
+    // would be misleading and unsafe.  The confirmation explicitly notes
+    // that the operation cannot be undone.
+    UBApplication::undoStack->clear();
+    setActiveDocumentScene(proxy, activeIndex, true);
+
+    // Clearing several scenes while the confirmation dialog is closing can
+    // leave QGraphicsView's cached viewport showing the last rendered frame
+    // until another expose/focus event occurs.  Invalidate every layer and
+    // repaint both board views synchronously so the cleared active page is
+    // visible as soon as this operation completes.
+    if (mActiveScene)
+        mActiveScene->invalidate(mActiveScene->sceneRect(),
+                QGraphicsScene::AllLayers);
+    if (mControlView && mControlView->viewport())
+    {
+        mControlView->resetCachedContent();
+        mControlView->viewport()->repaint();
+    }
+    if (mDisplayView && mDisplayView->viewport())
+    {
+        mDisplayView->resetCachedContent();
+        mDisplayView->viewport()->repaint();
+    }
+
+    updateActionStates();
+    UBApplication::showMessage(tr("All pages cleared"));
+    QApplication::restoreOverrideCursor();
 }
 
 
@@ -2801,6 +3023,11 @@ std::shared_ptr<UBGraphicsScene> UBBoardController::setActiveDocumentScene(std::
         mActiveScene = targetScene;
         mActiveSceneIndex = index;
 
+        // Legacy documents may still contain dark pages.  Convert them when
+        // opened so every editable board uses the supported light canvas.
+        if (mActiveScene->isDarkBackground())
+            mActiveScene->setBackground(false, mActiveScene->pageBackground());
+
         setDocument(pDocumentProxy, forceReload);
 
         updateSystemScaleFactor();
@@ -2995,6 +3222,8 @@ int UBBoardController::autosaveTimeoutFromSettings() const
 
 void UBBoardController::changeBackground(bool isDark, UBPageBackground pageBackground)
 {
+    Q_UNUSED(isDark);
+    isDark = false;
     bool currentIsDark = mActiveScene->isDarkBackground();
     UBPageBackground currentBackgroundType = mActiveScene->pageBackground();
 
@@ -3037,6 +3266,7 @@ void UBBoardController::boardViewResized(QResizeEvent* event)
 
     updateZoomControl(currentZoom());
     positionZoomControl();
+    positionPageNavigationControl();
     positionUndoRedoControl();
 
     UBApplication::boardController->controlView()->scene()->moveMagnifier();
@@ -3062,6 +3292,8 @@ void UBBoardController::setDisabled(bool disable)
     mControlView->setDisabled(disable);
     if (mUndoRedoControl)
         mUndoRedoControl->setDisabled(disable);
+    if (mPageNavigationControl)
+        mPageNavigationControl->setDisabled(disable);
 }
 
 
@@ -3088,6 +3320,10 @@ void UBBoardController::updateActionStates()
     mMainWindow->actionBack->setEnabled(selectedDocument() && (mActiveSceneIndex > 0));
     mMainWindow->actionForward->setEnabled(selectedDocument() && (mActiveSceneIndex < selectedDocument()->pageCount() - 1));
     mMainWindow->actionErase->setEnabled(mActiveScene && !mActiveScene->isEmpty());
+    if (mClearAllPagesAction)
+        mClearAllPagesAction->setEnabled(selectedDocument()
+                && selectedDocument()->pageCount() > 0);
+    updatePageNavigationControl();
 }
 
 
@@ -3956,38 +4192,27 @@ void UBBoardController::moveToolWidgetToScene(UBToolWidget* toolWidget)
 
 void UBBoardController::updateBackgroundActionsState(bool isDark, UBPageBackground pageBackground)
 {
+    Q_UNUSED(isDark);
     switch (pageBackground) {
 
         case UBPageBackground::crossed:
-            if (isDark)
-                mMainWindow->actionCrossedDarkBackground->setChecked(true);
-            else
-                mMainWindow->actionCrossedLightBackground->setChecked(true);
+            mMainWindow->actionCrossedLightBackground->setChecked(true);
         break;
 
         case UBPageBackground::ruled:
         {
             QAction* actionRuledBackground = nullptr;
             if(UBSettings::settings()->isSeyesRuledBackground())
-                if(isDark)
-                    actionRuledBackground = mMainWindow->actionSeyesRuledDarkBackground;
-                else
-                    actionRuledBackground = mMainWindow->actionSeyesRuledLightBackground;
+                actionRuledBackground = mMainWindow->actionSeyesRuledLightBackground;
             else
-                if(isDark)
-                    actionRuledBackground = mMainWindow->actionRuledDarkBackground;
-                else
-                    actionRuledBackground = mMainWindow->actionRuledLightBackground;
+                actionRuledBackground = mMainWindow->actionRuledLightBackground;
             if(actionRuledBackground)
                 actionRuledBackground->setChecked(true);
         }
         break;
 
         default:
-            if (isDark)
-                mMainWindow->actionPlainDarkBackground->setChecked(true);
-            else
-                mMainWindow->actionPlainLightBackground->setChecked(true);
+            mMainWindow->actionPlainLightBackground->setChecked(true);
         break;
     }
 }

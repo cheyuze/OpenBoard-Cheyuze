@@ -46,6 +46,99 @@
 
 #include "core/memcheck.h"
 
+namespace
+{
+constexpr int sResizeHandleWidth = 8;
+constexpr int sMinimumExpandedWidth = 190;
+constexpr int sPageNavigatorTabHeight = 78;
+}
+
+class UBDockResizeHandle : public QWidget
+{
+public:
+    explicit UBDockResizeHandle(UBDockPalette* dock)
+        : QWidget(dock)
+        , mDock(dock)
+        , mDragging(false)
+        , mStartGlobalX(0)
+        , mStartWidth(0)
+    {
+        setCursor(Qt::SizeHorCursor);
+        setMouseTracking(true);
+        setStyleSheet(QStringLiteral(
+            "QWidget { background-color: transparent; }"
+            "QWidget:hover { background-color: rgba(55, 130, 220, 115); }"));
+    }
+
+protected:
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        if (event->button() != Qt::LeftButton)
+        {
+            QWidget::mousePressEvent(event);
+            return;
+        }
+
+        mDragging = true;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        mStartGlobalX = qRound(event->globalPosition().x());
+#else
+        mStartGlobalX = event->globalX();
+#endif
+        mStartWidth = mDock->width();
+        grabMouse();
+        event->accept();
+    }
+
+    void mouseMoveEvent(QMouseEvent* event) override
+    {
+        if (!mDragging)
+        {
+            QWidget::mouseMoveEvent(event);
+            return;
+        }
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        const int globalX = qRound(event->globalPosition().x());
+#else
+        const int globalX = event->globalX();
+#endif
+        const int movement = globalX - mStartGlobalX;
+        const int requestedWidth = mStartWidth
+            + (mDock->orientation() == eUBDockOrientation_Left ? movement : -movement);
+
+        mDock->updateMaxWidth();
+        const int maximumWidth = qMax(1, mDock->maximumWidth());
+        const int minimumWidth = qMin(sMinimumExpandedWidth, maximumWidth);
+        const int newWidth = qBound(minimumWidth, requestedWidth, maximumWidth);
+        if (newWidth != mDock->width())
+        {
+            mDock->resize(newWidth, mDock->height());
+            mDock->update();
+        }
+        event->accept();
+    }
+
+    void mouseReleaseEvent(QMouseEvent* event) override
+    {
+        if (mDragging && event->button() == Qt::LeftButton)
+        {
+            mDragging = false;
+            releaseMouse();
+            emit mDock->pageSelectionChangedRequired();
+            event->accept();
+            return;
+        }
+        QWidget::mouseReleaseEvent(event);
+    }
+
+private:
+    UBDockPalette* mDock;
+    bool mDragging;
+    int mStartGlobalX;
+    int mStartWidth;
+};
+
 /**
  * \brief The constructor
  */
@@ -65,6 +158,8 @@ UBDockPalette::UBDockPalette(eUBDockPaletteType paletteType, QWidget *parent, co
 , mCurrentTab(0)
 , mPaletteType(paletteType)
 , mTabPalette(new UBTabDockPalette(this, parent))
+, mResizeHandle(nullptr)
+, mTabPaletteVisible(true)
 {
     setObjectName(name);
 
@@ -73,6 +168,8 @@ UBDockPalette::UBDockPalette(eUBDockPaletteType paletteType, QWidget *parent, co
 
     mpStackWidget = new QStackedWidget(this);
     mpLayout->addWidget(mpStackWidget);
+
+    mResizeHandle = new UBDockResizeHandle(this);
 
     // clear the tab widgets
     mTabWidgets.clear();
@@ -192,6 +289,7 @@ void UBDockPalette::resizeEvent(QResizeEvent *event)
     }
     move(origin.x(), origin.y());
     moveTabs();
+    updateResizeHandleGeometry();
 }
 
 /**
@@ -341,6 +439,25 @@ void UBDockPalette::activateWidget(UBDockPaletteWidget* widget)
         toggleCollapseExpand();
 }
 
+bool UBDockPalette::toggleWidget(UBDockPaletteWidget* widget)
+{
+    if (!widget || !mRegisteredWidgets.contains(widget))
+        return false;
+
+    const bool isCurrentWidget = mpStackWidget->currentWidget() == widget;
+    const bool isExpanded = width() >= mCollapseWidth;
+    if (isCurrentWidget && isExpanded)
+    {
+        toggleCollapseExpand();
+        emit pageSelectionChangedRequired();
+        return false;
+    }
+
+    activateWidget(widget);
+    emit pageSelectionChangedRequired();
+    return true;
+}
+
 /**
  * \brief Toggle the collapse / expand state
  */
@@ -438,7 +555,7 @@ void UBDockPalette::onResizeRequest()
  * \brief Get the tab spacing
  * @return the tab spacing
  */
-int UBDockPalette::tabSpacing()
+int UBDockPalette::tabSpacing() const
 {
     return 2;
 }
@@ -528,10 +645,10 @@ void UBDockPalette::moveTabs()
         if (mOrientation == eUBDockOrientation_Right)
         {
             if (parentWidget())
-                y = parentWidget()->height() - border()- mTabWidgets.size() * TABSIZE;
+                y = parentWidget()->height() - border() - totalTabsHeight();
         }
         else
-            y = height() - border()- mTabWidgets.size() * TABSIZE;
+            y = height() - border() - totalTabsHeight();
     }
 
     mHTab = y;
@@ -540,8 +657,58 @@ void UBDockPalette::moveTabs()
 }
 void UBDockPalette::resizeTabs()
 {
-    int numTabs = mTabWidgets.size();
-    mTabPalette->setFixedSize(2 * border(), (numTabs * TABSIZE) + qMax(numTabs - 1, 0) * tabSpacing());
+    mTabPalette->setFixedSize(2 * border(), totalTabsHeight());
+}
+
+int UBDockPalette::tabHeightAt(int index) const
+{
+    if (index >= 0 && index < mTabWidgets.size())
+    {
+        UBDockPaletteWidget* widget = mTabWidgets.at(index);
+        if (widget && widget->name() == QStringLiteral("PageNavigator"))
+            return sPageNavigatorTabHeight;
+    }
+    return TABSIZE;
+}
+
+int UBDockPalette::totalTabsHeight() const
+{
+    int result = 0;
+    for (int i = 0; i < mTabWidgets.size(); ++i)
+        result += tabHeightAt(i);
+    result += qMax(mTabWidgets.size() - 1, 0) * tabSpacing();
+    return result;
+}
+
+int UBDockPalette::tabIndexAt(int y) const
+{
+    int top = 0;
+    for (int i = 0; i < mTabWidgets.size(); ++i)
+    {
+        const int tabHeight = tabHeightAt(i);
+        if (y >= top && y < top + tabHeight)
+            return i;
+        top += tabHeight + tabSpacing();
+    }
+    return -1;
+}
+
+void UBDockPalette::updateResizeHandleGeometry()
+{
+    if (!mResizeHandle)
+        return;
+
+    if (width() <= 0
+        || (mOrientation != eUBDockOrientation_Left && mOrientation != eUBDockOrientation_Right))
+    {
+        mResizeHandle->hide();
+        return;
+    }
+
+    const int x = mOrientation == eUBDockOrientation_Left ? width() - sResizeHandleWidth : 0;
+    mResizeHandle->setGeometry(x, 0, sResizeHandleWidth, height());
+    mResizeHandle->show();
+    mResizeHandle->raise();
 }
 QRect UBDockPalette::getTabPaletteRect()
 {
@@ -559,7 +726,15 @@ void UBDockPalette::assignParent(QWidget *widget)
 void UBDockPalette::setVisible(bool visible)
 {
     QWidget::setVisible(visible);
-    mTabPalette->setVisible(visible);
+    mTabPalette->setVisible(visible && mTabPaletteVisible);
+    if (mResizeHandle)
+        mResizeHandle->setVisible(visible && width() > 0);
+}
+
+void UBDockPalette::setTabPaletteVisible(bool visible)
+{
+    mTabPaletteVisible = visible;
+    mTabPalette->setVisible(visible && isVisible());
 }
 
 bool UBDockPalette::switchMode(eUBDockPaletteWidgetMode mode)
@@ -602,8 +777,7 @@ UBTabDockPalette::UBTabDockPalette(UBDockPalette *dockPalette, QWidget *parent) 
 , mVerticalOffset(0)
 , mFlotable(false)
 {
-    int numTabs = dock->mTabWidgets.size();
-    resize(2 * dock->border(), (numTabs * TABSIZE) + qMax(numTabs - 1, 0) * dock->tabSpacing());
+    resize(2 * dock->border(), dock->totalTabsHeight());
 
     setAttribute(Qt::WA_TranslucentBackground);
 }
@@ -624,14 +798,17 @@ void UBTabDockPalette::paintEvent(QPaintEvent *)
     int yFrom = 0;
     for (int i = 0; i < nTabs; i++) {
         UBDockPaletteWidget* pCrntWidget = dock->mTabWidgets.at(i);
+        const int currentTabHeight = dock->tabHeightAt(i);
+        const bool isPageNavigator = pCrntWidget
+            && pCrntWidget->name() == QStringLiteral("PageNavigator");
         QPainterPath path;
         path.setFillRule(Qt::WindingFill);
         QPixmap iconPixmap;
 
         switch (dock->mOrientation) {
         case eUBDockOrientation_Left:
-            path.addRect(0, yFrom, width() / 2, TABSIZE);
-            path.addRoundedRect(0, yFrom, width(), TABSIZE, dock->radius(), dock->radius());
+            path.addRect(0, yFrom, width() / 2, currentTabHeight);
+            path.addRoundedRect(0, yFrom, width(), currentTabHeight, dock->radius(), dock->radius());
             if (pCrntWidget) {
                 if(dock->mCollapseWidth >= dock->width()) {
                     // Get the collapsed icon
@@ -645,8 +822,8 @@ void UBTabDockPalette::paintEvent(QPaintEvent *)
             break;
 
         case eUBDockOrientation_Right:
-            path.addRect(width() /2, yFrom, width() / 2, TABSIZE);
-            path.addRoundedRect(0, yFrom, width(), TABSIZE, dock->radius(), dock->radius());
+            path.addRect(width() /2, yFrom, width() / 2, currentTabHeight);
+            path.addRoundedRect(0, yFrom, width(), currentTabHeight, dock->radius(), dock->radius());
             if (pCrntWidget) {
                 if(dock->mCollapseWidth >= dock->width()) {
                     // Get the collapsed icon
@@ -673,8 +850,30 @@ void UBTabDockPalette::paintEvent(QPaintEvent *)
         }
 
         painter.drawPath(path);
-        painter.drawPixmap(2, yFrom + 2, width() - 4, TABSIZE - 4, iconPixmap);
-        yFrom += (TABSIZE + dock->tabSpacing());
+        if (isPageNavigator)
+        {
+            const QRect iconArea(3, yFrom + 4, width() - 6, 34);
+            const QPixmap scaledIcon = iconPixmap.scaled(
+                iconArea.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            const QPoint iconPosition(
+                iconArea.center().x() - scaledIcon.width() / 2,
+                iconArea.center().y() - scaledIcon.height() / 2);
+            painter.drawPixmap(iconPosition, scaledIcon);
+
+            QFont labelFont = painter.font();
+            labelFont.setPixelSize(12);
+            labelFont.setBold(true);
+            painter.setFont(labelFont);
+            painter.setPen(QColor(35, 61, 84));
+            painter.drawText(QRect(0, yFrom + 43, width(), currentTabHeight - 45),
+                             Qt::AlignHCenter | Qt::AlignTop,
+                             tr("Pages"));
+        }
+        else
+        {
+            painter.drawPixmap(2, yFrom + 2, width() - 4, currentTabHeight - 4, iconPixmap);
+        }
+        yFrom += currentTabHeight + dock->tabSpacing();
         painter.restore();
     }
 }
@@ -766,16 +965,13 @@ void UBTabDockPalette::mouseReleaseEvent(QMouseEvent *event)
 {
     Q_UNUSED(event);
     if(!dock->mResized && dock->mClickTime.elapsed() < CLICKTIME) {
-        int nbTabs = dock->mTabWidgets.size();
-        int clickedTab = 0;
+        const int clickedTab = dock->tabIndexAt(dock->mMousePressPos.y());
         // If the clicked position is in the tab, perform the related action
 
         if(dock->mMousePressPos.x() >= 0 &&
                 dock->mMousePressPos.x() <= width() &&
                 dock->mMousePressPos.y() >= 0 &&
-                dock->mMousePressPos.y() <= nbTabs * TABSIZE + (nbTabs -1)*dock->tabSpacing()) {
-
-            clickedTab = (dock->mMousePressPos.y()) / (TABSIZE + dock->tabSpacing());
+                clickedTab >= 0) {
             dock->tabClicked(clickedTab);
         }
     }

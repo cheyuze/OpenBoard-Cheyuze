@@ -22,6 +22,13 @@
 
 #include "UBDocument.h"
 
+#include <QDir>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSaveFile>
+
 #include "adaptors/UBThumbnailAdaptor.h"
 #include "core/UBApplication.h"
 #include "core/UBPersistenceManager.h"
@@ -31,11 +38,17 @@
 
 QList<std::weak_ptr<UBDocument>> UBDocument::sDocuments;
 
+namespace
+{
+const QString pageNamesFileName{QStringLiteral("pageNames.json")};
+}
+
 
 UBDocument::UBDocument(std::shared_ptr<UBDocumentProxy> proxy)
     : mProxy(proxy)
     , mThumbnailScene(new UBThumbnailScene(this))
 {
+    loadPageNames();
     mThumbnailScene->createThumbnails();
 }
 
@@ -87,9 +100,16 @@ void UBDocument::deletePages(QList<int> indexes)
 
     for (int i = indexes.size() - 1; i >= 0; --i)
     {
+        if (indexes.at(i) >= 0 && indexes.at(i) < mPageNames.size())
+        {
+            mPageNames.removeAt(indexes.at(i));
+        }
         mThumbnailScene->deleteThumbnail(indexes.at(i), false);
         emit UBPersistenceManager::persistenceManager()->documentSceneDeleted(mProxy, indexes.at(i));
     }
+
+    normalizePageNames();
+    savePageNames();
 
     mThumbnailScene->renumberThumbnails(indexes.first());
     mThumbnailScene->arrangeThumbnails(indexes.first());
@@ -102,6 +122,7 @@ void UBDocument::duplicatePage(int index)
 {
     UBPersistenceManager::persistenceManager()->duplicateDocumentScene(mProxy, index);
 
+    insertPageName(index + 1, pageName(index));
     mThumbnailScene->insertThumbnail(index + 1);
 
     QDateTime now = QDateTime::currentDateTime();
@@ -113,6 +134,15 @@ void UBDocument::duplicatePage(int index)
 void UBDocument::movePage(int fromIndex, int toIndex)
 {
     UBPersistenceManager::persistenceManager()->moveSceneToIndex(mProxy, fromIndex, toIndex);
+
+    normalizePageNames();
+    if (fromIndex >= 0 && fromIndex < mPageNames.size()
+            && toIndex >= 0 && toIndex < mPageNames.size())
+    {
+        mPageNames.move(fromIndex, toIndex);
+        savePageNames();
+    }
+
     mThumbnailScene->moveThumbnail(fromIndex, toIndex);
     emit UBPersistenceManager::persistenceManager()->documentSceneMoved(mProxy, fromIndex, toIndex);
 }
@@ -125,6 +155,7 @@ void UBDocument::copyPage(int fromIndex, std::shared_ptr<UBDocumentProxy> to, in
 
     if (toDocument)
     {
+        toDocument->insertPageName(toIndex, pageName(fromIndex));
         toDocument->mThumbnailScene->insertThumbnail(toIndex);
     }
 }
@@ -133,6 +164,7 @@ void UBDocument::insertPage(std::shared_ptr<UBGraphicsScene> scene, int index, b
 {
     UBPersistenceManager::persistenceManager()->insertDocumentSceneAt(mProxy, scene, index, persist, deleting);
 
+    insertPageName(index);
     mThumbnailScene->insertThumbnail(index);
 }
 
@@ -140,6 +172,7 @@ std::shared_ptr<UBGraphicsScene> UBDocument::createPage(int index, bool useUndoR
 {
     auto scene = UBPersistenceManager::persistenceManager()->createDocumentSceneAt(mProxy, index, useUndoRedoStack);
 
+    insertPageName(index);
     mThumbnailScene->insertThumbnail(index, scene);
 
     return scene;
@@ -153,9 +186,103 @@ void UBDocument::persistPage(std::shared_ptr<UBGraphicsScene> scene, const int i
     mThumbnailScene->reloadThumbnail(index);
 }
 
+QString UBDocument::pageName(int index) const
+{
+    return index >= 0 && index < mPageNames.size() ? mPageNames.at(index) : QString();
+}
+
+void UBDocument::renamePage(int index, const QString& name)
+{
+    normalizePageNames();
+    if (index < 0 || index >= mPageNames.size())
+    {
+        return;
+    }
+
+    const QString normalizedName = name.trimmed();
+    if (normalizedName.isEmpty() || mPageNames.at(index) == normalizedName)
+    {
+        return;
+    }
+
+    mPageNames[index] = normalizedName;
+    savePageNames();
+    mThumbnailScene->renameThumbnail(index, normalizedName);
+}
+
 UBThumbnailScene* UBDocument::thumbnailScene() const
 {
     return mThumbnailScene;
+}
+
+void UBDocument::loadPageNames()
+{
+    mPageNames.clear();
+
+    QFile file{mProxy->persistencePath() + QLatin1Char('/') + pageNamesFileName};
+    if (file.open(QFile::ReadOnly))
+    {
+        const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+        const QJsonArray pages = document.object().value(QStringLiteral("pages")).toArray();
+        for (const QJsonValue& value : pages)
+        {
+            mPageNames.append(value.toString());
+        }
+    }
+
+    normalizePageNames();
+}
+
+void UBDocument::savePageNames() const
+{
+    if (mProxy->persistencePath().isEmpty())
+    {
+        return;
+    }
+
+    QDir().mkpath(mProxy->persistencePath());
+    QJsonArray pages;
+    for (const QString& name : mPageNames)
+    {
+        pages.append(name);
+    }
+
+    QJsonObject root;
+    root.insert(QStringLiteral("version"), 1);
+    root.insert(QStringLiteral("pages"), pages);
+
+    QSaveFile file{mProxy->persistencePath() + QLatin1Char('/') + pageNamesFileName};
+    if (file.open(QFile::WriteOnly))
+    {
+        file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+        file.commit();
+    }
+}
+
+void UBDocument::normalizePageNames()
+{
+    const int pageCount = mProxy ? mProxy->pageCount() : 0;
+    while (mPageNames.size() < pageCount)
+    {
+        mPageNames.append(QString());
+    }
+    while (mPageNames.size() > pageCount)
+    {
+        mPageNames.removeLast();
+    }
+}
+
+void UBDocument::insertPageName(int index, const QString& name)
+{
+    normalizePageNames();
+    index = qBound(0, index, mPageNames.size());
+    mPageNames.insert(index, name.trimmed());
+
+    while (mPageNames.size() > mProxy->pageCount())
+    {
+        mPageNames.removeLast();
+    }
+    savePageNames();
 }
 
 /**

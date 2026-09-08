@@ -208,6 +208,7 @@ class UBBoardController : public UBDocumentContainer
         void duplicateScene();
         void importPage();
         void clearScene();
+        void clearAllScenes();
         void clearSceneItems();
         void clearSceneAnnotation();
         void clearSceneBackground();
@@ -288,6 +289,9 @@ class UBBoardController : public UBDocumentContainer
         void positionZoomControl();
         void updateZoomControl(qreal zoomFactor);
         void setZoomPercentage(int percentage);
+        void setupPageNavigationControl();
+        void positionPageNavigationControl();
+        void updatePageNavigationControl();
         void setupUndoRedoControl();
         void positionUndoRedoControl();
         QString truncate(QString text, int maxWidth) const;
@@ -323,11 +327,16 @@ class UBBoardController : public UBDocumentContainer
         QLabel *mZoomLabel;
         QToolButton *mZoomOutButton;
         QToolButton *mZoomInButton;
+        QFrame *mPageNavigationControl;
+        QLabel *mPageNavigationLabel;
+        QToolButton *mPreviousPageButton;
+        QToolButton *mNextPageButton;
         QFrame *mUndoRedoControl;
         QToolButton *mUndoButton;
         QToolButton *mRedoButton;
         QToolButton *mCaptureButton;
         QToolButton *mVirtualKeyboardButton;
+        QAction *mClearAllPagesAction;
         qreal mZoomFactor;
         bool mIsClosing;
         QColor mPenColorOnDarkBackground;

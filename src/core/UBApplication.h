@@ -102,6 +102,8 @@ class UBApplication : public SingleApplication
 
         int toolBarHeight();
         bool eventFilter(QObject *obj, QEvent *event);
+        void setTabletCursorOverride(bool enabled);
+        void updateTabletCursorOverride(int tool);
 
         bool isVerbose() { return mIsVerbose;}
         void setVerbose(bool verbose){mIsVerbose = verbose;}
@@ -138,10 +140,22 @@ class UBApplication : public SingleApplication
         void onScreenCountChanged(int newCount);
 
     private:
+        enum class PointerInputDevice
+        {
+            Unknown,
+            Mouse,
+            Stylus
+        };
+
+        bool isGenuineMouseEvent(const QMouseEvent* event) const;
+        void activateMouseInput();
+        void activateStylusInput();
         void updateProtoActionsState();
         void setupTranslators(QStringList args);
         QList<QMenu*> mProtoMenus;
         bool mIsVerbose;
+        bool mTabletCursorOverrideActive;
+        PointerInputDevice mPointerInputDevice;
         QString checkLanguageAvailabilityForSankore(QString& language);
     protected:
 /*

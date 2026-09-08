@@ -27,6 +27,8 @@ target_sources(${PROJECT_NAME} PRIVATE
     UBImportImage.h
     UBImportPDF.cpp
     UBImportPDF.h
+    UBImportPowerPoint.cpp
+    UBImportPowerPoint.h
     UBMetadataDcSubsetAdaptor.cpp
     UBMetadataDcSubsetAdaptor.h
     UBSvgSubsetAdaptor.cpp

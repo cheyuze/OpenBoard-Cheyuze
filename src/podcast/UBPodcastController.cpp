@@ -54,9 +54,13 @@
 #include "UBAbstractVideoEncoder.h"
 
 #include "UBPodcastRecordingPalette.h"
+#include "UBCameraPreviewWindow.h"
 
 #include <QFileDialog>
+#include <QAudioDevice>
+#include <QCameraDevice>
 #include <QInputDialog>
+#include <QMediaDevices>
 #include <QMessageBox>
 #include <QSaveFile>
 #include <QStandardPaths>
@@ -334,6 +338,7 @@ UBPodcastController::UBPodcastController(QObject* pParent)
     , mScreenGrabingTimerEventID(0)
     , mRecordingProgressTimerEventID(0)
     , mRecordingPalette(0)
+    , mCameraPreview(0)
     , mRecordingState(Stopped)
     , mApplicationIsClosing(false)
     , mRecordingTimestampOffset(0)
@@ -365,6 +370,8 @@ UBPodcastController::UBPodcastController(QObject* pParent)
 
 UBPodcastController::~UBPodcastController()
 {
+    delete mCameraPreview;
+    mCameraPreview = 0;
     delete mRecordingPalette;
     mRecordingPalette = 0;
 }
@@ -397,19 +404,18 @@ void UBPodcastController::updateActionState()
     else
         UBSettings::settings()->podcastVideoSize->reset();
 
-    UBSettings::settings()->podcastAudioRecordingDevice->reset();
-
     if (mDefaultAudioInputDeviceAction && mDefaultAudioInputDeviceAction->isChecked())
-         UBSettings::settings()->podcastAudioRecordingDevice->set("Default");
+         selectAudioInputDevice(QStringLiteral("Default"));
     else if (mNoAudioInputDeviceAction && mNoAudioInputDeviceAction->isChecked())
-         UBSettings::settings()->podcastAudioRecordingDevice->set("None");
+         selectAudioInputDevice(QStringLiteral("None"));
     else
     {
         foreach(QAction* action, mAudioInputDevicesActions)
         {
             if (action->isChecked())
             {
-                UBSettings::settings()->podcastAudioRecordingDevice->set(action->text());
+                selectAudioInputDevice(action->data().toString().isEmpty()
+                        ? action->text() : action->data().toString());
                 break;
             }
         }
@@ -548,6 +554,12 @@ void UBPodcastController::start()
             return;
         }
 
+        // Area/window selection may change the source rectangle after the
+        // camera was enabled. Keep the on-screen avatar inside the exact
+        // region that will be recorded.
+        if (desktopRecording && mCameraPreview && mCameraPreview->isVisible())
+            positionCameraPreview();
+
         const QSize sourceSize = desktopRecording
                 ? currentDesktopCaptureRect().size()
                 : UBApplication::boardController->controlView()->size();
@@ -624,21 +636,11 @@ void UBPodcastController::start()
                         , mRecordingPalette, SLOT(audioLevelChanged(quint8)));
             }
 
-            mVideoEncoder->setRecordAudio(!mNoAudioInputDeviceAction->isChecked());
+            const QString selectedInput = selectedAudioInputDevice();
+            mVideoEncoder->setRecordAudio(selectedInput != QStringLiteral("None"));
 
-            QString recordingDevice = "";
-
-            if (!mNoAudioInputDeviceAction->isChecked() && !mDefaultAudioInputDeviceAction->isChecked())
-            {
-                foreach(QAction* audioDevice, mAudioInputDevicesActions)
-                {
-                    if (audioDevice->isChecked())
-                    {
-                        recordingDevice = audioDevice->text();
-                        break;
-                    }
-                }
-            }
+            const QString recordingDevice = selectedInput == QStringLiteral("Default")
+                    ? QString() : selectedInput;
 
             mVideoEncoder->setAudioRecordingDevice(recordingDevice);
 
@@ -774,6 +776,12 @@ bool UBPodcastController::eventFilter(QObject *obj, QEvent *event)
     {
         QResizeEvent *resizeEvent = static_cast<QResizeEvent*>(event);
         widgetSizeChanged(resizeEvent->size());
+    }
+
+    if (mCameraPreview && mCameraPreview->isVisible()
+            && (event->type() == QEvent::Resize || event->type() == QEvent::Move))
+    {
+        QTimer::singleShot(0, this, &UBPodcastController::positionCameraPreview);
     }
 
     return QObject::eventFilter(obj, event);
@@ -963,6 +971,7 @@ void UBPodcastController::applicationDesktopMode(bool displayed)
         mRecordingPalette->setNativeOwner(
                 UBApplication::applicationController->uninotesController()->drawingView());
     }
+
     else
     {
         mDesktopCapturePrepared = false;
@@ -972,6 +981,9 @@ void UBPodcastController::applicationDesktopMode(bool displayed)
         if (mRecordingPalette && mRecordingPalette->isVisible())
             positionRecordingPalette(false);
     }
+
+    if (mCameraPreview && mCameraPreview->isVisible())
+        positionCameraPreview();
 }
 
 
@@ -1237,6 +1249,7 @@ void UBPodcastController::sendLatestPixmapToEncoder()
             }
         }
 
+        compositeCameraPreview(frame);
         mVideoEncoder->newPixmap(frame, elapsedRecordingMs());
     }
 
@@ -1267,6 +1280,12 @@ void UBPodcastController::processScreenGrabingTimerEvent()
 
     if (mIsDesktopMode)
     {
+        // A captured application window can be moved while recording. Follow
+        // its current top-right corner so the visible and encoded previews
+        // remain aligned.
+        if (mCameraPreview && mCameraPreview->isVisible())
+            positionCameraPreview();
+
         widgetContent = grabDesktopCapture();
         if (widgetContent.isNull())
         {
@@ -1302,17 +1321,79 @@ void UBPodcastController::processScreenGrabingTimerEvent()
 
 QStringList UBPodcastController::audioRecordingDevices()
 {
+    // The FFmpeg encoder records through Qt Multimedia on every supported
+    // platform. Enumerating through the same API ensures that a selected name
+    // can be resolved by the encoder instead of silently falling back to the
+    // default microphone on Windows.
+    return UBMicrophoneInput::availableDevicesNames();
+}
+
+QStringList UBPodcastController::audioOutputDevices() const
+{
     QStringList devices;
-
-#ifdef Q_OS_WIN
-    devices = UBWaveRecorder::waveInDevices();
-#elif defined(Q_OS_OSX)
-    devices = UBMicrophoneInput::availableDevicesNames();
-#elif defined(Q_OS_LINUX)
-    devices = UBMicrophoneInput::availableDevicesNames();
-#endif
-
+    for (const QAudioDevice &device : QMediaDevices::audioOutputs())
+    {
+        if (!device.description().isEmpty()
+                && !devices.contains(device.description()))
+        {
+            devices << device.description();
+        }
+    }
     return devices;
+}
+
+QStringList UBPodcastController::cameraDevices() const
+{
+    QStringList devices;
+    for (const QCameraDevice &device : QMediaDevices::videoInputs())
+    {
+        if (!device.description().isEmpty()
+                && !devices.contains(device.description()))
+        {
+            devices << device.description();
+        }
+    }
+    return devices;
+}
+
+QString UBPodcastController::selectedAudioInputDevice() const
+{
+    return UBSettings::settings()->podcastAudioRecordingDevice->get().toString();
+}
+
+QString UBPodcastController::selectedAudioOutputDevice() const
+{
+    return UBSettings::settings()->podcastAudioOutputDevice->get().toString();
+}
+
+QString UBPodcastController::selectedCameraDevice() const
+{
+    return UBSettings::settings()->podcastCameraDevice->get().toString();
+}
+
+void UBPodcastController::selectAudioInputDevice(const QString &deviceName)
+{
+    UBSettings::settings()->podcastAudioRecordingDevice->set(
+            deviceName.isEmpty() ? QStringLiteral("Default") : deviceName);
+}
+
+void UBPodcastController::selectAudioOutputDevice(const QString &deviceName)
+{
+    UBSettings::settings()->podcastAudioOutputDevice->set(
+            deviceName.isEmpty() ? QStringLiteral("Default") : deviceName);
+}
+
+void UBPodcastController::selectCameraDevice(const QString &deviceName)
+{
+    const QString selection = deviceName.isEmpty()
+            ? QStringLiteral("Default") : deviceName;
+    UBSettings::settings()->podcastCameraDevice->set(selection);
+
+    if (mCameraPreview)
+    {
+        mCameraPreview->setCameraDeviceName(selection == QStringLiteral("Default")
+                ? QString() : selection);
+    }
 }
 
 
@@ -1347,6 +1428,8 @@ void UBPodcastController::toggleRecordingPalette(bool visible)
         // still alive, and clear the pointer before this controller is later
         // destroyed by the static-memory cleaner.
         connect(UBApplication::mainWindow, &QObject::destroyed, this, [this]() {
+            delete mCameraPreview;
+            mCameraPreview = 0;
             delete mRecordingPalette;
             mRecordingPalette = 0;
         });
@@ -1365,6 +1448,8 @@ void UBPodcastController::toggleRecordingPalette(bool visible)
                 , mRecordingPalette, SLOT(recordingStateChanged(UBPodcastController::RecordingState)));
         connect(this, SIGNAL(recordingProgressChanged(qint64))
                 , mRecordingPalette, SLOT(recordingProgressChanged(qint64)));
+        connect(mRecordingPalette, &UBPodcastRecordingPalette::cameraToggled,
+                this, &UBPodcastController::cameraToggled);
     }
 
     mRecordingPalette->setVisible(visible);
@@ -1415,10 +1500,12 @@ QList<QAction*> UBPodcastController::audioRecordingDevicesActions()
     {
         QString settingsDevice = UBSettings::settings()->podcastAudioRecordingDevice->get().toString();
 
-        mDefaultAudioInputDeviceAction = new QAction(tr("Default Audio Input"), this);
+        mDefaultAudioInputDeviceAction = new QAction(QStringLiteral("默认麦克风"), this);
+        mDefaultAudioInputDeviceAction->setData(QStringLiteral("Default"));
         QAction *checkedAction = mDefaultAudioInputDeviceAction;
 
-        mNoAudioInputDeviceAction = new QAction(tr("No Audio Recording"), this);
+        mNoAudioInputDeviceAction = new QAction(QStringLiteral("不使用麦克风"), this);
+        mNoAudioInputDeviceAction->setData(QStringLiteral("None"));
 
         if (settingsDevice == "None")
             checkedAction = mNoAudioInputDeviceAction;
@@ -1429,6 +1516,7 @@ QList<QAction*> UBPodcastController::audioRecordingDevicesActions()
         foreach(QString audioDevice, audioRecordingDevices())
         {
             QAction* act = new QAction(audioDevice, this);
+            act->setData(audioDevice);
             act->setCheckable(true);
             mAudioInputDevicesActions << act;
             if (settingsDevice == audioDevice)
@@ -1457,9 +1545,12 @@ QList<QAction*> UBPodcastController::videoSizeActions()
 {
     if (mVideoSizesActions.length() == 0)
     {
-        mSmallVideoSizeAction = new QAction(tr("Small"), this);
-        mMediumVideoSizeAction = new QAction(tr("Medium"), this);
-        mFullVideoSizeAction = new QAction(tr("Full"), this);
+        mSmallVideoSizeAction = new QAction(
+                QStringLiteral("流畅（最高 640×480）"), this);
+        mMediumVideoSizeAction = new QAction(
+                QStringLiteral("标准（最高 1024×768）"), this);
+        mFullVideoSizeAction = new QAction(
+                QStringLiteral("高清（原始分辨率）"), this);
 
         mVideoSizesActions << mSmallVideoSizeAction;
         mVideoSizesActions << mMediumVideoSizeAction;
@@ -1487,6 +1578,120 @@ QList<QAction*> UBPodcastController::videoSizeActions()
     }
 
     return mVideoSizesActions;
+}
+
+QRect UBPodcastController::cameraPreviewSourceRect() const
+{
+    if (mIsDesktopMode)
+    {
+        if (mDesktopCapturePrepared && !currentDesktopCaptureRect().isEmpty())
+            return currentDesktopCaptureRect();
+
+        QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
+        if (!screen)
+            screen = UBApplication::displayManager->screen(ScreenRole::Desktop);
+        if (!screen)
+            screen = QGuiApplication::primaryScreen();
+        return screen ? screen->availableGeometry() : QRect();
+    }
+
+    if (mSourceWidget)
+        return QRect(mSourceWidget->mapToGlobal(QPoint(0, 0)),
+                mSourceWidget->size());
+
+    return UBApplication::mainWindow
+            ? UBApplication::mainWindow->geometry() : QRect();
+}
+
+void UBPodcastController::positionCameraPreview()
+{
+    if (!mCameraPreview)
+        return;
+
+    const QRect sourceRect = cameraPreviewSourceRect();
+    if (sourceRect.isEmpty())
+        return;
+
+    mCameraPreview->setInteractionBounds(sourceRect);
+
+    // Once the presenter has moved or resized the preview, preserve that
+    // choice. setInteractionBounds() still keeps it inside the recorded area.
+    if (mCameraPreview->hasUserAdjustedGeometry())
+        return;
+
+    const int previewWidth = qBound(180,
+            qRound(sourceRect.width() * 0.14), 280);
+    const int previewHeight = qRound(previewWidth * 0.625);
+    const int margin = qBound(16, sourceRect.width() / 80, 28);
+
+    const QSize desiredSize(previewWidth, previewHeight);
+    const QPoint desiredPosition(sourceRect.right() - previewWidth - margin + 1,
+            sourceRect.top() + margin);
+    if (mCameraPreview->size() != desiredSize)
+        mCameraPreview->resize(desiredSize);
+    if (mCameraPreview->pos() != desiredPosition)
+        mCameraPreview->move(desiredPosition);
+}
+
+void UBPodcastController::cameraToggled(bool enabled)
+{
+    if (!mRecordingPalette)
+        return;
+
+    if (!mCameraPreview)
+    {
+        mCameraPreview = new UBCameraPreviewWindow(nullptr);
+        connect(mCameraPreview, &UBCameraPreviewWindow::cameraUnavailable,
+                this, [this](const QString &message) {
+            if (mRecordingPalette)
+                mRecordingPalette->setCameraChecked(false);
+            QMessageBox::warning(mRecordingPalette,
+                    QStringLiteral("摄像头"), message);
+        });
+    }
+
+    if (!enabled)
+    {
+        mCameraPreview->stopCamera();
+        return;
+    }
+
+    const QString selectedDevice = selectedCameraDevice();
+    mCameraPreview->setCameraDeviceName(
+            selectedDevice == QStringLiteral("Default")
+                    ? QString() : selectedDevice);
+    positionCameraPreview();
+    if (!mCameraPreview->startCamera())
+        mRecordingPalette->setCameraChecked(false);
+}
+
+void UBPodcastController::compositeCameraPreview(QImage &frame)
+{
+    if (!mCameraPreview || !mCameraPreview->isVisible()
+            || !mCameraPreview->hasFrame() || frame.isNull())
+    {
+        return;
+    }
+
+    const QRect sourceRect = cameraPreviewSourceRect();
+    if (sourceRect.isEmpty())
+        return;
+
+    const QRect previewGlobalRect(mCameraPreview->pos(), mCameraPreview->size());
+    if (!sourceRect.intersects(previewGlobalRect))
+        return;
+
+    const QRect previewInSource = previewGlobalRect.translated(
+            -sourceRect.topLeft());
+    const QImage preview = mCameraPreview->renderedPreview();
+    if (preview.isNull())
+        return;
+
+    QPainter painter(&frame);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    painter.setTransform(mViewToVideoTransform);
+    painter.drawImage(previewInSource, preview);
 }
 
 QList<QAction*> UBPodcastController::desktopCaptureModeActions()

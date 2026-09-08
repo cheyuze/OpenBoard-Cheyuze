@@ -1,10 +1,12 @@
 
 HEADERS      += src/podcast/UBPodcastController.h \
                 src/podcast/UBAbstractVideoEncoder.h \
+                src/podcast/UBCameraPreviewWindow.h \
                 src/podcast/UBPodcastRecordingPalette.h \
                 
 SOURCES      += src/podcast/UBPodcastController.cpp \
                 src/podcast/UBAbstractVideoEncoder.cpp \
+                src/podcast/UBCameraPreviewWindow.cpp \
                 src/podcast/UBPodcastRecordingPalette.cpp \
 
 win32 {

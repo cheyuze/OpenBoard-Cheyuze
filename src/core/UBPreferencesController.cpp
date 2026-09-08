@@ -85,6 +85,9 @@ UBPreferencesController::UBPreferencesController(QWidget *parent)
     mPreferencesWindow = new UBPreferencesDialog(this,parent, Qt::Dialog);
     mPreferencesUI = new Ui::preferencesDialog();  // deleted in destructor
     mPreferencesUI->setupUi(mPreferencesWindow);
+    // Dark-canvas customization is no longer part of the product UI.
+    mPreferencesUI->crossColorDarkBackgroundFrame->hide();
+    mPreferencesUI->darkBackgroundOpacityFrame->hide();
     adjustScreensPreferences();
 
     connect(UBApplication::displayManager, &UBDisplayManager::availableScreenCountChanged, this, &UBPreferencesController::adjustScreensPreferences);
@@ -260,6 +263,7 @@ void UBPreferencesController::wire()
                                                 penLightBackgroundColors, penDarkBackgroundColors, penLightBackgroundSelectedColors,
                                                 penDarkBackgroundSelectedColors, this);
 
+    mPenProperties->darkBackgroundFrame->hide();
     mPenProperties->opacityFrame->hide();
 
     connect(mPenProperties->fineSlider, SIGNAL(valueChanged(int)), this, SLOT(widthSliderChanged(int)));
@@ -279,6 +283,7 @@ void UBPreferencesController::wire()
                                                    markerDarkBackgroundColors, markerLightBackgroundSelectedColors,
                                                    markerDarkBackgroundSelectedColors, this);
 
+    mMarkerProperties->darkBackgroundFrame->hide();
     mMarkerProperties->pressureSensitiveCheckBox->setText(tr("Marker is pressure sensitive"));
 
     mMarkerProperties->circleFrame->hide();

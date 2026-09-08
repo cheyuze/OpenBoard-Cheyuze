@@ -158,6 +158,7 @@ UBThumbnail* UBThumbnailScene::thumbnailAt(int index)
 
             thumbnailItem->setPixmap(UBThumbnailAdaptor::get(mDocument->proxy(), index));
             thumbnailItem->setSceneIndex(index);
+            thumbnailItem->setPageName(mDocument->pageName(index));
 
             mThumbnailItems[index] = thumbnailItem;
             addItem(thumbnailItem);
@@ -174,6 +175,16 @@ UBThumbnail* UBThumbnailScene::thumbnailAt(int index)
 UBThumbnail* UBThumbnailScene::lastSelectedThumbnail() const
 {
     return mLastSelectedThumbnail;
+}
+
+void UBThumbnailScene::renameThumbnail(int index, const QString& name)
+{
+    UBThumbnail* thumbnail = thumbnailAt(index);
+    if (thumbnail)
+    {
+        thumbnail->setPageName(name);
+        arrangeThumbnails(index, index + 1);
+    }
 }
 
 /**
@@ -254,6 +265,7 @@ void UBThumbnailScene::insertThumbnail(int pageIndex, std::shared_ptr<UBGraphics
 
         thumbnailItem->setPixmap(UBThumbnailAdaptor::get(mDocument->proxy(), pageIndex));
         thumbnailItem->setSceneIndex(pageIndex);
+        thumbnailItem->setPageName(mDocument->pageName(pageIndex));
 
         mThumbnailItems.insert(pageIndex, thumbnailItem);
         addItem(thumbnailItem);
@@ -419,6 +431,7 @@ void UBThumbnailScene::loadNextThumbnail()
 
                 thumbnailItem->setPixmap(pixmap);
                 thumbnailItem->setSceneIndex(index);
+                thumbnailItem->setPageName(mDocument->pageName(index));
 
                 mThumbnailItems[index] = thumbnailItem;
                 addItem(thumbnailItem);

@@ -147,6 +147,10 @@ target_link_libraries(${PROJECT_NAME}
     SingleApplication::SingleApplication
 )
 
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} ole32 oleaut32)
+endif()
+
 
 # ==========================================================================
 # Resources

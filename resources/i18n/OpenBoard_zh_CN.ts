@@ -1250,8 +1250,8 @@ Do you wish to override the security check and continue ?   </source>
     </message>
     <message>
         <location filename="../forms/mainWindow.ui" line="1703"/>
-        <source>Import one or more pages (supported formats : jpg, png, svg, ubz, pdf)</source>
-        <translation>导入一个或多个页面（支持的格式：jpg、png、svg、ubz、pdf）</translation>
+        <source>Import one or more pages (supported formats : jpg, png, svg, ubz, pdf, ppt, pptx)</source>
+        <translation>导入一个或多个页面（支持的格式：jpg、png、svg、ubz、pdf、ppt、pptx）</translation>
     </message>
     <message>
         <source>Add to favorites</source>
@@ -1502,6 +1502,34 @@ Do you wish to override the security check and continue ?   </source>
 <context>
     <name>UBBoardController</name>
     <message>
+        <source>Clear All Pages</source>
+        <translation>清除所有页面</translation>
+    </message>
+    <message>
+        <source>Clear content from every page</source>
+        <translation>清除所有页面中的内容</translation>
+    </message>
+    <message>
+        <source>Clear the content of all %1 pages? This action cannot be undone.</source>
+        <translation>确定要清除全部 %1 个页面中的内容吗？此操作无法撤销。</translation>
+    </message>
+    <message>
+        <source>Clearing page %1 of %2</source>
+        <translation>正在清除第 %1 页，共 %2 页</translation>
+    </message>
+    <message>
+        <source>All pages cleared</source>
+        <translation>已清除所有页面</translation>
+    </message>
+    <message>
+        <source>Previous Page</source>
+        <translation>上一页</translation>
+    </message>
+    <message>
+        <source>Next Page</source>
+        <translation>下一页</translation>
+    </message>
+    <message>
         <location filename="../../src/board/UBBoardController.cpp" line="1293"/>
         <source>Downloading content %1 failed</source>
         <translation>下载内容 %1 失败</translation>
@@ -1600,6 +1628,34 @@ Do you wish to override the security check and continue ?   </source>
 </context>
 <context>
     <name>UBBoardThumbnailsView</name>
+    <message>
+        <source>Rename Page</source>
+        <translation>重命名页面</translation>
+    </message>
+    <message>
+        <source>Page name:</source>
+        <translation>页面名称：</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>重命名</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>取消</translation>
+    </message>
+    <message>
+        <source>Page %1</source>
+        <translation>页面 %1</translation>
+    </message>
+    <message>
+        <source>Duplicate Page</source>
+        <translation>复制页面</translation>
+    </message>
+    <message>
+        <source>Delete Page</source>
+        <translation>删除页面</translation>
+    </message>
     <message>
         <source>Loading page (%1/%2)</source>
         <translation type="obsolete">下载加载页面 (%1/%2)</translation>
@@ -4209,5 +4265,26 @@ p, li { white-space: pre-wrap; }
 <context>
     <name>UBBoardController</name>
     <message><source>Choose a color</source><translation>选择颜色</translation></message>
+</context>
+<context>
+    <name>UBImportPowerPoint</name>
+    <message><source>PowerPoint presentations (*.ppt *.pptx *.pps *.ppsx)</source><translation>PowerPoint 演示文稿 (*.ppt *.pptx *.pps *.ppsx)</translation></message>
+    <message><source>Converting PowerPoint presentation. Please wait...</source><translation>正在转换 PowerPoint 演示文稿，请稍候……</translation></message>
+    <message><source>Importing PowerPoint slides as images. Please wait...</source><translation>正在将 PowerPoint 幻灯片直接导入为图片，请稍候……</translation></message>
+    <message><source>Trying the compatible PowerPoint converter...</source><translation>正在尝试兼容模式转换 PowerPoint……</translation></message>
+    <message><source>PowerPoint import successful.</source><translation>PowerPoint 导入成功。</translation></message>
+    <message><source>Importing slide %1 of %2...</source><translation>正在导入第 %1 张幻灯片，共 %2 张……</translation></message>
+    <message><source>PowerPoint import failed.</source><translation>PowerPoint 导入失败。</translation></message>
+    <message><source>PowerPoint import failed</source><translation>PowerPoint 导入失败</translation></message>
+    <message><source>The presentation could not be converted. Please install Microsoft PowerPoint or LibreOffice and try again.</source><translation>无法转换此演示文稿。请安装 Microsoft PowerPoint 或 LibreOffice 后重试。</translation></message>
+</context>
+<context>
+    <name>UBPageNavigationWidget</name>
+    <message><source>Import PPT/PDF</source><translation>导入 PPT/PDF</translation></message>
+    <message><source>Import PPT, PPTX, PDF or image files</source><translation>导入 PPT、PPTX、PDF 或图片文件</translation></message>
+</context>
+<context>
+    <name>UBTabDockPalette</name>
+    <message><source>Pages</source><translation>页面</translation></message>
 </context>
 </TS>

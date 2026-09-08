@@ -38,9 +38,20 @@ QMainWindow
    background-color: #F1F1F1;
 }
 
-QDialog
+QDialog,
+QMessageBox,
+QInputDialog
 {
-   background-color: #dddddd;
+   color: #202124;
+   background-color: #ffffff;
+}
+
+QDialog QLabel,
+QMessageBox QLabel,
+QInputDialog QLabel
+{
+   color: #202124;
+   background-color: transparent;
 }
 
 QMenu
@@ -568,9 +579,15 @@ QLineEdit#ubWebBrowserLineEdit
 }
 
 /* OpenBoard Team Edition - modern classroom interface */
-QMainWindow, QDialog
+QMainWindow
 {
     background-color: #f4f7fb;
+}
+
+QDialog
+{
+    color: #202124;
+    background-color: #ffffff;
 }
 
 QToolBar
@@ -656,6 +673,127 @@ QMenu::separator
     background-color: #e2e8f0;
     border: none;
     margin: 5px 8px;
+}
+
+/* Page thumbnail context menu: match the soft translucent blue feedback
+   used by the bottom-left quick controls. */
+QMenu#ubPageContextMenu
+{
+    color: #26364d;
+    background-color: #f4f7fb;
+    border: 1px solid #9eafc6;
+    border-radius: 9px;
+    padding: 5px;
+}
+
+QMenu#ubPageContextMenu::item
+{
+    color: #26364d;
+    background-color: #ffffff;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    padding: 7px 28px 7px 10px;
+    margin: 1px;
+}
+
+QMenu#ubPageContextMenu::item:selected
+{
+    color: #0f438f;
+    background-color: #dceaff;
+    border-color: #6b9fe5;
+}
+
+QMenu#ubPageContextMenu::item:disabled
+{
+    color: #8895a8;
+    background-color: #f4f6f9;
+    border-color: transparent;
+}
+
+QDialog#ubPageRenameDialog
+{
+    color: #202124;
+    background-color: #ffffff;
+    border: 1px solid #9eafc6;
+    border-radius: 9px;
+}
+
+QDialog#ubPageRenameDialog QLabel
+{
+    color: #202124;
+    background-color: transparent;
+}
+
+QLabel#ubPageRenameTitle
+{
+    color: #202124;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+QLineEdit#ubPageRenameEditor
+{
+    color: #202124;
+    background-color: #ffffff;
+    border: 1px solid #9eafc6;
+    border-radius: 7px;
+    padding: 7px 9px;
+    selection-color: #ffffff;
+    selection-background-color: #3278d4;
+}
+
+QLineEdit#ubPageRenameEditor:focus
+{
+    border: 2px solid #3278d4;
+    padding: 6px 8px;
+}
+
+QPushButton#ubPageRenameCloseButton
+{
+    color: #34445b;
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0px;
+    font-size: 22px;
+}
+
+QPushButton#ubPageRenameCloseButton:hover
+{
+    color: #174ea6;
+    background-color: #e8f1ff;
+    border-color: #a9c9f7;
+}
+
+QDialogButtonBox#ubPageRenameButtons QPushButton
+{
+    min-width: 74px;
+    color: #202124;
+    background-color: #ffffff;
+    border: 1px solid #9eafc6;
+    border-radius: 7px;
+    padding: 6px 12px;
+}
+
+QDialogButtonBox#ubPageRenameButtons QPushButton:hover
+{
+    color: #174ea6;
+    background-color: #e8f1ff;
+    border-color: #6b9fe5;
+}
+
+QDialogButtonBox#ubPageRenameButtons QPushButton:default
+{
+    color: #202124;
+    background-color: #ffffff;
+    border: 2px solid #3278d4;
+    padding: 5px 11px;
+}
+
+QDialogButtonBox#ubPageRenameButtons QPushButton:default:hover
+{
+    color: #174ea6;
+    background-color: #e8f1ff;
 }
 
 QPushButton, QComboBox, QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox
@@ -778,6 +916,13 @@ QFrame#ubBoardZoomControl
     border-radius: 10px;
 }
 
+QFrame#ubBoardPageNavigationControl
+{
+    background-color: rgba(244, 247, 251, 205);
+    border: 1px solid rgba(125, 143, 168, 135);
+    border-radius: 11px;
+}
+
 QFrame#ubBoardUndoRedoControl
 {
     background-color: rgba(244, 247, 251, 188);
@@ -814,6 +959,43 @@ QToolButton#ubBoardZoomOutButton:disabled,
 QToolButton#ubBoardZoomInButton:disabled
 {
     color: rgba(91, 106, 126, 90);
+}
+
+QToolButton#ubBoardPreviousPageButton,
+QToolButton#ubBoardNextPageButton
+{
+    color: #34445b;
+    background-color: rgba(255, 255, 255, 72);
+    border: 1px solid rgba(125, 143, 168, 55);
+    border-radius: 7px;
+    padding: 0px 6px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QToolButton#ubBoardPreviousPageButton:hover,
+QToolButton#ubBoardNextPageButton:hover
+{
+    color: #174ea6;
+    background-color: rgba(211, 226, 247, 220);
+    border-color: rgba(57, 118, 194, 125);
+}
+
+QToolButton#ubBoardPreviousPageButton:pressed,
+QToolButton#ubBoardNextPageButton:pressed,
+QToolButton#ubBoardPreviousPageButton:checked,
+QToolButton#ubBoardNextPageButton:checked
+{
+    background-color: rgba(181, 207, 241, 220);
+    border-color: rgba(23, 78, 166, 155);
+}
+
+QToolButton#ubBoardPreviousPageButton:disabled,
+QToolButton#ubBoardNextPageButton:disabled
+{
+    color: rgba(91, 106, 126, 90);
+    background-color: rgba(255, 255, 255, 35);
+    border-color: rgba(125, 143, 168, 30);
 }
 
 QToolButton#ubBoardUndoButton,
@@ -904,5 +1086,14 @@ QLabel#ubBoardZoomLabel
     background: transparent;
     border: none;
     font-size: 12px;
+    font-weight: 600;
+}
+
+QLabel#ubBoardPageNavigationLabel
+{
+    color: #34445b;
+    background: transparent;
+    border: none;
+    font-size: 13px;
     font-weight: 600;
 }

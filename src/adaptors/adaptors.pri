@@ -10,6 +10,7 @@ HEADERS      += src/adaptors/UBExportAdaptor.h\
                 src/adaptors/UBImportDocument.h \
                 src/adaptors/UBThumbnailAdaptor.h \
                 src/adaptors/UBImportPDF.h \
+                src/adaptors/UBImportPowerPoint.h \
                 src/adaptors/UBImportImage.h \
                 src/adaptors/UBExportWeb.h \
     $$PWD/UBExportDocumentSetAdaptor.h \
@@ -30,6 +31,7 @@ SOURCES      += src/adaptors/UBExportAdaptor.cpp\
                 src/adaptors/UBImportDocument.cpp \
                 src/adaptors/UBThumbnailAdaptor.cpp \
                 src/adaptors/UBImportPDF.cpp \
+                src/adaptors/UBImportPowerPoint.cpp \
                 src/adaptors/UBImportImage.cpp \
                 src/adaptors/UBExportWeb.cpp \
     $$PWD/UBExportDocumentSetAdaptor.cpp \
