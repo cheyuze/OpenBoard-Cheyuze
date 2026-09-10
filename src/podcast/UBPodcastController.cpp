@@ -329,9 +329,9 @@ UBPodcastController::UBPodcastController(QObject* pParent)
     , mVideoEncoder(0)
     , mInitialized(false)
     , mEmptyChapter(true)
-    , mVideoFramesPerSecondAtStart(10)
+    , mVideoFramesPerSecondAtStart(30)
     , mVideoFrameSizeAtStart(1024, 768)
-    , mVideoBitsPerSecondAtStart(1700000)
+    , mVideoBitsPerSecondAtStart(12000000)
     , mSourceWidget(0)
     , mIsDesktopMode(false)
     , mSourceScene(0)
@@ -402,7 +402,7 @@ void UBPodcastController::updateActionState()
     else if (mFullVideoSizeAction && mFullVideoSizeAction->isChecked())
         UBSettings::settings()->podcastVideoSize->set("Full");
     else
-        UBSettings::settings()->podcastVideoSize->reset();
+        UBSettings::settings()->podcastVideoSize->set("Medium");
 
     if (mDefaultAudioInputDeviceAction && mDefaultAudioInputDeviceAction->isChecked())
          selectAudioInputDevice(QStringLiteral("Default"));
@@ -566,7 +566,19 @@ void UBPodcastController::start()
 
         QSize recommendedSize(1024, 768);
 
+        // Older OpenBoard profiles were fixed at 10 fps, which makes pen
+        // strokes and cursor movement visibly judder. Keep explicit modern
+        // values configurable, but transparently upgrade the legacy default.
+        const int configuredFramesPerSecond =
+                UBSettings::settings()->podcastFramesPerSecond->get().toInt();
+        mVideoFramesPerSecondAtStart = configuredFramesPerSecond <= 10
+                ? 30 : qBound(15, configuredFramesPerSecond, 60);
+
         int fullBitRate = UBSettings::settings()->podcastWindowsMediaBitsPerSecond->get().toInt();
+        // Migrate the former 1.7 Mbps ceiling. At native 1080p resolution it
+        // visibly softens small text and thin handwriting.
+        if (fullBitRate <= 1700000)
+            fullBitRate = 12000000;
 
         if (mSmallVideoSizeAction && mSmallVideoSizeAction->isChecked())
         {
@@ -750,6 +762,8 @@ void UBPodcastController::stop()
 {
     if ((mRecordingState == Recording || mRecordingState == Paused) && mVideoEncoder)
     {
+        const bool stoppedWhilePaused = (mRecordingState == Paused);
+
         if (mScreenGrabingTimerEventID != 0)
         {
             killTimer(mScreenGrabingTimerEventID);
@@ -759,7 +773,12 @@ void UBPodcastController::stop()
         if (mRecordingProgressTimerEventID != 0)
             killTimer(mRecordingProgressTimerEventID);
 
-        sendLatestPixmapToEncoder();
+        // pause() already submits the last visible frame before stopping the
+        // capture clock. If recording is ended without resuming, submitting
+        // another frame here would use wall-clock time that still includes
+        // the paused interval and artificially extend the MP4 duration.
+        if (!stoppedWhilePaused)
+            sendLatestPixmapToEncoder();
 
         setRecordingState(Stopping);
 

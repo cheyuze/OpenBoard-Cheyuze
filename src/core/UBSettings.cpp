@@ -442,13 +442,13 @@ void UBSettings::init()
     exportBackgroundGrid = new UBSetting(this, "PDF", "ExportBackgroundGrid", false);
     exportBackgroundColor = new UBSetting(this, "PDF", "ExportBackgroundColor", false);
 
-    podcastFramesPerSecond = new UBSetting(this, "Podcast", "FramesPerSecond", 10);
-    podcastVideoSize = new UBSetting(this, "Podcast", "VideoSize", "Medium");
+    podcastFramesPerSecond = new UBSetting(this, "Podcast", "FramesPerSecond", 30);
+    podcastVideoSize = new UBSetting(this, "Podcast", "VideoSize", "Full");
     podcastAudioRecordingDevice = new UBSetting(this, "Podcast", "AudioRecordingDevice", "Default");
     podcastAudioOutputDevice = new UBSetting(this, "Podcast", "AudioOutputDevice", "Default");
     podcastCameraDevice = new UBSetting(this, "Podcast", "CameraDevice", "Default");
 
-    podcastWindowsMediaBitsPerSecond = new UBSetting(this, "Podcast", "WindowsMediaBitsPerSecond", 1700000);
+    podcastWindowsMediaBitsPerSecond = new UBSetting(this, "Podcast", "WindowsMediaBitsPerSecond", 12000000);
     podcastQuickTimeQuality = new UBSetting(this, "Podcast", "QuickTimeQuality", "High");
 
     podcastPublishToYoutube = new UBSetting(this, "Podcast", "PublishToYouTube", false);

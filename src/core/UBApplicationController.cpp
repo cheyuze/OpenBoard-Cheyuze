@@ -71,6 +71,7 @@
 #include <QDesktopServices>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QLabel>
 #include <QMessageBox>
 #include <QProcess>
 #include <QProgressDialog>
@@ -93,6 +94,43 @@
 
 namespace
 {
+    const QString kGitHubProjectUrl = QStringLiteral(
+            "https://github.com/cheyuze/OpenBoard-Cheyuze");
+
+    QString updateMessageHtml(const QString &text)
+    {
+        QString escapedText = text.toHtmlEscaped();
+        escapedText.replace(QStringLiteral("\n"), QStringLiteral("<br>"));
+        return QStringLiteral(
+                "<div>%1</div>"
+                "<div style=\"margin-top: 12px;\">"
+                "<a href=\"%2\">GitHub 项目页面</a>"
+                "</div>")
+                .arg(escapedText, kGitHubProjectUrl);
+    }
+
+    void enableUpdateMessageLinks(QMessageBox &messageBox)
+    {
+        messageBox.setTextFormat(Qt::RichText);
+        messageBox.setTextInteractionFlags(Qt::TextBrowserInteraction);
+        const QList<QLabel *> labels = messageBox.findChildren<QLabel *>();
+        for (QLabel *label : labels)
+        {
+            label->setTextInteractionFlags(Qt::TextBrowserInteraction);
+            label->setOpenExternalLinks(true);
+        }
+    }
+
+    void showUpdateInformation(QWidget *parent, const QString &title,
+                               const QString &text)
+    {
+        QMessageBox messageBox(QMessageBox::Information, title,
+                               updateMessageHtml(text), QMessageBox::Ok,
+                               parent);
+        enableUpdateMessageLinks(messageBox);
+        messageBox.exec();
+    }
+
     bool isTrustedGitHubManifestUrl(const QUrl &url)
     {
         if (!url.isValid()
@@ -655,8 +693,8 @@ void UBApplicationController::checkUpdate(const QUrl& url,
         }
         else if (isNoUpdateDisplayed)
         {
-            mMainWindow->information(tr("Check for updates"),
-                                     tr("Unable to check for updates securely."));
+            showUpdateInformation(mMainWindow, tr("Check for updates"),
+                                  tr("Unable to check for updates securely."));
         }
         return;
     }
@@ -718,8 +756,8 @@ void UBApplicationController::updateRequestFinished(QNetworkReply * reply)
         }
 
         if (isNoUpdateDisplayed)
-            mMainWindow->information(tr("Check for updates"),
-                                     tr("Unable to check for updates. Please check your network connection and try again."));
+            showUpdateInformation(mMainWindow, tr("Check for updates"),
+                                  tr("Unable to check for updates. Please check your network connection and try again."));
         reply->deleteLater();
         return;
     }
@@ -757,8 +795,8 @@ void UBApplicationController::updateRequestFinished(QNetworkReply * reply)
         }
 
         if (isNoUpdateDisplayed)
-            mMainWindow->information(tr("Check for updates"),
-                                     tr("The update information returned by the server is invalid."));
+            showUpdateInformation(mMainWindow, tr("Check for updates"),
+                                  tr("The update information returned by the server is invalid."));
     }
 
     reply->deleteLater();
@@ -822,10 +860,12 @@ void UBApplicationController::downloadJsonFinished(QString currentJson)
         QMessageBox messageBox(mMainWindow);
         messageBox.setIcon(QMessageBox::Information);
         messageBox.setWindowTitle(tr("Update available"));
-        messageBox.setText(tr("A new version %1 is available.").arg(jsonObject.value("version").toString())
-                           + "\n" + tr("Current version: %1").arg(qApp->applicationVersion()));
+        messageBox.setText(updateMessageHtml(
+                tr("A new version %1 is available.").arg(jsonObject.value("version").toString())
+                + "\n" + tr("Current version: %1").arg(qApp->applicationVersion())));
         if (!notes.trimmed().isEmpty())
             messageBox.setInformativeText(tr("What's new:") + notes);
+        enableUpdateMessageLinks(messageBox);
         const QString baiduUrlString = jsonObject.value("baiduUrl").toString().trimmed();
         const QString baiduPassword = jsonObject.value("baiduPassword").toString().trimmed();
         QPushButton *downloadButton = messageBox.addButton(
@@ -891,8 +931,8 @@ void UBApplicationController::downloadJsonFinished(QString currentJson)
         }
     }
     else if (isNoUpdateDisplayed) {
-        mMainWindow->information(tr("Check for updates"),
-                                 tr("You are using the latest version (%1).").arg(qApp->applicationVersion()));
+        showUpdateInformation(mMainWindow, tr("Check for updates"),
+                              tr("You are using the latest version (%1).").arg(qApp->applicationVersion()));
     }
 }
 

@@ -335,6 +335,10 @@ bool UBFFmpegVideoEncoder::init()
     AVDictionary * options = nullptr;
     int ret;
 
+    // setFramesPerSecond() is called after construction. Recalculate the
+    // timestamp timebase here so it reflects the selected recording rate.
+    mVideoTimebase = 100 * qMax(1, framesPerSecond());
+
     // Output format and context
     // --------------------------------------
     if (avformat_alloc_output_context2(&mOutputFormatContext, nullptr,
@@ -372,7 +376,8 @@ bool UBFFmpegVideoEncoder::init()
     c->width = videoSize().width();
     c->height = videoSize().height();
     c->time_base = {1, mVideoTimebase};
-    c->gop_size = 10;
+    c->framerate = {framesPerSecond(), 1};
+    c->gop_size = qMax(1, framesPerSecond() * 2);
     c->max_b_frames = 0;
     c->pix_fmt = AV_PIX_FMT_YUV420P;
 
@@ -389,8 +394,11 @@ bool UBFFmpegVideoEncoder::init()
      *   AV_PIX_FMT_YUVJ420P
     */
 
-    av_dict_set(&options, "preset", "slow", 0);
-    av_dict_set(&options, "crf", "20", 0);
+    // Screen recording benefits more from predictable real-time throughput
+    // than from the small size gain of the old "slow" preset. CRF 18 keeps
+    // thin handwriting and presentation text noticeably sharper.
+    av_dict_set(&options, "preset", "veryfast", 0);
+    av_dict_set(&options, "crf", "18", 0);
 
     ret = avcodec_open2(c, videoCodec, &options);
 

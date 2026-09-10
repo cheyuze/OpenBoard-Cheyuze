@@ -33,9 +33,9 @@
 
 UBAbstractVideoEncoder::UBAbstractVideoEncoder(QObject *pParent)
     : QObject(pParent)
-    , mFramesPerSecond(10)
+    , mFramesPerSecond(30)
     , mVideoSize(640, 480)
-    , mVideoBitsPerSecond(1700000) // 1.7 Mbps
+    , mVideoBitsPerSecond(12000000) // 12 Mbps
 {
     // NOOP
 
