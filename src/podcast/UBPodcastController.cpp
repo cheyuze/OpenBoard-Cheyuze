@@ -341,7 +341,6 @@ UBPodcastController::UBPodcastController(QObject* pParent)
     , mCameraPreview(0)
     , mRecordingState(Stopped)
     , mApplicationIsClosing(false)
-    , mRecordingTimestampOffset(0)
     , mDefaultAudioInputDeviceAction(0)
     , mNoAudioInputDeviceAction(0)
     , mSmallVideoSizeAction(0)
@@ -365,6 +364,10 @@ UBPodcastController::UBPodcastController(QObject* pParent)
 
     connect(UBApplication::app(), SIGNAL(lastWindowClosed()),
             this, SLOT(applicationAboutToQuit()));
+    // Menu Exit calls QCoreApplication::quit() directly and need not close a
+    // window first. Both exit routes must finish the recording synchronously.
+    connect(UBApplication::app(), SIGNAL(aboutToQuit()),
+            this, SLOT(applicationAboutToQuit()));
 
 }
 
@@ -385,6 +388,11 @@ void UBPodcastController::applicationAboutToQuit()
     {
         stop();
     }
+
+    // lastWindowClosed can be followed immediately by event-loop termination.
+    // Finish the container and auto-save now, including a stop already in flight.
+    if (mVideoEncoder)
+        mVideoEncoder->finishPendingRecording();
 }
 
 
@@ -517,7 +525,11 @@ void UBPodcastController::start()
     {
         mInitialized = false;
         mEmptyChapter = true;
-        mRecordingTimestampOffset = 0;
+        mEncodingError.clear();
+        mCaptureFailureStartedAt = -1;
+        stopRecordingTimers();
+        mMonotonicTimer.invalidate();
+        mRecordingClock = UBRecordingClock();
         mSuggestedRecordingFilePath.clear();
 
         // Starting a recording used to call applicationMainModeChanged()
@@ -641,6 +653,11 @@ void UBPodcastController::start()
         {
             connect(mVideoEncoder, SIGNAL(encodingStatus(const QString&)), this, SLOT(encodingStatus(const QString&)));
             connect(mVideoEncoder, SIGNAL(encodingFinished(bool)), this, SLOT(encodingFinished(bool)));
+            // Failure may occur while newPixmap() is still on the stack. Stop
+            // on the next event-loop turn rather than destroying its encoder
+            // reentrantly from a worker/capture callback.
+            connect(mVideoEncoder, &UBAbstractVideoEncoder::encodingError,
+                    this, &UBPodcastController::encodingError, Qt::QueuedConnection);
 
             if(mRecordingPalette)
             {
@@ -693,12 +710,12 @@ void UBPodcastController::start()
 
             mLatestCapture = QImage(mVideoFrameSizeAtStart, QImage::Format_RGB32); //0xffRRGGBB
 
-            mRecordStartTime = QTime::currentTime();
-
-            mRecordingProgressTimerEventID = startTimer(100);
-
             if(mVideoEncoder->start())
             {
+                mMonotonicTimer.start();
+                mRecordingClock.start(0);
+                mRecordingProgressTimerEventID = startTimer(100);
+                emit recordingProgressChanged(0);
                 setRecordingState(Recording);
 
                 // Keep producing frames even when the board itself is unchanged,
@@ -717,11 +734,25 @@ void UBPodcastController::start()
             }
             else
             {
-                UBApplication::showMessage(tr("Failed to start encoder ..."), false);
+                const QString error = mVideoEncoder->lastErrorMessage();
+                UBAbstractVideoEncoder *failedEncoder = mVideoEncoder;
+                mVideoEncoder = nullptr;
+                disconnect(failedEncoder, nullptr, this, nullptr);
+                failedEncoder->deleteLater();
+                stopRecordingTimers();
+                mMonotonicTimer.invalidate();
+                QSignalBlocker blocker(UBApplication::mainWindow->actionPodcastRecord);
+                UBApplication::mainWindow->actionPodcastRecord->setChecked(false);
+                emit recordingStateChanged(Stopped);
+                UBApplication::showMessage(tr("Failed to start encoder (%1)").arg(error), false);
             }
         }
         else
         {
+            stopRecordingTimers();
+            QSignalBlocker blocker(UBApplication::mainWindow->actionPodcastRecord);
+            UBApplication::mainWindow->actionPodcastRecord->setChecked(false);
+            emit recordingStateChanged(Stopped);
             UBApplication::showMessage(tr("No Podcast encoder available ..."), false);
         }
     }
@@ -733,11 +764,12 @@ void UBPodcastController::pause()
     {
         sendLatestPixmapToEncoder();
 
-        mTimeAtPaused = QTime::currentTime();
-
         if (mVideoEncoder->pause())
         {
+            mCaptureFailureStartedAt = -1;
+            mRecordingClock.pause(mMonotonicTimer.elapsed());
             setRecordingState(Paused);
+            emit recordingProgressChanged(elapsedRecordingMs());
         }
     }
 }
@@ -749,10 +781,15 @@ void UBPodcastController::unpause()
     {
         if (mVideoEncoder->unpause())
         {
-             mRecordingTimestampOffset += mTimeAtPaused.msecsTo(QTime::currentTime());
-             sendLatestPixmapToEncoder();
-
+             mCaptureFailureStartedAt = -1;
+             mRecordingClock.resume(mMonotonicTimer.elapsed());
              setRecordingState(Recording);
+             // Refresh content that may have changed during the pause.
+             mInitialized = false;
+             if (mSourceScene && !mIsDesktopMode)
+                 processScenePaintEvent();
+             else
+                 processScreenGrabingTimerEvent();
         }
     }
 }
@@ -764,20 +801,15 @@ void UBPodcastController::stop()
     {
         const bool stoppedWhilePaused = (mRecordingState == Paused);
 
-        if (mScreenGrabingTimerEventID != 0)
-        {
-            killTimer(mScreenGrabingTimerEventID);
-            mScreenGrabingTimerEventID = 0;
-        }
-
-        if (mRecordingProgressTimerEventID != 0)
-            killTimer(mRecordingProgressTimerEventID);
+        stopRecordingTimers();
+        mRecordingClock.stop(mMonotonicTimer.elapsed());
+        emit recordingProgressChanged(elapsedRecordingMs());
 
         // pause() already submits the last visible frame before stopping the
         // capture clock. If recording is ended without resuming, submitting
         // another frame here would use wall-clock time that still includes
         // the paused interval and artificially extend the MP4 duration.
-        if (!stoppedWhilePaused)
+        if (!stoppedWhilePaused && mEncodingError.isEmpty())
             sendLatestPixmapToEncoder();
 
         setRecordingState(Stopping);
@@ -847,12 +879,24 @@ void UBPodcastController::sceneBackgroundChanged()
 }
 
 
-long UBPodcastController::elapsedRecordingMs()
+qint64 UBPodcastController::elapsedRecordingMs() const
 {
-    QTime now = QTime::currentTime();
-    long msFromStart = mRecordStartTime.msecsTo(now);
+    return mRecordingClock.elapsed(mMonotonicTimer.isValid() ? mMonotonicTimer.elapsed() : 0);
+}
 
-    return msFromStart - mRecordingTimestampOffset;
+
+void UBPodcastController::stopRecordingTimers()
+{
+    if (mScreenGrabingTimerEventID)
+    {
+        killTimer(mScreenGrabingTimerEventID);
+        mScreenGrabingTimerEventID = 0;
+    }
+    if (mRecordingProgressTimerEventID)
+    {
+        killTimer(mRecordingProgressTimerEventID);
+        mRecordingProgressTimerEventID = 0;
+    }
 }
 
 
@@ -952,6 +996,7 @@ void UBPodcastController::processScenePaintEvent()
 
         scene->setRenderingContext(UBGraphicsScene::Screen);
 
+        p.end();
         sendLatestPixmapToEncoder();
     }
 }
@@ -1021,51 +1066,97 @@ void UBPodcastController::encodingStatus(const QString& pStatus)
 }
 
 
+void UBPodcastController::encodingError(const QString& message)
+{
+    // Queued notifications from an already-finished session must never stop a
+    // later recording. Only the currently attached encoder owns this session.
+    if (!mVideoEncoder || sender() != mVideoEncoder.data())
+        return;
+
+    reportRecordingFailure(message);
+}
+
+
+void UBPodcastController::reportRecordingFailure(const QString& message)
+{
+    if (mEncodingError.isEmpty())
+        mEncodingError = message.isEmpty() ? tr("未知录制错误") : message;
+
+    qWarning() << "Recording stopped after encoding failure:" << mEncodingError;
+    if (mRecordingState == Recording || mRecordingState == Paused)
+        stop();
+}
+
+
 void UBPodcastController::encodingFinished(bool ok)
 {
-    if (mVideoEncoder)
+    if (!mVideoEncoder || sender() != mVideoEncoder.data())
+        return;
+
+    UBAbstractVideoEncoder *finishedEncoder = mVideoEncoder;
+    const QString workingFilePath = finishedEncoder->videoFileName();
+    const QString error = mEncodingError.isEmpty()
+            ? finishedEncoder->lastErrorMessage() : mEncodingError;
+    // A Save As / error dialog runs a nested event loop. Detach the encoder
+    // before opening it so stale signals and deferred deletion cannot be
+    // confused with another recording.
+    mVideoEncoder = nullptr;
+    disconnect(finishedEncoder, nullptr, this, nullptr);
+    finishedEncoder->deleteLater();
+    stopRecordingTimers();
+    if (mMonotonicTimer.isValid())
+        mRecordingClock.stop(mMonotonicTimer.elapsed());
+    setRecordingState(Stopping);
+
+    if (ok && mEncodingError.isEmpty())
     {
-        if (ok)
+        const QString finalVideoFilePath = saveRecordingAs(workingFilePath);
+        if (finalVideoFilePath.isEmpty())
         {
-            const QString finalVideoFilePath = saveRecordingAs(mVideoEncoder->videoFileName());
-            if (finalVideoFilePath.isEmpty())
-            {
-                QFile::remove(mVideoEncoder->videoFileName());
-                UBApplication::showMessage(tr("The recording was discarded."), false);
-            }
-            else
-            {
-                mVideoEncoder->setVideoFileName(finalVideoFilePath);
-                mPodcastRecordingPath = QFileInfo(finalVideoFilePath).absolutePath();
-
-                if (!mApplicationIsClosing)
-                {
-                    QString location;
-
-                    if (mPodcastRecordingPath == QStandardPaths::writableLocation(QStandardPaths::DesktopLocation))
-                        location = tr("on your desktop ...");
-                    else
-                    {
-                        QDir dir(mPodcastRecordingPath);
-                        location = tr("in folder %1").arg(mPodcastRecordingPath);
-                    }
-
-                    UBApplication::showMessage(tr("Podcast created %1").arg(location), false);
-
-                }
-            }
+            QFile::remove(workingFilePath);
+            UBApplication::showMessage(tr("The recording was discarded."), false);
         }
         else
         {
-            qWarning() << mVideoEncoder->lastErrorMessage();
+            mPodcastRecordingPath = QFileInfo(finalVideoFilePath).absolutePath();
 
-            UBApplication::showMessage(tr("Podcast recording error (%1)").arg(mVideoEncoder->lastErrorMessage()), false);
+            if (!mApplicationIsClosing)
+            {
+                QString location;
+
+                if (mPodcastRecordingPath == QStandardPaths::writableLocation(QStandardPaths::DesktopLocation))
+                    location = tr("on your desktop ...");
+                else
+                {
+                    location = tr("in folder %1").arg(mPodcastRecordingPath);
+                }
+
+                UBApplication::showMessage(tr("Podcast created %1").arg(location), false);
+            }
         }
-
-        mVideoEncoder->deleteLater();
-
-        setRecordingState(Stopped);
     }
+    else
+    {
+        const QString reason = error.isEmpty() ? tr("未知录制错误") : error;
+        QString message = tr("录制遇到错误，已停止，避免继续生成画面不更新的视频。\n\n原因：%1").arg(reason);
+        if (QFileInfo::exists(workingFilePath))
+            message += tr("\n\n已保留录制文件，可能包含可恢复的内容：\n%1").arg(QDir::toNativeSeparators(workingFilePath));
+        else
+            message += tr("\n\n未生成可恢复的录制文件。");
+
+        qWarning() << message;
+        UBApplication::showMessage(message, false);
+        if (!mApplicationIsClosing)
+        {
+            QMessageBox errorDialog(QMessageBox::Warning, tr("录制已停止"),
+                    message, QMessageBox::Ok, UBApplication::mainWindow);
+            errorDialog.setTextFormat(Qt::PlainText);
+            execCenteredDialog(&errorDialog);
+        }
+    }
+
+    mEncodingError.clear();
+    setRecordingState(Stopped);
 }
 
 
@@ -1146,7 +1237,7 @@ QString UBPodcastController::saveRecordingAs(const QString& temporaryFilePath)
     // Closing the application bypasses the Save As dialog. Keep the recording
     // under its unique suggested name so the shutdown path remains recoverable.
     if (destination.isEmpty())
-        destination = suggestedPath;
+        destination = UBFileSystemUtils::nextAvailableFileName(suggestedPath, " ");
 
     if (QFileInfo(destination).suffix().isEmpty())
         destination += ".mp4";
@@ -1195,13 +1286,17 @@ QString UBPodcastController::saveRecordingAs(const QString& temporaryFilePath)
         return destination;
     }
 
-    QMessageBox saveErrorDialog(QMessageBox::Warning,
-            tr("保存录制视频"),
-            tr("无法将视频保存到所选位置。原有文件没有被修改，录制视频仍保存在：\n%1")
-                    .arg(source),
-            QMessageBox::Ok,
-            dialogParent);
-    execCenteredDialog(&saveErrorDialog);
+    const QString saveError = tr("无法将视频保存到所选位置。原有文件没有被修改，录制视频仍保存在：\n%1")
+            .arg(source);
+    qWarning() << saveError;
+    UBApplication::showMessage(saveError, false);
+    if (!mApplicationIsClosing)
+    {
+        QMessageBox saveErrorDialog(QMessageBox::Warning,
+                tr("保存录制视频"), saveError, QMessageBox::Ok, dialogParent);
+        saveErrorDialog.setTextFormat(Qt::PlainText);
+        execCenteredDialog(&saveErrorDialog);
+    }
     return source;
 }
 
@@ -1295,6 +1390,9 @@ void UBPodcastController::timerEvent(QTimerEvent *event)
 
 void UBPodcastController::processScreenGrabingTimerEvent()
 {
+    if (mRecordingState != Recording)
+        return;
+
     QPixmap widgetContent;
 
     if (mIsDesktopMode)
@@ -1308,18 +1406,29 @@ void UBPodcastController::processScreenGrabingTimerEvent()
         widgetContent = grabDesktopCapture();
         if (widgetContent.isNull())
         {
-            qWarning() << "Desktop recording frame could not be captured";
+            captureFrameUnavailable();
             return;
         }
     }
     else
     {
+        if (!mSourceWidget || mSourceWidget->size().isEmpty())
+        {
+            captureFrameUnavailable();
+            return;
+        }
         // render web view
         widgetContent = QPixmap(mSourceWidget->size());
+        if (widgetContent.isNull())
+        {
+            captureFrameUnavailable();
+            return;
+        }
         QPainter p(&widgetContent);
         mSourceWidget->render(&p);
     }
 
+    mCaptureFailureStartedAt = -1;
     QPainter p(&mLatestCapture);
 
     if (!mInitialized)
@@ -1334,7 +1443,23 @@ void UBPodcastController::processScreenGrabingTimerEvent()
     p.setRenderHints(QPainter::SmoothPixmapTransform);
     p.drawPixmap(targetRect.left(), targetRect.top(), widgetContent.scaled(targetRect.width(), targetRect.height(),  Qt::KeepAspectRatio, Qt::SmoothTransformation));
 
+    p.end();
     sendLatestPixmapToEncoder();
+}
+
+
+void UBPodcastController::captureFrameUnavailable()
+{
+    const qint64 now = mMonotonicTimer.elapsed();
+    if (mCaptureFailureStartedAt < 0)
+    {
+        mCaptureFailureStartedAt = now;
+        qWarning() << "Recording frame could not be captured; waiting for source recovery";
+    }
+    else if (now - mCaptureFailureStartedAt >= 3000)
+    {
+        reportRecordingFailure(tr("连续 3 秒无法获取录制画面。请检查录制窗口是否已关闭或最小化。"));
+    }
 }
 
 

@@ -44,15 +44,19 @@ class UBAbstractVideoEncoder : public QObject
 
         virtual bool stop() = 0;
 
+        // Shutdown may remove the Qt event loop before asynchronous completion
+        // can run. Implementations can drain/join and finalize synchronously.
+        virtual void finishPendingRecording() {}
+
         virtual bool pause() { return false;}
 
         virtual bool unpause() { return false;}
 
         virtual bool canPause() { return false;}
 
-        virtual void newPixmap(const QImage& pImage, long timestamp) = 0;
+        virtual void newPixmap(const QImage& pImage, qint64 timestamp) = 0;
 
-        virtual void newChapter(const QString& pLabel, long timestamp);
+        virtual void newChapter(const QString& pLabel, qint64 timestamp);
 
         void setFramesPerSecond(int pFps)
         {
@@ -115,6 +119,10 @@ class UBAbstractVideoEncoder : public QObject
         void encodingStatus(const QString& pStatus);
 
         void encodingFinished(bool ok);
+
+        // Emitted once for a fatal capture/encoding/write failure. The
+        // controller stops the session and preserves the recovery file.
+        void encodingError(const QString& message);
 
         void audioLevelChanged(quint8 level);
 

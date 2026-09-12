@@ -54,8 +54,8 @@ class UBWindowsMediaVideoEncoder : public UBAbstractVideoEncoder
 
         virtual bool canPause() { return true;};
 
-        virtual void newPixmap(const QImage& pPix, long timestamp);
-        virtual void newChapter(const QString& pLabel, long timestamp);
+        virtual void newPixmap(const QImage& pPix, qint64 timestamp);
+        virtual void newChapter(const QString& pLabel, qint64 timestamp);
 
         virtual QString videoFileExtension() const
         {

@@ -47,7 +47,7 @@ UBAbstractVideoEncoder::~UBAbstractVideoEncoder()
 }
 
 
-void UBAbstractVideoEncoder::newChapter(const QString& pLabel, long timestamp)
+void UBAbstractVideoEncoder::newChapter(const QString& pLabel, qint64 timestamp)
 {
     Q_UNUSED(pLabel);
     Q_UNUSED(timestamp);

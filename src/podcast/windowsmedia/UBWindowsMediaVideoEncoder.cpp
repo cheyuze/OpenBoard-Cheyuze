@@ -192,7 +192,7 @@ bool UBWindowsMediaVideoEncoder::stop()
 }
 
 
-void UBWindowsMediaVideoEncoder::newPixmap(const QImage& pPix, long timestamp)
+void UBWindowsMediaVideoEncoder::newPixmap(const QImage& pPix, qint64 timestamp)
 {
     if(mWMVideo && !mIsPaused)
     {
@@ -204,7 +204,7 @@ void UBWindowsMediaVideoEncoder::newPixmap(const QImage& pPix, long timestamp)
 }
 
 
-void UBWindowsMediaVideoEncoder::newChapter(const QString& pLabel, long timestamp)
+void UBWindowsMediaVideoEncoder::newChapter(const QString& pLabel, qint64 timestamp)
 {
     if(mWMVideo)
        mWMVideo->startNewChapter(pLabel, timestamp);
@@ -295,5 +295,4 @@ bool UBWindowsMediaVideoEncoder::unpause()
 
     return result;
 }
-
 

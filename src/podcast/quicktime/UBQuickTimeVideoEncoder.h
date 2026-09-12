@@ -51,7 +51,7 @@ class UBQuickTimeVideoEncoder : public UBAbstractVideoEncoder
         virtual bool start();
         virtual bool stop();
 
-        virtual void newPixmap(const QImage& pImage, long timestamp);
+        virtual void newPixmap(const QImage& pImage, qint64 timestamp);
 
         virtual QString videoFileExtension() const
         {

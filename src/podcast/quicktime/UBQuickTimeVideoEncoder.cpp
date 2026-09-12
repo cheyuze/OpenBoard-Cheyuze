@@ -97,7 +97,7 @@ void UBQuickTimeVideoEncoder::compressionFinished()
 }
 
 
-void UBQuickTimeVideoEncoder::newPixmap(const QImage& pImage, long timestamp)
+void UBQuickTimeVideoEncoder::newPixmap(const QImage& pImage, qint64 timestamp)
 {
     //qDebug() << "New Frame at ms" << timestamp;
 
@@ -178,6 +178,5 @@ void UBQuickTimeVideoEncoder::setRecordAudio(bool pRecordAudio)
 {
     mShouldRecordAudio = pRecordAudio;
 }
-
 
 

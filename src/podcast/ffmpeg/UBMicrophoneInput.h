@@ -69,6 +69,7 @@ private slots:
     void onDataReady();
 
 private:
+    void emitBufferedAudio(bool flush);
     double sampleRelativeLevel(const char* sample);
     quint8 audioLevel(const QByteArray& data);
     QString getErrorString(QAudio::Error errorCode);
@@ -81,10 +82,11 @@ private:
     QAudioInput* mAudioInput;
 #endif
 
-    QIODevice* mIODevice;
+    QPointer<QIODevice> mIODevice;
     QAudioFormat mAudioFormat;
 
-    qint64 mSeekPos;
+    QByteArray mPendingAudio;
+    bool mCaptureActive;
     quint8 mLastAudioLevel;
 };
 

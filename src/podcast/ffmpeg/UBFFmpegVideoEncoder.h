@@ -74,6 +74,7 @@ class UBFFmpegVideoEncoder : public UBAbstractVideoEncoder
     Q_OBJECT
 
     friend class UBFFmpegVideoEncoderWorker;
+    friend class UBFFmpegVideoEncoderTest;
 
 public:
 
@@ -82,11 +83,12 @@ public:
 
     bool start();
     bool stop();
+    void finishPendingRecording() override;
     bool pause() override;
     bool unpause() override;
     bool canPause() override { return true; }
 
-    void newPixmap(const QImage& pImage, long timestamp);
+    void newPixmap(const QImage& pImage, qint64 timestamp) override;
 
     QString videoFileExtension() const { return "mp4"; }
 
@@ -105,12 +107,14 @@ private:
     struct ImageFrame
     {
         QImage image;
-        long timestamp; // unit: ms
+        qint64 timestamp; // unit: ms
     };
 
     AVFrame* convertImageFrame(ImageFrame frame);
-    AVFrame* convertAudio(QByteArray data);
     void processAudio(QByteArray& data);
+    bool queueAudioFromFifo(bool final);
+    bool flushAudioInput();
+    void releaseResources();
     bool init();
 
     QString mLastErrorMessage;
@@ -127,10 +131,15 @@ private:
     // Video
     // ------------------------------------------
     AVCodecContext* mVideoCodecContext;
-    QQueue<ImageFrame> mPendingFrames;
     struct SwsContext * mSwsContext;
 
     int mVideoTimebase;
+    qint64 mLastVideoPts;
+    bool mStarted;
+    bool mAcceptingData;
+    bool mPaused;
+    bool mFinishing;
+    bool mHeaderWritten;
 
     // Audio
     // ------------------------------------------
@@ -145,7 +154,7 @@ private:
     /// Sample rate for encoded audio
     int mAudioSampleRate;
     /// Total audio frames sent to encoder
-    int mAudioFrameCount;
+    qint64 mAudioFrameCount;
 };
 
 
@@ -154,6 +163,7 @@ class UBFFmpegVideoEncoderWorker : public QObject
     Q_OBJECT
 
     friend class UBFFmpegVideoEncoder;
+    friend class UBFFmpegVideoEncoderTest;
 
 public:
     UBFFmpegVideoEncoderWorker(UBFFmpegVideoEncoder* controller);
@@ -161,8 +171,10 @@ public:
 
     bool isRunning() { return mIsRunning; }
 
-    void queueVideoFrame(AVFrame* frame);
-    void queueAudioFrame(AVFrame* frame);
+    bool queueVideoFrame(AVFrame* frame);
+    bool queueAudioFrame(AVFrame* frame);
+    QString errorMessage();
+    bool hasFailed() const { return mFailed; }
 
 public slots:
     void runEncoding();
@@ -173,8 +185,8 @@ signals:
     void error(QString message);
 
 private:
-    void writeLatestVideoFrame();
-    void writeLatestAudioFrame();
+    void recordFailure(const QString& message);
+    void clearQueues(); // caller holds mFrameQueueMutex
 
     UBFFmpegVideoEncoder* mController;
 
@@ -182,12 +194,17 @@ private:
     // newer compiler must be used if this class is to be used on Windows
     std::atomic<bool> mStopRequested;
     std::atomic<bool> mIsRunning;
+    std::atomic<bool> mFailed;
+    QString mErrorMessage;
 
     QQueue<AVFrame*> mImageQueue;
     QQueue<AVFrame*> mAudioQueue;
 
     QMutex mFrameQueueMutex;
     QWaitCondition mWaitCondition;
+    qint64 mQueuedVideoBytes;
+    qint64 mDroppedVideoFrames;
+    bool mVideoFramesDequeued;
 
     AVPacket* mVideoPacket;
     AVPacket* mAudioPacket;

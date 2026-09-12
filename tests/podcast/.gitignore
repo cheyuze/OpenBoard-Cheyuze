@@ -1,0 +1,13 @@
+/build/
+/output-*/
+/bin/
+/obj/
+/moc/
+/.qmake.stash
+/Makefile*
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.mp4
+*.log

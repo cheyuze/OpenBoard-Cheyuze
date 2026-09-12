@@ -37,8 +37,6 @@
     #define AV_ERROR_MAX_STRING_SIZE    64
     #define AV_CODEC_FLAG_GLOBAL_HEADER (1 << 22)
 
-    uint8_t* audio_samples_buffer; // used by processAudio because av_frame_get_buffer doesn't exist in this version
-
     int avformat_alloc_output_context2(AVFormatContext **avctx, AVOutputFormat *oformat,
                                        const char *format, const char *filename)
     {
@@ -173,7 +171,7 @@ QString avErrorToQString(int errnum)
  * @param stream The stream to write to
  * @param outputFormatContext The output format context
  */
-void writeFrame(AVFrame *frame, AVPacket *packet, AVStream *stream, AVCodecContext* c, AVFormatContext *outputFormatContext)
+int writeFrame(AVFrame *frame, AVPacket *packet, AVStream *stream, AVCodecContext* c, AVFormatContext *outputFormatContext)
 {
     int ret;
 
@@ -188,7 +186,7 @@ void writeFrame(AVFrame *frame, AVPacket *packet, AVStream *stream, AVCodecConte
             ret = avcodec_encode_video2(stream->codec, packet, frame, &gotOutput);
 
         if (ret < 0)
-            qWarning() << "Couldn't encode audio frame: " << avErrorToQString(ret);
+            return ret;
 
         else if (gotOutput) {
             AVRational codecTimebase = stream->codec->time_base;
@@ -197,39 +195,70 @@ void writeFrame(AVFrame *frame, AVPacket *packet, AVStream *stream, AVCodecConte
             av_packet_rescale_ts(packet, codecTimebase, streamVideoTimebase);
             packet->stream_index = stream->index;
 
-            av_interleaved_write_frame(outputFormatContext, packet);
+            ret = av_interleaved_write_frame(outputFormatContext, packet);
             av_packet_unref(packet);
+            if (ret < 0)
+                return ret;
         }
 
     } while (gotOutput && !frame);
 #else
-    // send the frame to the encoder
-    ret = avcodec_send_frame(c, frame);
-
-    while (ret >= 0) {
-        ret = avcodec_receive_packet(c, packet);
-        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-            break;
-        else if (ret < 0) {
-            qWarning() << "Couldn't encode audio frame: " << avErrorToQString(ret);
+    auto drainPackets = [&](int& packetCount) {
+        for (;;) {
+            int result = avcodec_receive_packet(c, packet);
+            if (result == AVERROR(EAGAIN) || result == AVERROR_EOF)
+                return 0;
+            if (result < 0)
+                return result;
+            ++packetCount;
+            // MP4 can mark a zero-duration final video packet as discardable.
+            // Supply its nominal duration so the last captured frame survives.
+            if (c->codec_type == AVMEDIA_TYPE_VIDEO && packet->duration <= 0)
+                packet->duration = qMax<int64_t>(1, av_rescale_q(1, av_inv_q(c->framerate), c->time_base));
+            av_packet_rescale_ts(packet, c->time_base, stream->time_base);
+            packet->stream_index = stream->index;
+            result = av_interleaved_write_frame(outputFormatContext, packet);
+            av_packet_unref(packet);
+            if (result < 0)
+                return result;
+            if (outputFormatContext->pb && outputFormatContext->pb->error < 0)
+                return outputFormatContext->pb->error;
         }
+    };
 
-        /* rescale output packet timestamp values from codec to stream timebase */
-        av_packet_rescale_ts(packet, c->time_base, stream->time_base);
-        packet->stream_index = stream->index;
-
-        /* Write the compressed frame to the media file. */
-        ret = av_interleaved_write_frame(outputFormatContext, packet);
-        /* pkt is now blank (av_interleaved_write_frame() takes ownership of
-         * its contents and resets pkt), so that no unreferencing is necessary.
-         * This would be different if one used av_write_frame(). */
+    // EAGAIN means drain and retry the SAME frame, not silently discard it.
+    ret = avcodec_send_frame(c, frame);
+    if (ret == AVERROR(EAGAIN)) {
+        int drained = 0;
+        ret = drainPackets(drained);
+        if (ret < 0)
+            return ret;
+        if (!drained)
+            return AVERROR(EINVAL);
+        ret = avcodec_send_frame(c, frame);
     }
+    if (ret == AVERROR_EOF && !frame)
+        return 0;
+    if (ret < 0)
+        return ret;
+    int drained = 0;
+    return drainPackets(drained);
 #endif
+    return 0;
 }
 
-void flushStream(AVPacket *packet, AVStream *stream, AVCodecContext* c, AVFormatContext *outputFormatContext)
+int flushStream(AVPacket *packet, AVStream *stream, AVCodecContext* c, AVFormatContext *outputFormatContext)
 {
-    writeFrame(nullptr, packet, stream, c, outputFormatContext);
+    return writeFrame(nullptr, packet, stream, c, outputFormatContext);
+}
+
+static void freeRecordingFrame(AVFrame** frame)
+{
+#if LIBAVFORMAT_VERSION_MICRO < 100
+    if (*frame)
+        av_freep(&(*frame)->data[0]);
+#endif
+    av_frame_free(frame);
 }
 
 //-------------------------------------------------------------------------
@@ -239,9 +268,19 @@ void flushStream(AVPacket *packet, AVStream *stream, AVCodecContext* c, AVFormat
 UBFFmpegVideoEncoder::UBFFmpegVideoEncoder(QObject* parent)
     : UBAbstractVideoEncoder(parent)
     , mOutputFormatContext(nullptr)
+    , mVideoStream(nullptr)
+    , mAudioStream(nullptr)
+    , mVideoCodecContext(nullptr)
     , mSwsContext(nullptr)
+    , mLastVideoPts(-1)
+    , mStarted(false)
+    , mAcceptingData(false)
+    , mPaused(false)
+    , mFinishing(false)
+    , mHeaderWritten(false)
     , mShouldRecordAudio(true)
     , mAudioInput(nullptr)
+    , mAudioCodecContext(nullptr)
     , mSwrContext(nullptr)
     , mAudioOutBuffer(nullptr)
     , mAudioSampleRate(44100)
@@ -261,7 +300,7 @@ UBFFmpegVideoEncoder::UBFFmpegVideoEncoder(QObject* parent)
             mVideoWorker, SLOT(runEncoding()));
 
     connect(mVideoWorker, SIGNAL(encodingFinished()),
-            mVideoEncoderThread, SLOT(quit()));
+            mVideoEncoderThread, SLOT(quit()), Qt::DirectConnection);
 
     connect(mVideoEncoderThread, SIGNAL(finished()),
             this, SLOT(finishEncoding()));
@@ -269,6 +308,17 @@ UBFFmpegVideoEncoder::UBFFmpegVideoEncoder(QObject* parent)
 
 UBFFmpegVideoEncoder::~UBFFmpegVideoEncoder()
 {
+    mAcceptingData = false;
+    if (mAudioInput) {
+        disconnect(mAudioInput, nullptr, this, nullptr);
+        mAudioInput->stop();
+    }
+    // Never free codec contexts while the worker can still access them.
+    if (mVideoEncoderThread->isRunning()) {
+        mVideoWorker->stopEncoding();
+        mVideoEncoderThread->wait();
+    }
+    releaseResources();
     if (mVideoWorker)
         delete mVideoWorker;
 
@@ -281,20 +331,29 @@ UBFFmpegVideoEncoder::~UBFFmpegVideoEncoder()
 
 void UBFFmpegVideoEncoder::setLastErrorMessage(const QString& pMessage)
 {
+    if (!mLastErrorMessage.isEmpty())
+        return; // Keep the first cause, not a later flush/close consequence.
     qWarning() << "FFmpeg video encoder:" << pMessage;
     mLastErrorMessage = pMessage;
+    if (mStarted && !mFinishing)
+        emit encodingError(pMessage);
 }
 
 
 bool UBFFmpegVideoEncoder::start()
 {
+    if (mStarted)
+        return false;
     bool initialized = init();
 
     if (initialized) {
+        mStarted = true;
+        mAcceptingData = true;
         mVideoEncoderThread->start();
         if (mShouldRecordAudio)
             mAudioInput->start();
-    }
+    } else
+        releaseResources();
 
     return initialized;
 }
@@ -303,23 +362,46 @@ bool UBFFmpegVideoEncoder::stop()
 {
     qDebug() << "Video encoder: stop requested";
 
-    mVideoWorker->stopEncoding();
-
-    if (mShouldRecordAudio)
+    if (!mAcceptingData)
+        return true;
+    // Stop the producer first, flush its residual samples, then drain worker
+    // queues. The worker also handles stop-before-thread-start without waiting.
+    if (mShouldRecordAudio && mAudioInput)
         mAudioInput->stop();
+    if (mShouldRecordAudio && mLastErrorMessage.isEmpty() && !mVideoWorker->hasFailed())
+        flushAudioInput();
+    mAcceptingData = false;
+    mVideoWorker->stopEncoding();
 
     return true;
 }
 
+void UBFFmpegVideoEncoder::finishPendingRecording()
+{
+    if (!mStarted || mFinishing)
+        return;
+    stop();
+    mVideoEncoderThread->wait();
+    // During application shutdown the main event loop may no longer deliver
+    // QThread::finished. Finish the MP4 and notify the controller synchronously.
+    finishEncoding();
+}
+
 bool UBFFmpegVideoEncoder::pause()
 {
+    if (!mAcceptingData || !mLastErrorMessage.isEmpty())
+        return false;
     if (mShouldRecordAudio && mAudioInput)
         mAudioInput->stop();
+    mPaused = true;
     return true;
 }
 
 bool UBFFmpegVideoEncoder::unpause()
 {
+    if (!mAcceptingData || !mLastErrorMessage.isEmpty())
+        return false;
+    mPaused = false;
     if (mShouldRecordAudio && mAudioInput)
         mAudioInput->start();
     return true;
@@ -327,6 +409,12 @@ bool UBFFmpegVideoEncoder::unpause()
 
 bool UBFFmpegVideoEncoder::init()
 {
+    if (framesPerSecond() < 1 || framesPerSecond() > 120 ||
+            videoSize().width() < 2 || videoSize().height() < 2 ||
+            videoSize().width() % 2 || videoSize().height() % 2) {
+        setLastErrorMessage(tr("录制分辨率或帧率无效。"));
+        return false;
+    }
 #if LIBAVFORMAT_VERSION_MAJOR < 58
     av_register_all();
     avcodec_register_all();
@@ -366,6 +454,7 @@ bool UBFFmpegVideoEncoder::init()
     }
 
     AVCodecContext* c = avcodec_alloc_context3(videoCodec);
+    mVideoCodecContext = c;
     if (!c) {
         setLastErrorMessage("Could not allocate encoding context");
         return false;
@@ -401,6 +490,7 @@ bool UBFFmpegVideoEncoder::init()
     av_dict_set(&options, "crf", "18", 0);
 
     ret = avcodec_open2(c, videoCodec, &options);
+    av_dict_free(&options);
 
     if (ret < 0) {
         setLastErrorMessage(QString("Couldn't open video codec: ") + avErrorToQString(ret));
@@ -421,6 +511,10 @@ bool UBFFmpegVideoEncoder::init()
                                        c->width, c->height, AV_PIX_FMT_RGB32,
                                        c->width, c->height, c->pix_fmt,
                                        SWS_BICUBIC, nullptr, nullptr, nullptr);
+    if (!mSwsContext) {
+        setLastErrorMessage(tr("无法创建视频颜色转换器。"));
+        return false;
+    }
 
     // Audio codec and context
     // -------------------------------------
@@ -435,6 +529,8 @@ bool UBFFmpegVideoEncoder::init()
 
         connect(mAudioInput, SIGNAL(dataAvailable(QByteArray)),
                 this, SLOT(onAudioAvailable(QByteArray)));
+        connect(mAudioInput, SIGNAL(error(QString)),
+                this, SLOT(setLastErrorMessage(QString)));
 
         mAudioInput->setInputDevice(audioRecordingDevice());
 
@@ -464,6 +560,7 @@ bool UBFFmpegVideoEncoder::init()
         mAudioStream->id = mOutputFormatContext->nb_streams-1;
 
         c = avcodec_alloc_context3(audioCodec);
+        mAudioCodecContext = c;
         if (!c) {
             setLastErrorMessage("Could not allocate encoding context");
             return false;
@@ -541,6 +638,7 @@ bool UBFFmpegVideoEncoder::init()
         av_channel_layout_default(&inChannelLayout, inChannelCount);
         av_opt_set_chlayout  (mSwrContext, "in_chlayout", &inChannelLayout, 0);
         av_opt_set_chlayout  (mSwrContext, "out_chlayout", &c->ch_layout, 0);
+        av_channel_layout_uninit(&inChannelLayout);
 #endif
 
         ret = swr_init(mSwrContext);
@@ -556,11 +654,15 @@ bool UBFFmpegVideoEncoder::init()
         int nb_channels = c->ch_layout.nb_channels;
 #endif
         mAudioOutBuffer = av_audio_fifo_alloc(c->sample_fmt, nb_channels, c->frame_size);
+        if (!mAudioOutBuffer) {
+            setLastErrorMessage(tr("无法分配录音缓冲区。"));
+            return false;
+        }
     }
 
 
     // Open the output file
-    ret = avio_open(&(mOutputFormatContext->pb), videoFileName().toStdString().c_str(), AVIO_FLAG_WRITE);
+    ret = avio_open(&(mOutputFormatContext->pb), videoFileName().toUtf8().constData(), AVIO_FLAG_WRITE);
 
     if (ret < 0) {
         setLastErrorMessage(QString("Couldn't open video file for writing: ") + avErrorToQString(ret));
@@ -575,6 +677,7 @@ bool UBFFmpegVideoEncoder::init()
         return false;
     }
 
+    mHeaderWritten = true;
     return true;
 }
 
@@ -582,32 +685,25 @@ bool UBFFmpegVideoEncoder::init()
  * This function should be called every time a new "screenshot" is ready.
  * The image is converted to the right format and sent to the encoder.
  */
-void UBFFmpegVideoEncoder::newPixmap(const QImage &pImage, long timestamp)
+void UBFFmpegVideoEncoder::newPixmap(const QImage &pImage, qint64 timestamp)
 {
-    if (!mVideoWorker->isRunning()) {
-        qDebug() << "Encoder worker thread not running. Queuing frame.";
-        mPendingFrames.enqueue({pImage, timestamp});
+    if (!mAcceptingData || mPaused || !mLastErrorMessage.isEmpty() || mVideoWorker->hasFailed())
+        return;
+    if (timestamp < 0) {
+        setLastErrorMessage(tr("录制画面的时间戳无效。"));
+        return;
     }
-
-    else {
-        // First send any queued frames, then the latest one
-        while (!mPendingFrames.isEmpty()) {
-            AVFrame* avFrame = convertImageFrame(mPendingFrames.dequeue());
-            if (avFrame)
-                mVideoWorker->queueVideoFrame(avFrame);
-        }
-
-        // note: if converting the frame turns out to be too slow to do here, it
-        // can always be done from the worker thread (in that case,
-        // the worker's queue would contain ImageFrames rather than AVFrames)
-
-        AVFrame* avFrame = convertImageFrame({pImage, timestamp});
-        if (avFrame)
-            mVideoWorker->queueVideoFrame(avFrame);
-
-        // signal the worker that frames are available
-        mVideoWorker->mWaitCondition.wakeAll();
+    const qint64 pts = av_rescale_q(timestamp, AVRational{1, 1000}, mVideoCodecContext->time_base);
+    if (pts < mLastVideoPts) {
+        setLastErrorMessage(tr("录制画面的时间发生倒退，已停止录制以保护视频。"));
+        return;
     }
+    if (pts == mLastVideoPts)
+        return; // Scene paint and capture timer can fire in the same millisecond.
+
+    AVFrame* avFrame = convertImageFrame({pImage, timestamp});
+    if (avFrame && mVideoWorker->queueVideoFrame(avFrame))
+        mLastVideoPts = pts;
 }
 
 /**
@@ -616,39 +712,69 @@ void UBFFmpegVideoEncoder::newPixmap(const QImage &pImage, long timestamp)
  */
 AVFrame* UBFFmpegVideoEncoder::convertImageFrame(ImageFrame frame)
 {
+    if (frame.image.isNull() || frame.image.size() != videoSize()) {
+        setLastErrorMessage(tr("无法获取有效的录制画面。"));
+        return nullptr;
+    }
+    if (frame.image.format() != QImage::Format_RGB32)
+        frame.image = frame.image.convertToFormat(QImage::Format_RGB32);
+    if (frame.image.isNull()) {
+        setLastErrorMessage(tr("无法转换录制画面的像素格式。"));
+        return nullptr;
+    }
     AVFrame* avFrame = av_frame_alloc();
+    if (!avFrame) {
+        setLastErrorMessage(tr("无法分配视频帧。"));
+        return nullptr;
+    }
 
     avFrame->format = mVideoCodecContext->pix_fmt;
     avFrame->width = mVideoCodecContext->width;
     avFrame->height = mVideoCodecContext->height;
-    avFrame->pts = mVideoTimebase * frame.timestamp / 1000;
+    // Rescale in 64 bits. int * Windows long overflowed after 11:55 at 30fps.
+    avFrame->pts = av_rescale_q(frame.timestamp, AVRational{1, 1000}, mVideoCodecContext->time_base);
+#if LIBAVUTIL_VERSION_MAJOR >= 58
+    avFrame->duration = qMax<int64_t>(1, av_rescale_q(1, AVRational{1, framesPerSecond()}, mVideoCodecContext->time_base));
+#endif
 
     const uchar * rgbImage = frame.image.bits();
 
     const int in_linesize[1] = { static_cast<int>(frame.image.bytesPerLine()) };
 
     // Allocate the output image
-    if (av_image_alloc(avFrame->data, avFrame->linesize, mVideoCodecContext->width,
-                       mVideoCodecContext->height, mVideoCodecContext->pix_fmt, 32) < 0)
+#if LIBAVFORMAT_VERSION_MICRO < 100
+    const int allocated = av_image_alloc(avFrame->data, avFrame->linesize, avFrame->width,
+                                        avFrame->height, mVideoCodecContext->pix_fmt, 32);
+#else
+    const int allocated = av_frame_get_buffer(avFrame, 32);
+#endif
+    if (allocated < 0)
     {
-        qWarning() << "Couldn't allocate image";
+        freeRecordingFrame(&avFrame);
+        setLastErrorMessage(tr("无法分配录制画面缓冲区：%1").arg(avErrorToQString(allocated)));
         return nullptr;
     }
 
-    sws_scale(mSwsContext,
+    const int scaled = sws_scale(mSwsContext,
               (const uint8_t* const*)&rgbImage,
               in_linesize,
               0,
               mVideoCodecContext->height,
               avFrame->data,
               avFrame->linesize);
+    if (scaled != avFrame->height) {
+        freeRecordingFrame(&avFrame);
+        setLastErrorMessage(tr("录制画面转换失败。"));
+        return nullptr;
+    }
 
     return avFrame;
 }
 
 void UBFFmpegVideoEncoder::onAudioAvailable(QByteArray data)
 {
-    if (!data.isEmpty())
+    if (mAcceptingData && !mPaused && mLastErrorMessage.isEmpty()
+            && !mVideoWorker->hasFailed() && !data.isEmpty())
         processAudio(data);
 }
 
@@ -665,10 +791,19 @@ void UBFFmpegVideoEncoder::processAudio(QByteArray &data)
     const char * inSamples = data.constData();
 
     // The number of samples (per channel) in the input
-    int inSamplesCount = data.size() / ((mAudioInput->sampleSize() / 8) * mAudioInput->channelCount());
+    const int bytesPerFrame = (mAudioInput->sampleSize() / 8) * mAudioInput->channelCount();
+    if (bytesPerFrame <= 0 || data.size() % bytesPerFrame != 0) {
+        setLastErrorMessage(tr("录音数据格式无效。"));
+        return;
+    }
+    int inSamplesCount = data.size() / bytesPerFrame;
 
     // The number of samples we will get after conversion
     int outSamplesCount = swr_get_out_samples(mSwrContext, inSamplesCount);
+    if (outSamplesCount <= 0) {
+        setLastErrorMessage(tr("录音重采样缓冲区无效。"));
+        return;
+    }
 
     // Allocate output samples
     uint8_t ** outSamples = nullptr;
@@ -683,7 +818,7 @@ void UBFFmpegVideoEncoder::processAudio(QByteArray &data)
                                              nb_channels, outSamplesCount,
                                              codecContext->sample_fmt, 0);
     if (ret < 0) {
-        qWarning() << "Could not allocate audio samples" << avErrorToQString(ret);
+        setLastErrorMessage(tr("无法分配录音数据：%1").arg(avErrorToQString(ret)));
         return;
     }
 
@@ -693,30 +828,34 @@ void UBFFmpegVideoEncoder::processAudio(QByteArray &data)
                       outSamples, outSamplesCount,
                       (const uint8_t **)&inSamples, inSamplesCount);
 
-    if (ret < 0) {
-        qWarning() << "Error converting audio samples: " << avErrorToQString(ret);
+    const int converted = ret;
+    if (converted > 0)
+        ret = av_audio_fifo_write(mAudioOutBuffer, (void**)outSamples, converted);
+    // Free on every path; previously every captured audio chunk leaked here.
+    av_freep(&outSamples[0]);
+    av_freep(&outSamples);
+    if (converted < 0 || ret != converted) {
+        setLastErrorMessage(tr("录音转换或缓冲写入失败：%1").arg(avErrorToQString(ret < 0 ? ret : AVERROR(EIO))));
         return;
     }
+    queueAudioFromFifo(false);
+}
 
-    // Append the converted samples to the out buffer.
-    // swr_convert returns the number of samples actually produced. Queuing the
-    // larger capacity instead slowly stretches the audio and causes A/V drift.
-    const int convertedSamplesCount = ret;
-    ret = av_audio_fifo_write(mAudioOutBuffer, (void**)outSamples, convertedSamplesCount);
-    if (ret < 0) {
-        qWarning() << "Could not write to FIFO queue: " << avErrorToQString(ret);
-        return;
-    }
-
-    // Keep the data queued until next call if the encoder thread isn't running
-    if (!mVideoWorker->isRunning())
-        return;
-
-    bool framesAdded = false;
-    while (av_audio_fifo_size(mAudioOutBuffer) >= codecContext->frame_size) {
+bool UBFFmpegVideoEncoder::queueAudioFromFifo(bool final)
+{
+    AVCodecContext* codecContext = mAudioCodecContext;
+    while (av_audio_fifo_size(mAudioOutBuffer) >= codecContext->frame_size ||
+           (final && av_audio_fifo_size(mAudioOutBuffer) > 0)) {
+        const int samples = qMin(av_audio_fifo_size(mAudioOutBuffer), codecContext->frame_size);
 
         AVFrame * avFrame = av_frame_alloc();
+        if (!avFrame) {
+            setLastErrorMessage(tr("无法分配录音帧。"));
+            return false;
+        }
         avFrame->nb_samples = codecContext->frame_size;
+        if (codecContext->codec->capabilities & AV_CODEC_CAP_SMALL_LAST_FRAME)
+            avFrame->nb_samples = samples;
 
 #if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(57, 25, 100)
         avFrame->channel_layout = codecContext->channel_layout;
@@ -730,13 +869,14 @@ void UBFFmpegVideoEncoder::processAudio(QByteArray &data)
 
 #if LIBAVFORMAT_VERSION_MICRO < 100
         int buffer_size = av_samples_get_buffer_size(nullptr, codecContext->channels, codecContext->frame_size, codecContext->sample_fmt, 0);
-        audio_samples_buffer = (uint8_t*)av_malloc(buffer_size);
+        uint8_t* audio_samples_buffer = (uint8_t*)av_malloc(buffer_size);
         if (!audio_samples_buffer) {
-            qWarning() << "Couldn't allocate samples for audio frame: " << avErrorToQString(ret);
-            break;
+            freeRecordingFrame(&avFrame);
+            setLastErrorMessage(tr("无法分配录音帧缓冲区。"));
+            return false;
         }
 
-        ret = avcodec_fill_audio_frame(avFrame,
+        int ret = avcodec_fill_audio_frame(avFrame,
                                        codecContext->channels,
                                        codecContext->sample_fmt,
                                        (const uint8_t*)audio_samples_buffer,
@@ -744,60 +884,117 @@ void UBFFmpegVideoEncoder::processAudio(QByteArray &data)
                                        0);
 
 #else
-        ret = av_frame_get_buffer(avFrame, 0);
+        int ret = av_frame_get_buffer(avFrame, 0);
 #endif
         if (ret < 0) {
-            qWarning() << "Couldn't allocate frame: " << avErrorToQString(ret);
-            break;
+            freeRecordingFrame(&avFrame);
+            setLastErrorMessage(tr("无法分配录音帧缓冲区：%1").arg(avErrorToQString(ret)));
+            return false;
         }
 
-        ret = av_audio_fifo_read(mAudioOutBuffer, (void**)avFrame->data, codecContext->frame_size);
-        if (ret < 0)
-            qWarning() << "Could not read from FIFO queue: " << avErrorToQString(ret);
-
-        else {
-            mAudioFrameCount += codecContext->frame_size;
-
-            mVideoWorker->queueAudioFrame(avFrame);
-            framesAdded = true;
+        ret = av_audio_fifo_read(mAudioOutBuffer, (void**)avFrame->data, samples);
+        if (ret != samples) {
+            freeRecordingFrame(&avFrame);
+            setLastErrorMessage(tr("读取录音缓冲区失败。"));
+            return false;
         }
+#if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(57, 25, 100)
+        const int channels = codecContext->channels;
+#else
+        const int channels = codecContext->ch_layout.nb_channels;
+#endif
+        if (samples < avFrame->nb_samples)
+            av_samples_set_silence(avFrame->data, samples, avFrame->nb_samples - samples,
+                                   channels, codecContext->sample_fmt);
+        mAudioFrameCount += avFrame->nb_samples;
+        if (!mVideoWorker->queueAudioFrame(avFrame))
+            return false;
     }
+    return true;
+}
 
-    if (framesAdded)
-        mVideoWorker->mWaitCondition.wakeAll();
+bool UBFFmpegVideoEncoder::flushAudioInput()
+{
+#if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(57, 25, 100)
+    const int channels = mAudioCodecContext->channels;
+#else
+    const int channels = mAudioCodecContext->ch_layout.nb_channels;
+#endif
+    for (;;) {
+        const int capacity = qMax(1, swr_get_out_samples(mSwrContext, 0));
+        uint8_t** samples = nullptr;
+        int ret = av_samples_alloc_array_and_samples(&samples, nullptr, channels, capacity,
+                                                      mAudioCodecContext->sample_fmt, 0);
+        if (ret < 0) {
+            setLastErrorMessage(tr("无法结束录音重采样：%1").arg(avErrorToQString(ret)));
+            return false;
+        }
+        const int converted = swr_convert(mSwrContext, samples, capacity, nullptr, 0);
+        ret = converted > 0 ? av_audio_fifo_write(mAudioOutBuffer, (void**)samples, converted) : converted;
+        av_freep(&samples[0]);
+        av_freep(&samples);
+        if (converted < 0 || ret != converted) {
+            setLastErrorMessage(tr("结束录音重采样失败。"));
+            return false;
+        }
+        if (!converted)
+            break;
+    }
+    return queueAudioFromFifo(true);
 }
 
 void UBFFmpegVideoEncoder::finishEncoding()
 {
     qDebug() << "VideoEncoder::finishEncoding called";
+    if (mFinishing)
+        return;
+    mFinishing = true;
+    mAcceptingData = false;
+    if (mAudioInput)
+        mAudioInput->stop();
+    if (mVideoWorker->hasFailed())
+        setLastErrorMessage(mVideoWorker->errorMessage());
 
-    flushStream(mVideoWorker->mVideoPacket, mVideoStream, mVideoCodecContext, mOutputFormatContext);
-
-    if (mShouldRecordAudio)
-        flushStream(mVideoWorker->mAudioPacket, mAudioStream, mAudioCodecContext, mOutputFormatContext);
-
-    av_write_trailer(mOutputFormatContext);
-    avio_close(mOutputFormatContext->pb);
-
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(61, 3, 100)
-    avcodec_close(mVideoCodecContext);
-#else
-    avcodec_free_context(&mVideoCodecContext);
-#endif
-    sws_freeContext(mSwsContext);
-
-    if (mShouldRecordAudio) {
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(61, 3, 100)
-        avcodec_close(mAudioCodecContext);
-#else
-        avcodec_free_context(&mAudioCodecContext);
-#endif
-        swr_free(&mSwrContext);
+    auto check = [this](int result, const QString& action) {
+        if (result < 0)
+            setLastErrorMessage(action + ": " + avErrorToQString(result));
+    };
+    if (mHeaderWritten) {
+        if (mVideoWorker->mVideoPacket && mVideoCodecContext)
+            check(flushStream(mVideoWorker->mVideoPacket, mVideoStream, mVideoCodecContext, mOutputFormatContext),
+                  tr("保存视频尾帧失败"));
+        if (mShouldRecordAudio && mVideoWorker->mAudioPacket && mAudioCodecContext)
+            check(flushStream(mVideoWorker->mAudioPacket, mAudioStream, mAudioCodecContext, mOutputFormatContext),
+                  tr("保存录音尾帧失败"));
+        check(av_write_trailer(mOutputFormatContext), tr("写入视频索引失败"));
+        avio_flush(mOutputFormatContext->pb);
+        check(mOutputFormatContext->pb->error, tr("写入视频文件失败"));
+        check(avio_closep(&mOutputFormatContext->pb), tr("关闭视频文件失败"));
+        mHeaderWritten = false;
     }
+    releaseResources();
+    emit encodingFinished(mLastErrorMessage.isEmpty());
+}
 
+void UBFFmpegVideoEncoder::releaseResources()
+{
+    if (mOutputFormatContext && mOutputFormatContext->pb)
+        avio_closep(&mOutputFormatContext->pb);
+    if (mVideoCodecContext)
+        avcodec_free_context(&mVideoCodecContext);
+    if (mAudioCodecContext)
+        avcodec_free_context(&mAudioCodecContext);
+    sws_freeContext(mSwsContext);
+    mSwsContext = nullptr;
+    if (mSwrContext)
+        swr_free(&mSwrContext);
+    if (mAudioOutBuffer)
+        av_audio_fifo_free(mAudioOutBuffer);
+    mAudioOutBuffer = nullptr;
     avformat_free_context(mOutputFormatContext);
-
-    emit encodingFinished(true);
+    mOutputFormatContext = nullptr;
+    mVideoStream = nullptr;
+    mAudioStream = nullptr;
 }
 
 
@@ -807,15 +1004,21 @@ void UBFFmpegVideoEncoder::finishEncoding()
 
 UBFFmpegVideoEncoderWorker::UBFFmpegVideoEncoderWorker(UBFFmpegVideoEncoder* controller)
     : mController(controller)
+    , mQueuedVideoBytes(0)
+    , mDroppedVideoFrames(0)
+    , mVideoFramesDequeued(false)
 {
     mStopRequested = false;
     mIsRunning = false;
+    mFailed = false;
     mVideoPacket = av_packet_alloc();
     mAudioPacket = av_packet_alloc();
 }
 
 UBFFmpegVideoEncoderWorker::~UBFFmpegVideoEncoderWorker()
 {
+    QMutexLocker locker(&mFrameQueueMutex);
+    clearQueues();
     if (mVideoPacket)
         av_packet_free(&mVideoPacket);
 
@@ -826,26 +1029,60 @@ UBFFmpegVideoEncoderWorker::~UBFFmpegVideoEncoderWorker()
 void UBFFmpegVideoEncoderWorker::stopEncoding()
 {
     qDebug() << "Video worker: stop requested";
+    QMutexLocker locker(&mFrameQueueMutex);
     mStopRequested = true;
     mWaitCondition.wakeAll();
 }
 
-void UBFFmpegVideoEncoderWorker::queueVideoFrame(AVFrame* frame)
+bool UBFFmpegVideoEncoderWorker::queueVideoFrame(AVFrame* frame)
 {
-    if (frame) {
-        mFrameQueueMutex.lock();
-        mImageQueue.enqueue(frame);
-        mFrameQueueMutex.unlock();
+    if (!frame)
+        return false;
+    QMutexLocker locker(&mFrameQueueMutex);
+    if (mStopRequested || mFailed) {
+        freeRecordingFrame(&frame);
+        return false;
     }
+    const qint64 bytes = qMax(0, av_image_get_buffer_size(static_cast<AVPixelFormat>(frame->format),
+                                                        frame->width, frame->height, 32));
+    const qint64 maxBytes = qMax<qint64>(64 * 1024 * 1024, bytes * 2);
+    // Preserve the beginning and most recent view under overload; don't let
+    // raw high-resolution frames grow without bound or block the UI thread.
+    while (!mImageQueue.isEmpty() &&
+           (mImageQueue.size() >= 60 || mQueuedVideoBytes + bytes > maxBytes)) {
+        const int index = !mVideoFramesDequeued && mImageQueue.size() > 1 ? 1 : 0;
+        AVFrame* dropped = mImageQueue.takeAt(index);
+        mQueuedVideoBytes -= qMax(0, av_image_get_buffer_size(static_cast<AVPixelFormat>(dropped->format),
+                                                             dropped->width, dropped->height, 32));
+        freeRecordingFrame(&dropped);
+        ++mDroppedVideoFrames;
+    }
+    mImageQueue.enqueue(frame);
+    mQueuedVideoBytes += bytes;
+    mWaitCondition.wakeOne();
+    return true;
 }
 
-void UBFFmpegVideoEncoderWorker::queueAudioFrame(AVFrame* frame)
+bool UBFFmpegVideoEncoderWorker::queueAudioFrame(AVFrame* frame)
 {
-    if (frame) {
-        mFrameQueueMutex.lock();
-        mAudioQueue.enqueue(frame);
-        mFrameQueueMutex.unlock();
+    if (!frame)
+        return false;
+    QMutexLocker locker(&mFrameQueueMutex);
+    if (mStopRequested || mFailed) {
+        freeRecordingFrame(&frame);
+        return false;
     }
+    const int maxFrames = qMax(1, mController->mAudioSampleRate * 10 /
+                                  qMax(1, mController->mAudioCodecContext->frame_size));
+    if (mAudioQueue.size() >= maxFrames) {
+        freeRecordingFrame(&frame);
+        locker.unlock();
+        recordFailure(tr("录音编码持续跟不上采集速度，已停止录制以保护已录内容。"));
+        return false;
+    }
+    mAudioQueue.enqueue(frame);
+    mWaitCondition.wakeOne();
+    return true;
 }
 
 /**
@@ -855,44 +1092,73 @@ void UBFFmpegVideoEncoderWorker::queueAudioFrame(AVFrame* frame)
 void UBFFmpegVideoEncoderWorker::runEncoding()
 {
     mIsRunning = true;
+    if (!mVideoPacket || (mController->mShouldRecordAudio && !mAudioPacket))
+        recordFailure(tr("无法分配编码数据包。"));
 
-    while (!mStopRequested) {
-        mFrameQueueMutex.lock();
-        mWaitCondition.wait(&mFrameQueueMutex);
-
-        while (!mImageQueue.isEmpty()) {
-            writeLatestVideoFrame();
+    for (;;) {
+        QMutexLocker locker(&mFrameQueueMutex);
+        // Check the predicate before sleeping: a frame/stop can arrive before
+        // the thread starts or while the previous frame is being encoded.
+        while (!mStopRequested && !mFailed && mImageQueue.isEmpty() && mAudioQueue.isEmpty())
+            mWaitCondition.wait(&mFrameQueueMutex);
+        if (mFailed) {
+            clearQueues();
+            break;
         }
+        if (mStopRequested && mImageQueue.isEmpty() && mAudioQueue.isEmpty())
+            break;
 
-        while (!mAudioQueue.isEmpty()) {
-            writeLatestAudioFrame();
+        const bool video = mAudioQueue.isEmpty() || (!mImageQueue.isEmpty() &&
+                av_compare_ts(mImageQueue.head()->pts, mController->mVideoCodecContext->time_base,
+                              mAudioQueue.head()->pts, mController->mAudioCodecContext->time_base) <= 0);
+        AVFrame* frame = video ? mImageQueue.dequeue() : mAudioQueue.dequeue();
+        if (video) {
+            mQueuedVideoBytes -= qMax(0, av_image_get_buffer_size(static_cast<AVPixelFormat>(frame->format),
+                                                                 frame->width, frame->height, 32));
+            mVideoFramesDequeued = true;
         }
-
-        mFrameQueueMutex.unlock();
+        // Codec and disk work must never hold the producer's queue mutex.
+        locker.unlock();
+        const int result = writeFrame(frame, video ? mVideoPacket : mAudioPacket,
+                                      video ? mController->mVideoStream : mController->mAudioStream,
+                                      video ? mController->mVideoCodecContext : mController->mAudioCodecContext,
+                                      mController->mOutputFormatContext);
+        freeRecordingFrame(&frame);
+        if (result < 0)
+            recordFailure((video ? tr("视频编码或写入失败") : tr("录音编码或写入失败"))
+                          + ": " + avErrorToQString(result));
     }
-
+    mIsRunning = false;
     emit encodingFinished();
 }
 
-void UBFFmpegVideoEncoderWorker::writeLatestVideoFrame()
+QString UBFFmpegVideoEncoderWorker::errorMessage()
 {
-    AVFrame* frame = mImageQueue.dequeue();
-    writeFrame(frame, mVideoPacket, mController->mVideoStream, mController->mVideoCodecContext, mController->mOutputFormatContext);
-    av_freep(&frame->data[0]);
-    av_frame_free(&frame);
+    QMutexLocker locker(&mFrameQueueMutex);
+    return mErrorMessage;
 }
 
-void UBFFmpegVideoEncoderWorker::writeLatestAudioFrame()
+void UBFFmpegVideoEncoderWorker::recordFailure(const QString& message)
 {
-    AVFrame *frame = mAudioQueue.dequeue();
-    writeFrame(frame, mAudioPacket, mController->mAudioStream, mController->mAudioCodecContext, mController->mOutputFormatContext);
-    av_frame_free(&frame);
+    QMutexLocker locker(&mFrameQueueMutex);
+    if (mFailed)
+        return;
+    mErrorMessage = message;
+    mFailed = true;
+    mWaitCondition.wakeAll();
+    locker.unlock();
+    emit error(message);
+}
 
-#if LIBAVFORMAT_VERSION_MICRO < 100
-    if (audio_samples_buffer) {
-        av_free(audio_samples_buffer);
-        av_freep(&frame->data[0]);
-        audio_samples_buffer = nullptr;
+void UBFFmpegVideoEncoderWorker::clearQueues()
+{
+    while (!mImageQueue.isEmpty()) {
+        AVFrame* frame = mImageQueue.dequeue();
+        freeRecordingFrame(&frame);
     }
-#endif
+    while (!mAudioQueue.isEmpty()) {
+        AVFrame* frame = mAudioQueue.dequeue();
+        freeRecordingFrame(&frame);
+    }
+    mQueuedVideoBytes = 0;
 }

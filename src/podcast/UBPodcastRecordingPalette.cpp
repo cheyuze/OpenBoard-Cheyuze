@@ -314,8 +314,8 @@ void UBPodcastRecordingPalette::recordingStateChanged(UBPodcastController::Recor
 
 void UBPodcastRecordingPalette::recordingProgressChanged(qint64 ms)
 {
-    int min = ms / 60000;
-    int seconds = (ms / 1000) % 60;
+    const qint64 min = qMax<qint64>(0, ms) / 60000;
+    const qint64 seconds = (qMax<qint64>(0, ms) / 1000) % 60;
 
     mTimerLabel->setText(QString("%1:%2").arg(min, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0')));
 }

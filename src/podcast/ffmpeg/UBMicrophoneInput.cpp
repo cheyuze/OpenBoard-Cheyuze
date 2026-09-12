@@ -28,18 +28,31 @@
 UBMicrophoneInput::UBMicrophoneInput()
     : mAudioInput(NULL)
     , mIODevice(NULL)
-    , mSeekPos(0)
+    , mCaptureActive(false)
+    , mLastAudioLevel(0)
 {
 }
 
 UBMicrophoneInput::~UBMicrophoneInput()
 {
-    if (mAudioInput)
+    if (mAudioInput) {
+        disconnect(mAudioInput, nullptr, this, nullptr);
+        if (mIODevice)
+            disconnect(mIODevice.data(), nullptr, this, nullptr);
+        mCaptureActive = false;
+        mAudioInput->stop();
         delete mAudioInput;
+    }
 }
 
 bool UBMicrophoneInput::init()
 {
+    if (mAudioInput) {
+        stop();
+        delete mAudioInput;
+        mAudioInput = nullptr;
+    }
+
     if (mAudioDeviceInfo.isNull()) {
         qWarning("No audio input device selected; using default");
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
@@ -47,6 +60,11 @@ bool UBMicrophoneInput::init()
 #else
         mAudioDeviceInfo = QAudioDeviceInfo::defaultInputDevice();
 #endif
+    }
+
+    if (mAudioDeviceInfo.isNull()) {
+        qWarning() << "No audio input device is available";
+        return false;
     }
 
     mAudioFormat = mAudioDeviceInfo.preferredFormat();
@@ -62,12 +80,23 @@ bool UBMicrophoneInput::init()
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
     if (mAudioFormat.bytesPerSample() == 3)
         mAudioFormat.setSampleFormat(QAudioFormat::Int16);
+#else
+    if (mAudioFormat.sampleSize() == 24) {
+        mAudioFormat.setSampleSize(16);
+        mAudioFormat.setSampleType(QAudioFormat::SignedInt);
+    }
+#endif
 
+    if (!mAudioFormat.isValid() || mAudioFormat.sampleRate() <= 0
+            || mAudioFormat.channelCount() <= 0 || mAudioFormat.bytesPerFrame() <= 0
+            || sampleFormat() < 0 || !mAudioDeviceInfo.isFormatSupported(mAudioFormat)) {
+        qWarning() << "The selected audio device does not provide a supported PCM format";
+        return false;
+    }
+
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
     mAudioInput = new QAudioSource(mAudioDeviceInfo, mAudioFormat);
 #else
-    if (mAudioFormat.sampleSize() == 24)
-        mAudioFormat.setSampleSize(16);
-
     mAudioInput = new QAudioInput(mAudioDeviceInfo, mAudioFormat);
 #endif
 
@@ -91,18 +120,56 @@ bool UBMicrophoneInput::init()
 
 void UBMicrophoneInput::start()
 {
+    if (!mAudioInput) {
+        emit error(tr("Audio input has not been initialized"));
+        return;
+    }
+    if (mCaptureActive)
+        return;
+
+    mPendingAudio.clear();
+    mLastAudioLevel = 0;
+    mCaptureActive = true;
     mIODevice = mAudioInput->start();
 
-    connect(mIODevice, SIGNAL(readyRead()),
-            this, SLOT(onDataReady()), Qt::UniqueConnection);
+    if (!mIODevice || mAudioInput->error() != QAudio::NoError) {
+        // A synchronous stateChanged signal may already have reported the error.
+        const bool reportError = mCaptureActive;
+        mCaptureActive = false;
+        mIODevice = nullptr;
+        if (reportError)
+            emit error(mAudioInput->error() == QAudio::NoError
+                       ? tr("Couldn't open the audio device")
+                       : getErrorString(mAudioInput->error()));
+        return;
+    }
 
-    if (mAudioInput->error() == QAudio::OpenError)
-        qWarning() << "Error opening audio input";
+    connect(mIODevice.data(), SIGNAL(readyRead()),
+            this, SLOT(onDataReady()), Qt::UniqueConnection);
+    onDataReady();
 }
 
 void UBMicrophoneInput::stop()
 {
+    if (!mAudioInput)
+        return;
+
+    if (mCaptureActive) {
+        // The device discards unread samples when stopped. Preserve its final
+        // complete PCM frames, including the partial 100 ms batch on pause.
+        onDataReady();
+        emitBufferedAudio(true);
+    }
+    mCaptureActive = false;
+    if (mIODevice)
+        disconnect(mIODevice.data(), nullptr, this, nullptr);
+    mIODevice = nullptr;
     mAudioInput->stop();
+    mPendingAudio.clear();
+    if (mLastAudioLevel != 0) {
+        mLastAudioLevel = 0;
+        emit audioLevelChanged(0);
+    }
 }
 
 QStringList UBMicrophoneInput::availableDevicesNames()
@@ -247,7 +314,9 @@ int UBMicrophoneInput::sampleFormat()
             break;
 
         case QAudioFormat::Float:
-            return AV_SAMPLE_FMT_FLT;
+            if (sampleSizeBits == 32)
+                return AV_SAMPLE_FMT_FLT;
+            break;
 
         default:
             return AV_SAMPLE_FMT_NONE;
@@ -256,23 +325,37 @@ int UBMicrophoneInput::sampleFormat()
     return AV_SAMPLE_FMT_NONE;
 }
 
-static qint64 uSecsElapsed = 0;
 void UBMicrophoneInput::onDataReady()
 {
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-    int numBytes = mAudioInput->bytesAvailable();
-#else
-    int numBytes = mAudioInput->bytesReady();
-#endif
+    if (!mCaptureActive || !mIODevice)
+        return;
 
-    uSecsElapsed += mAudioFormat.durationForBytes(numBytes);
+    // Read each byte once. Counting bytesReady repeatedly without consuming it
+    // overcounts the same samples, and a static counter leaks across recordings.
+    qint64 remaining = mIODevice->bytesAvailable();
+    while (remaining > 0 && mCaptureActive && mIODevice) {
+        const QByteArray data = mIODevice->read(qMin<qint64>(remaining, 64 * 1024));
+        if (data.isEmpty())
+            break;
+        remaining -= data.size();
+        mPendingAudio.append(data);
+        emitBufferedAudio(false);
+    }
+}
 
-    // Only emit data every 100ms
-    if (uSecsElapsed > 100000) {
-        uSecsElapsed = 0;
-        QByteArray data = mIODevice->read(numBytes);
+void UBMicrophoneInput::emitBufferedAudio(bool flush)
+{
+    const int frameBytes = mAudioFormat.bytesPerFrame();
+    if (frameBytes <= 0)
+        return;
+    const int chunkBytes = qMax(frameBytes,
+                               mAudioFormat.bytesForDuration(100000) / frameBytes * frameBytes);
 
-        quint8 level = audioLevel(data);
+    while (mCaptureActive && mPendingAudio.size() >= (flush ? frameBytes : chunkBytes)) {
+        const int bytes = qMin<qint64>(chunkBytes, mPendingAudio.size() / frameBytes * frameBytes);
+        const QByteArray data = mPendingAudio.left(bytes);
+        mPendingAudio.remove(0, bytes);
+        const quint8 level = audioLevel(data);
         if (level != mLastAudioLevel) {
             mLastAudioLevel = level;
             emit audioLevelChanged(level);
@@ -287,6 +370,7 @@ void UBMicrophoneInput::onAudioInputStateChanged(QAudio::State state)
     switch (state) {
         case QAudio::StoppedState:
             if (mAudioInput->error() != QAudio::NoError) {
+                mCaptureActive = false;
                 emit error(getErrorString(mAudioInput->error()));
             }
             break;
@@ -308,13 +392,17 @@ void UBMicrophoneInput::onAudioInputStateChanged(QAudio::State state)
  */
 quint8 UBMicrophoneInput::audioLevel(const QByteArray &data)
 {
+    if (data.isEmpty() || mAudioFormat.channelCount() <= 0)
+        return 0;
     int bytesPerSample = mAudioFormat.bytesPerFrame() / mAudioFormat.channelCount();
+    if (bytesPerSample <= 0 || data.size() < bytesPerSample)
+        return 0;
 
     const char * ptr = data.constData();
     double sum = 0;
     int n_samples = data.size() / bytesPerSample;
 
-    for (int i(0); i < (data.size() - bytesPerSample); i += bytesPerSample) {
+    for (int i(0); i <= (data.size() - bytesPerSample); i += bytesPerSample) {
         sum += pow(sampleRelativeLevel(ptr + i), 2);
     }
 
@@ -324,7 +412,7 @@ quint8 UBMicrophoneInput::audioLevel(const QByteArray &data)
     // level increases logarithmically. So here RMS is substituted by rms^(1/e)
     rms = pow(rms, 1./exp(1));
 
-    return UINT8_MAX * rms;
+    return UINT8_MAX * qBound(0.0, rms, 1.0);
 }
 
 /**

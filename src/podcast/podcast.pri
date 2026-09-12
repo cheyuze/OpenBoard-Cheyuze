@@ -1,6 +1,7 @@
 
 HEADERS      += src/podcast/UBPodcastController.h \
                 src/podcast/UBAbstractVideoEncoder.h \
+                src/podcast/UBRecordingClock.h \
                 src/podcast/UBCameraPreviewWindow.h \
                 src/podcast/UBPodcastRecordingPalette.h \
                 

@@ -33,6 +33,8 @@
 #include <QtGui>
 
 #include "UBAbstractVideoEncoder.h"
+#include "UBRecordingClock.h"
+#include <QElapsedTimer>
 
 #include "core/UBApplicationController.h"
 
@@ -130,6 +132,8 @@ class UBPodcastController : public QObject
 
         void encodingFinished(bool ok);
 
+        void encodingError(const QString& message);
+
         void applicationAboutToQuit();
 
         void groupActionTriggered(QAction*);
@@ -161,13 +165,22 @@ class UBPodcastController : public QObject
 
         QString saveRecordingAs(const QString& temporaryFilePath);
 
-        long elapsedRecordingMs();
+        qint64 elapsedRecordingMs() const;
+
+        void stopRecordingTimers();
+
+        void reportRecordingFailure(const QString& message);
+
+        void captureFrameUnavailable();
 
         static UBPodcastController* sInstance;
 
         QPointer<UBAbstractVideoEncoder> mVideoEncoder;
 
-        QTime mRecordStartTime;
+        QElapsedTimer mMonotonicTimer;
+        UBRecordingClock mRecordingClock;
+        QString mEncodingError;
+        qint64 mCaptureFailureStartedAt = -1;
 
         QQueue<QRectF> mSceneRepaintRectQueue;
 
@@ -202,9 +215,6 @@ class UBPodcastController : public QObject
         RecordingState mRecordingState;
 
         bool mApplicationIsClosing;
-
-        QTime mTimeAtPaused;
-        long mRecordingTimestampOffset;
 
         QAction *mDefaultAudioInputDeviceAction;
         QAction *mNoAudioInputDeviceAction;
