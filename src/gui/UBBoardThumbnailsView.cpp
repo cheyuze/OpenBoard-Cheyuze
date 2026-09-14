@@ -99,6 +99,12 @@ UBBoardThumbnailsView::UBBoardThumbnailsView(QWidget *parent, const char *name)
 
 void UBBoardThumbnailsView::setDocument(std::shared_ptr<UBDocument> document)
 {
+    mLongPressTimer.stop();
+    mDropSource = nullptr;
+    mDropTarget = nullptr;
+    mDropIndicatorVisible = false;
+    mDropIndicatorRect = QRectF();
+    mCurrentIndex = -1;
     mDocument = document;
     if (document)
     {
@@ -115,6 +121,9 @@ void UBBoardThumbnailsView::setDocument(std::shared_ptr<UBDocument> document)
 
 void UBBoardThumbnailsView::adjustThumbnail()
 {
+    if (!mDocument)
+        return;
+
     auto thumbnail = mDocument->thumbnailScene()->thumbnailAt(mCurrentIndex);
 
     if (thumbnail)
@@ -126,6 +135,9 @@ void UBBoardThumbnailsView::adjustThumbnail()
 
 void UBBoardThumbnailsView::centerOnThumbnail(int index)
 {
+    if (!mDocument)
+        return;
+
     auto thumbnail = mDocument->thumbnailScene()->thumbnailAt(index);
 
     if (thumbnail)
@@ -136,6 +148,9 @@ void UBBoardThumbnailsView::centerOnThumbnail(int index)
 
 void UBBoardThumbnailsView::ensureVisibleThumbnail(int index)
 {
+    if (!mDocument)
+        return;
+
     auto previousThumbnail = mDocument->thumbnailScene()->thumbnailAt(mCurrentIndex);
 
     if (previousThumbnail && index != mCurrentIndex)
@@ -157,6 +172,9 @@ void UBBoardThumbnailsView::ensureVisibleThumbnail(int index)
 
 void UBBoardThumbnailsView::updateActiveThumbnail(int newActiveIndex)
 {
+    if (!mDocument)
+        return;
+
     mDocument->thumbnailScene()->hightlightItem(newActiveIndex, true);
 
     ensureVisibleThumbnail(newActiveIndex);
@@ -169,7 +187,8 @@ void UBBoardThumbnailsView::resizeEvent(QResizeEvent *event)
     bool scrollbarWasHidden = mScrollbarVisible && !verticalScrollBar()->isVisible();
 
     // Refresh the scene, except if resizing because scrollbar was hidden
-    if (event->oldSize().width() == 0 || (event->size().width() > 0 && !scrollbarWasHidden && mDocument))
+    if (mDocument && (event->oldSize().width() == 0
+            || (event->size().width() > 0 && !scrollbarWasHidden)))
     {
         mDocument->thumbnailScene()->arrangeThumbnails();
         ensureVisibleThumbnail(UBApplication::boardController->activeSceneIndex());
@@ -182,7 +201,13 @@ void UBBoardThumbnailsView::resizeEvent(QResizeEvent *event)
 
 void UBBoardThumbnailsView::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::RightButton)
+    if (!mDocument || !scene())
+    {
+        event->ignore();
+        return;
+    }
+
+    if (event->button() != Qt::LeftButton)
     {
         // The context menu targets the clicked thumbnail without opening it.
         event->accept();
@@ -232,7 +257,7 @@ void UBBoardThumbnailsView::mouseMoveEvent(QMouseEvent *event)
 
 void UBBoardThumbnailsView::longPressTimeout()
 {
-    if (QApplication::mouseButtons() != Qt::NoButton)
+    if (QApplication::mouseButtons().testFlag(Qt::LeftButton))
         emit mousePressAndHoldEventRequired(mLastPressedMousePos);
 
     mLongPressTimer.stop();
@@ -240,6 +265,9 @@ void UBBoardThumbnailsView::longPressTimeout()
 
 void UBBoardThumbnailsView::mousePressAndHoldEvent(QPoint pos)
 {
+    if (!mDocument)
+        return;
+
     UBThumbnail* item = dynamic_cast<UBThumbnail*>(itemAt(pos));
     if (item)
     {
@@ -248,17 +276,28 @@ void UBBoardThumbnailsView::mousePressAndHoldEvent(QPoint pos)
 
         QPixmap pixmap = item->pixmap().scaledToWidth(mThumbnailWidth/2);
 
-        QDrag *drag = new QDrag(this);
-        drag->setMimeData(new QMimeData());
-        drag->setPixmap(pixmap);
-        drag->setHotSpot(QPoint(pixmap.width()/2, pixmap.height()/2));
+        QDrag drag(this);
+        drag.setMimeData(new QMimeData());
+        drag.setPixmap(pixmap);
+        drag.setHotSpot(QPoint(pixmap.width()/2, pixmap.height()/2));
 
-        drag->exec();
+        drag.exec(Qt::MoveAction);
+
+        // A cancelled drag does not receive dropEvent(). Always retire its
+        // thumbnail pointers before the document can be changed again.
+        mDropSource = nullptr;
+        mDropTarget = nullptr;
+        mDropIndicatorVisible = false;
+        mDropIndicatorRect = QRectF();
+        viewport()->update();
     }
 }
 
 void UBBoardThumbnailsView::updateThumbnailPixmap(const QRectF region)
 {
+    if (!mDocument)
+        return;
+
     const int index = UBApplication::boardController->activeSceneIndex();
     auto thumbnail = mDocument->thumbnailScene()->thumbnailAt(index);
 
@@ -439,18 +478,25 @@ void UBBoardThumbnailsView::scrollContentsBy(int dx, int dy)
 
 void UBBoardThumbnailsView::dragEnterEvent(QDragEnterEvent *event)
 {
-    mDropIndicatorVisible = true;
-    viewport()->update();
-
-    if (event->source() == this)
+    if (event->source() == this && mDocument && mDropSource && mDropTarget)
     {
         event->setDropAction(Qt::MoveAction);
         event->accept();
+    }
+    else
+    {
+        event->ignore();
     }
 }
 
 void UBBoardThumbnailsView::dragMoveEvent(QDragMoveEvent *event)
 {        
+    if (event->source() != this || !mDocument || !mDropSource || !mDropTarget)
+    {
+        event->ignore();
+        return;
+    }
+
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
     QPoint eventPos = event->position().toPoint();
 #else
@@ -495,7 +541,11 @@ void UBBoardThumbnailsView::dragMoveEvent(QDragMoveEvent *event)
 
 void UBBoardThumbnailsView::dropEvent(QDropEvent *event)
 {
-    Q_UNUSED(event);
+    if (event->source() != this || !mDocument || !mDropSource || !mDropTarget)
+    {
+        event->ignore();
+        return;
+    }
 
     if (mDropSource->sceneIndex() != mDropTarget->sceneIndex())
         UBApplication::boardController->moveSceneToIndex(mDocument->proxy(), mDropSource->sceneIndex(), mDropTarget->sceneIndex());
@@ -506,6 +556,8 @@ void UBBoardThumbnailsView::dropEvent(QDropEvent *event)
     mDropIndicatorVisible = false;
     mDropIndicatorRect = QRectF();
     viewport()->update();
+    event->setDropAction(Qt::MoveAction);
+    event->accept();
 }
 
 void UBBoardThumbnailsView::dragLeaveEvent(QDragLeaveEvent *event)

@@ -21,6 +21,8 @@
 
 #include "UBMicrophoneInput.h"
 
+#include <cstring>
+
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 #include <QMediaDevices>
 #endif
@@ -418,44 +420,74 @@ quint8 UBMicrophoneInput::audioLevel(const QByteArray &data)
 /**
  * @brief Calculate one sample's level relative to its maximum value
  * @param sample One sample, in the format specified by mAudioFormat
- * @return A double between 0 and 1.0, where 1.0 is the maximum value the sample can take,
- *         or -1 if the value couldn't be calculated.
+ * @return A signed level in [-1, 1], centred on silence. Unsupported or
+ * non-finite samples contribute zero to the RMS meter.
  */
 double UBMicrophoneInput::sampleRelativeLevel(const char* sample)
 {
+    // PCM buffers do not promise alignment for C++ numeric types. Read with
+    // memcpy, and normalise around each format's silence value before RMS.
+    const auto signed16 = [sample]() {
+        qint16 value;
+        std::memcpy(&value, sample, sizeof(value));
+        return double(value) / 32768.0;
+    };
+    const auto signed32 = [sample]() {
+        qint32 value;
+        std::memcpy(&value, sample, sizeof(value));
+        return double(value) / 2147483648.0;
+    };
+    const auto unsigned8 = [sample]() {
+        return (double(static_cast<quint8>(*sample)) - 128.0) / 128.0;
+    };
+    const auto floatingPoint = [sample]() {
+        float value;
+        std::memcpy(&value, sample, sizeof(value));
+        return qIsFinite(value) ? qBound(-1.0, double(value), 1.0) : 0.0;
+    };
+
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
     QAudioFormat::SampleFormat type =  mAudioFormat.sampleFormat();
     int sampleSizeBits = sampleSize();
 
     if (sampleSizeBits == 16 && type == QAudioFormat::Int16)
-        return double(*reinterpret_cast<const int16_t*>(sample))/INT16_MAX;
+        return signed16();
+
+    if (sampleSizeBits == 32 && type == QAudioFormat::Int32)
+        return signed32();
 
     if (sampleSizeBits == 8 && type == QAudioFormat::UInt8)
-        return double(*reinterpret_cast<const uint8_t*>(sample))/UINT8_MAX;
+        return unsigned8();
 
     if (type == QAudioFormat::Float)
-        return (*reinterpret_cast<const float*>(sample) + 1.0)/2.;
+        return floatingPoint();
 #else
     QAudioFormat::SampleType type =  mAudioFormat.sampleType();
     int sampleSize = mAudioFormat.sampleSize();
 
     if (sampleSize == 16 && type == QAudioFormat::SignedInt)
-        return double(*reinterpret_cast<const int16_t*>(sample))/INT16_MAX;
+        return signed16();
+
+    if (sampleSize == 32 && type == QAudioFormat::SignedInt)
+        return signed32();
 
     if (sampleSize == 8 && type == QAudioFormat::SignedInt)
-        return double(*reinterpret_cast<const int8_t*>(sample))/INT8_MAX;
+        return double(static_cast<qint8>(*sample)) / 128.0;
 
-    if (sampleSize == 16 && type == QAudioFormat::UnSignedInt)
-        return double(*reinterpret_cast<const uint16_t*>(sample))/UINT16_MAX;
+    if (sampleSize == 16 && type == QAudioFormat::UnSignedInt) {
+        quint16 value;
+        std::memcpy(&value, sample, sizeof(value));
+        return (double(value) - 32768.0) / 32768.0;
+    }
 
     if (sampleSize == 8 && type == QAudioFormat::UnSignedInt)
-        return double(*reinterpret_cast<const uint8_t*>(sample))/UINT8_MAX;
+        return unsigned8();
 
     if (type == QAudioFormat::Float)
-        return (*reinterpret_cast<const float*>(sample) + 1.0)/2.;
+        return floatingPoint();
 #endif
 
-    return -1;
+    return 0;
 }
 
 /**

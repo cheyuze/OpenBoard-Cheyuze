@@ -85,7 +85,8 @@ bool UBCameraPreviewWindow::startCamera()
     connect(mVideoSink, &QVideoSink::videoFrameChanged,
             this, &UBCameraPreviewWindow::videoFrameChanged);
     connect(mCamera, &QCamera::errorOccurred,
-            this, &UBCameraPreviewWindow::cameraErrorOccurred);
+            this, &UBCameraPreviewWindow::cameraErrorOccurred,
+            Qt::QueuedConnection);
 
     mCurrentFrame = QImage();
     show();
@@ -99,6 +100,9 @@ void UBCameraPreviewWindow::stopCamera()
 {
     hide();
     clearCameraObjects();
+    mDragging = false;
+    mResizeEdges = Qt::Edges();
+    unsetCursor();
     mCurrentFrame = QImage();
     update();
 }
@@ -157,7 +161,9 @@ QImage UBCameraPreviewWindow::renderedPreview()
 
 void UBCameraPreviewWindow::videoFrameChanged(const QVideoFrame &frame)
 {
-    if (!frame.isValid())
+    // A queued frame can still arrive after disconnecting or replacing a sink.
+    // It must never restore the old camera image after stop/device switching.
+    if (!mVideoSink || sender() != mVideoSink || !frame.isValid())
         return;
 
     QImage image = frame.toImage();
@@ -171,6 +177,9 @@ void UBCameraPreviewWindow::videoFrameChanged(const QVideoFrame &frame)
 
 void UBCameraPreviewWindow::cameraErrorOccurred()
 {
+    if (!mCamera || sender() != mCamera)
+        return;
+
     const QString message = mCamera && !mCamera->errorString().isEmpty()
             ? QStringLiteral("摄像头无法启动：%1").arg(mCamera->errorString())
             : QStringLiteral("摄像头无法启动，请检查系统权限或是否被其他应用占用。");
@@ -425,6 +434,14 @@ void UBCameraPreviewWindow::ensureSystemTopMost()
 
 void UBCameraPreviewWindow::clearCameraObjects()
 {
+    // Stop can itself cause backend signals. Disconnect first, and process
+    // camera errors on a queued connection so cleanup never deletes a camera
+    // while its error-emission stack is still running.
+    if (mVideoSink)
+        disconnect(mVideoSink, nullptr, this, nullptr);
+    if (mCamera)
+        disconnect(mCamera, nullptr, this, nullptr);
+
     if (mCamera)
         mCamera->stop();
 

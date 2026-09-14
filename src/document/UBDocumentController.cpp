@@ -1710,7 +1710,8 @@ void UBDocumentTreeView::dropEvent(QDropEvent *event)
                     }
                 }
 
-                targetDocument->insertPage(sceneClone, toIndex);
+                const auto sourceDocument = UBDocument::getDocument(fromProxy);
+                targetDocument->insertPage(sceneClone, toIndex, true, false, sourceDocument->pageName(fromIndex));
             }
 
             QApplication::restoreOverrideCursor();

@@ -51,6 +51,7 @@ class UBSoftwareUpdate;
 class QNetworkAccessManager;
 class QNetworkReply;
 class UBRightPalette;
+struct UBUpdateDownloadSession;
 
 class UBApplicationController : public QObject
 {
@@ -187,6 +188,9 @@ class UBApplicationController : public QObject
                                      int urlIndex = 0, int retryAttempt = 0,
                                      QProgressDialog *progress = nullptr);
         QNetworkAccessManager * mNetworkAccessManager;
+        std::shared_ptr<UBUpdateDownloadSession> mUpdateDownloadSession;
+        void closeUpdateDownload(const std::shared_ptr<UBUpdateDownloadSession> &session);
+        void stopUpdateDownload();
 
         void downloadJsonFinished(QString updateString);
 };

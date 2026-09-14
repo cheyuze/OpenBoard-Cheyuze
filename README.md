@@ -16,6 +16,8 @@
 
 安装包、更新说明和对应版本源码见 [Releases](https://github.com/cheyuze/OpenBoard-Cheyuze/releases)。
 
+当前定制版为 **1.9.0**，重点修复更新下载闪退及文档、绘图、侧栏和录制稳定性问题，详见 [1.9.0 发布说明](https://github.com/cheyuze/OpenBoard-Cheyuze/releases/tag/v1.9.0)。旧 1.8.5 / 1.8.6 如在下载接近完成时退出，请通过浏览器手动安装 1.9.0 一次。
+
 本项目继续按 GNU GPL v3 发布，详见 [LICENSE](LICENSE)。第三方组件说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ---

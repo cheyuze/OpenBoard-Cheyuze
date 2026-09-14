@@ -1449,6 +1449,7 @@ Do you wish to override the security check and continue ?   </source>
     <message><source>What's new:</source><translation>更新内容：</translation></message>
     <message><source>Download from domestic mirrors</source><translation>自动下载（GitHub 优先）</translation></message>
     <message><source>Download from Baidu Netdisk</source><translation>从百度网盘下载</translation></message>
+    <message><source>Verifying and saving the update...</source><translation>正在校验并保存更新，请稍候…</translation></message>
     <message><source>Baidu Netdisk download</source><translation>百度网盘下载</translation></message>
     <message><source>Baidu Netdisk extraction code: %1</source><translation>百度网盘提取码：%1</translation></message>
     <message><source>The Baidu Netdisk share page has been opened in your browser.\n\n%1</source><translation>百度网盘分享页面已在浏览器中打开。\n\n%1</translation></message>
@@ -1675,6 +1676,7 @@ Do you wish to override the security check and continue ?   </source>
 </context>
 <context>
     <name>UBDocumentController</name>
+    <message><source>The page name could not be saved. Check the document folder permissions and available disk space.</source><translation>页面名称保存失败，请检查文档目录权限及磁盘剩余空间。</translation></message>
     <message>
         <location filename="../../src/document/UBDocumentController.cpp" line="2028"/>
         <source>New Folder</source>

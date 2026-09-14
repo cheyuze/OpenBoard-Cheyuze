@@ -201,6 +201,11 @@ void UBThumbnailScene::renameThumbnail(int index, const QString& name)
  */
 void UBThumbnailScene::createThumbnails(int startIndex)
 {
+    // Document-based imports can append page files and update the proxy directly.
+    // Reserve their slots before asynchronous results use the new page indexes.
+    if (mThumbnailItems.size() < mDocument->proxy()->pageCount())
+        mThumbnailItems.resize(mDocument->proxy()->pageCount());
+
     // skip already loaded thumbnails
     while (startIndex < mThumbnailItems.count() && mThumbnailItems.at(startIndex))
     {

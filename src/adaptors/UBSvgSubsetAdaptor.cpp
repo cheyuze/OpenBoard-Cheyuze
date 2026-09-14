@@ -1286,6 +1286,11 @@ bool UBSvgSubsetAdaptor::UBSvgSubsetWriter::persistScene(std::shared_ptr<UBDocum
     {
         QGraphicsItem *item = items.takeFirst();
 
+        // In-progress polygon feedback is visible on the board, but is not
+        // document content until the polygon is committed.
+        if (mScene->isPolygonPreviewItem(item))
+            continue;
+
         // Is the item a polygon?
         UBGraphicsPolygonItem *polygonItem = qgraphicsitem_cast<UBGraphicsPolygonItem*> (item);
         if (polygonItem && polygonItem->isVisible())

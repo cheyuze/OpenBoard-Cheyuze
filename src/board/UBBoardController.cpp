@@ -788,7 +788,7 @@ void UBBoardController::setupZoomControl()
     }
     connect(zoomPresetGroup, &QActionGroup::triggered, mZoomControl,
             [this](QAction* action) {
-        mZoomSlider->setValue(action->data().toInt());
+        setZoomPercentage(action->data().toInt());
     });
     connect(zoomPresetMenu, &QMenu::aboutToShow, mZoomControl,
             [this, zoomPresetGroup]() {
@@ -803,7 +803,7 @@ void UBBoardController::setupZoomControl()
         zoomPresetMenu->popup(QPoint(x, y));
     });
     zoomLabel->setDoubleClickHandler([this]() {
-        mZoomSlider->setValue(100);
+        setZoomPercentage(100);
     });
 
     layout->addWidget(mZoomOutButton);

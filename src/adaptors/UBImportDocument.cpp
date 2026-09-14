@@ -29,6 +29,7 @@
 
 #include "UBImportDocument.h"
 #include "document/UBDocumentProxy.h"
+#include <QTemporaryDir>
 
 #include "frameworks/UBFileSystemUtils.h"
 
@@ -49,6 +50,41 @@
 #endif
 
 #include "core/memcheck.h"
+
+namespace
+{
+// ZIP names use '/', but also reject Windows separators and drive/stream names.
+// Validate the whole archive before creating an extraction directory or files.
+bool safeArchivePath(QString name, QString& relativePath, bool& isDirectory)
+{
+    name.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    if (name.isEmpty() || name.contains(QChar::Null) || name.startsWith(QLatin1Char('/'))
+            || name.contains(QLatin1Char(':')) || QDir::isAbsolutePath(name))
+        return false;
+
+    isDirectory = name.endsWith(QLatin1Char('/'));
+    const QStringList components = name.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+    for (const QString& component : components)
+    {
+        if (component == QLatin1String(".."))
+            return false;
+#ifdef Q_OS_WIN
+        if (component != QLatin1String(".")
+                && (component.endsWith(QLatin1Char('.')) || component.endsWith(QLatin1Char(' '))))
+            return false;
+        const QString device = component.section(QLatin1Char('.'), 0, 0).toUpper();
+        if (device == QLatin1String("CON") || device == QLatin1String("PRN")
+                || device == QLatin1String("AUX") || device == QLatin1String("NUL")
+                || (device.size() == 4 && (device.startsWith(QLatin1String("COM"))
+                                           || device.startsWith(QLatin1String("LPT")))
+                    && device.at(3) >= QLatin1Char('1') && device.at(3) <= QLatin1Char('9')))
+            return false;
+#endif
+    }
+    relativePath = QDir::cleanPath(name);
+    return relativePath != QLatin1String(".") || isDirectory;
+}
+}
 
 UBImportDocument::UBImportDocument(QObject *parent)
     :UBDocumentBasedImportAdaptor(parent)
@@ -77,7 +113,6 @@ QString UBImportDocument::importFileFilter()
 bool UBImportDocument::extractFileToDir(const QFile& pZipFile, const QString& pDir, QString& documentRoot)
 {
 
-    QDir rootDir(pDir);
     QuaZip zip(pZipFile.fileName());
 
     if(!zip.open(QuaZip::mdUnzip))
@@ -88,11 +123,8 @@ bool UBImportDocument::extractFileToDir(const QFile& pZipFile, const QString& pD
 
     zip.setFileNameCodec("UTF-8");
     QuaZipFileInfo info;
-    QuaZipFile file(&zip);
-
-    QFile out;
-    char c;
-    documentRoot = UBPersistenceManager::persistenceManager()->generateUniqueDocumentPath(pDir);
+    QSet<QString> filePaths;
+    QSet<QString> directoryPaths;
     for(bool more=zip.goToFirstFile(); more; more=zip.goToNextFile())
     {
         if(!zip.getCurrentFileInfo(&info))
@@ -102,65 +134,74 @@ bool UBImportDocument::extractFileToDir(const QFile& pZipFile, const QString& pD
             return false;
         }
 
-        if(!file.open(QIODevice::ReadOnly))
+        QString path;
+        bool directory = false;
+        if (!safeArchivePath(info.name, path, directory))
         {
-            qWarning() << "Import failed. Cause: file.open(): " << zip.getZipError();
+            qWarning() << "Import failed: unsafe archive path" << info.name;
             return false;
         }
-
-        if(file.getZipError()!= UNZ_OK)
+#ifdef Q_OS_WIN
+        path = path.toCaseFolded();
+#endif
+        if (filePaths.contains(path) || (!directory && directoryPaths.contains(path)))
+            return false;
+        if (directory)
+            directoryPaths.insert(path);
+        else
+            filePaths.insert(path);
+        QString parent = path;
+        while (parent.contains(QLatin1Char('/')))
         {
-            qWarning() << "Import failed. Cause: file.getFileName(): " << zip.getZipError();
-            return false;
+            parent = parent.left(parent.lastIndexOf(QLatin1Char('/')));
+            directoryPaths.insert(parent);
         }
-
-        QString newFileName = documentRoot + "/" + file.getActualFileName();
-        QFileInfo newFileInfo(newFileName);
-        if (!rootDir.mkpath(newFileInfo.absolutePath()))
+    }
+    if (zip.getZipError() != UNZ_OK || filePaths.isEmpty())
+        return false;
+    for (const QString& path : filePaths)
+        if (directoryPaths.contains(path))
             return false;
 
-        out.setFileName(newFileName);
+    // A fresh temporary root prevents collisions with an existing document and
+    // automatically removes a partially extracted archive on any read/write error.
+    QTemporaryDir extractedRoot(QDir(pDir).absoluteFilePath(QStringLiteral("OpenBoard Import-XXXXXX")));
+    if (!extractedRoot.isValid())
+        return false;
+    QDir rootDir(extractedRoot.path());
+    QuaZipFile file(&zip);
+    QByteArray buffer(64 * 1024, '\0');
+    for (bool more = zip.goToFirstFile(); more; more = zip.goToNextFile())
+    {
+        QString relativePath;
+        bool directory = false;
+        if (!zip.getCurrentFileInfo(&info) || !safeArchivePath(info.name, relativePath, directory))
+            return false;
+        const QString targetPath = rootDir.absoluteFilePath(relativePath);
+        if (directory)
+        {
+            if (!rootDir.mkpath(targetPath))
+                return false;
+            continue;
+        }
+        if (!rootDir.mkpath(QFileInfo(targetPath).absolutePath()) || !file.open(QIODevice::ReadOnly))
+            return false;
+        QFile out(targetPath);
         if (!out.open(QIODevice::WriteOnly))
             return false;
-
-        // Slow like hell (on GNU/Linux at least), but it is not my fault.
-        // Not ZIP/UNZIP package's fault either.
-        // The slowest thing here is out.putChar(c).
-        QByteArray outFileContent = file.readAll();
-        if (out.write(outFileContent) == -1)
-        {
-            qWarning() << "Import failed. Cause: Unable to write file";
-            out.close();
+        qint64 bytes = 0;
+        while ((bytes = file.read(buffer.data(), buffer.size())) > 0)
+            if (out.write(buffer.constData(), bytes) != bytes)
+                return false;
+        if (bytes < 0 || !file.atEnd() || !out.flush())
             return false;
-        }
-
-        while(file.getChar(&c))
-            out.putChar(c);
-
         out.close();
-
-        if(file.getZipError()!=UNZ_OK)
-        {
-            qWarning() << "Import failed. Cause: " << zip.getZipError();
-            return false;
-        }
-
-        if(!file.atEnd())
-        {
-            qWarning() << "Import failed. Cause: read all but not EOF";
-            return false;
-        }
-
         file.close();
-
-        if(file.getZipError()!=UNZ_OK)
-        {
-            qWarning() << "Import failed. Cause: file.close(): " <<  file.getZipError();
+        if (file.getZipError() != UNZ_OK)
             return false;
-        }
-
     }
-
+    if (zip.getZipError() != UNZ_OK)
+        return false;
     zip.close();
 
     if(zip.getZipError()!=UNZ_OK)
@@ -169,6 +210,8 @@ bool UBImportDocument::extractFileToDir(const QFile& pZipFile, const QString& pD
       return false;
     }
 
+    documentRoot = extractedRoot.path();
+    extractedRoot.setAutoRemove(false);
     return true;
 }
 
@@ -201,7 +244,10 @@ bool UBImportDocument::addFileToDocument(std::shared_ptr<UBDocumentProxy> pDocum
     QFileInfo fi(pFile);
     UBApplication::showMessage(tr("Importing file %1...").arg(fi.baseName()), true);
 
-    QString path = UBFileSystemUtils::createTempDir();
+    QTemporaryDir temporaryDirectory;
+    if (!temporaryDirectory.isValid())
+        return false;
+    const QString path = temporaryDirectory.path();
 
     QString documentRootFolder;
     if (!extractFileToDir(pFile, path, documentRootFolder))
@@ -216,11 +262,8 @@ bool UBImportDocument::addFileToDocument(std::shared_ptr<UBDocumentProxy> pDocum
         return false;
     }
 
-    UBFileSystemUtils::deleteDir(path);
-
     UBApplication::showMessage(tr("Import successful."));
 
     return true;
 }
-
 

@@ -143,6 +143,7 @@ class UBGraphicsScene: public UBCoreGraphicsScene, public UBItem, public std::en
         bool inputDeviceMove(const QPointF& scenePos, const qreal& pressure = 1.0, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
         bool inputDeviceRelease(int tool = -1, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
         bool polygonDrawingActive() const;
+        bool isPolygonPreviewItem(const QGraphicsItem* item) const;
         void addPolygonVertex(const QPointF& scenePos);
         void updatePolygonPreview(const QPointF& scenePos);
         void finishPolygonDrawing();

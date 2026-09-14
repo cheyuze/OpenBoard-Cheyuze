@@ -1300,6 +1300,14 @@ void UBBoardView::mouseMoveEvent (QMouseEvent *event)
     //    }
 
     //  QTime mouseMoveTime = QTime::currentTime();
+    // Native popups or a window switch may consume the release event. The
+    // current button state is authoritative when pointer motion resumes.
+    if (mMiddleButtonPanActive && !event->buttons().testFlag(Qt::MiddleButton))
+    {
+        mMiddleButtonPanActive = false;
+        setToolCursor(UBDrawingController::drawingController()->stylusTool());
+    }
+
     if (mMiddleButtonPanActive)
     {
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
@@ -1758,6 +1766,12 @@ void UBBoardView::mouseReleaseEvent (QMouseEvent *event)
 
 void UBBoardView::forcedTabletRelease ()
 {
+    if (mMiddleButtonPanActive)
+    {
+        mMiddleButtonPanActive = false;
+        setToolCursor(UBDrawingController::drawingController()->stylusTool());
+    }
+
     if (mMouseButtonIsPressed || mTabletStylusIsPressed || mPendingStylusReleaseEvent)
     {
         qWarning () << "dirty mouse/tablet state:";

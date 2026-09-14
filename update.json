@@ -1,26 +1,27 @@
 {
-  "version": "1.8.6",
+  "version": "1.9.0",
   "urls": [
-    "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.8.6/OpenBoard-cheyuze-1.8.6-x64.exe",
-    "https://ghproxy.net/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.8.6/OpenBoard-cheyuze-1.8.6-x64.exe",
-    "https://gh-proxy.com/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.8.6/OpenBoard-cheyuze-1.8.6-x64.exe",
-    "https://gh-proxy.org/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.8.6/OpenBoard-cheyuze-1.8.6-x64.exe"
+    "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.0/OpenBoard-cheyuze-1.9.0-x64.exe",
+    "https://ghproxy.net/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.0/OpenBoard-cheyuze-1.9.0-x64.exe",
+    "https://gh-proxy.com/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.0/OpenBoard-cheyuze-1.9.0-x64.exe",
+    "https://gh-proxy.org/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.0/OpenBoard-cheyuze-1.9.0-x64.exe"
   ],
-  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.8.6/OpenBoard-cheyuze-1.8.6-x64.exe",
+  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.0/OpenBoard-cheyuze-1.9.0-x64.exe",
   "baiduUrl": "https://pan.baidu.com/s/1bM8S8NFruXXRo96MWpLOwA?pwd=8y86",
   "baiduPassword": "8y86",
-  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.8.6",
-  "publishedAt": "2026-09-12",
+  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.9.0",
+  "publishedAt": "2026-09-14",
   "required": false,
-  "sha256": "06ED7F3500E3C11B20B69D639FCC10EFE66A185EEE833D09FB3CCFE495119BF6",
+  "sha256": "5A77902EECE308B53B1C4C228262DA4EF2394893DE28A39BC0A4CFF2C4110D01",
   "notes": [
-    "修复30 FPS长录制约11分56秒后画面冻结、声音继续的问题，音视频时间计算使用64位与安全换算",
-    "修复音频重采样缓冲泄漏，改善长录制的内存稳定性",
-    "录制使用单调时钟，暂停等待时间不计入成片时长，支持暂停后直接结束",
-    "加强快速开始/停止和退出应用时的录制收尾，保存末尾音频、视频帧和MP4索引",
-    "编码、写盘或取画面异常时明确提示并停止，保留已有临时文件供恢复，不再误报录制成功",
-    "限制待编码画面的数量和内存占用，保留最近画面；严重音频积压时明确报错",
-    "生成画面与音频的编码回归通过15分钟实际计时、20分钟/30 FPS、8分钟/60 FPS及1080p测试",
-    "新增暂停、快速停止、异常写入、队列过载和同步退出的自动回归测试"
+    "修复旧版自动下载接近100%时的闪退；旧1.8.5/原1.8.6若仍闪退，请通过浏览器手动安装1.9.0一次",
+    "安装包校验与原子转存改为后台处理，加强取消、断点续传、自动换源及退出清理，防止重复下载竞争写入",
+    "修复UBZ追加后的页数与缩略图同步，增加路径与名称冲突检查及失败回滚",
+    "复制页面保留名称，重命名写入失败时恢复旧名称并提示",
+    "修复空文档侧栏异常、拖拽残留和中键平移卡住；缩放预设与双击恢复精确比例",
+    "未完成多边形不再进入保存、导出或复制页，清除时正确取消临时预览",
+    "修复摄像头关闭后的旧帧与错误回调，切回白板后恢复周期抓帧，校正音量表显示",
+    "更新器10组、文档37项、输入/图形21项及录制合成时间线回归通过；实体设备仍需实机验证",
+    "保留GitHub与百度网盘渠道；网盘由维护者手动同步，尚未确认1.9.0已上传，请核对安装包文件名与版本"
   ]
 }

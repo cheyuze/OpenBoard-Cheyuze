@@ -1649,6 +1649,23 @@ bool UBGraphicsScene::polygonDrawingActive() const
     return !mPolygonVertices.isEmpty();
 }
 
+bool UBGraphicsScene::isPolygonPreviewItem(const QGraphicsItem* item) const
+{
+    if (!item || !polygonDrawingActive())
+        return false;
+
+    if (item == mShapeFillPreview)
+        return true;
+
+    for (const UBGraphicsPolygonItem* preview : std::as_const(mPolygonPreviewItems))
+    {
+        if (item == preview)
+            return true;
+    }
+
+    return false;
+}
+
 void UBGraphicsScene::addPolygonVertex(const QPointF& scenePos)
 {
     UBDrawingController* drawingController = UBDrawingController::drawingController();
@@ -2245,7 +2262,7 @@ std::shared_ptr<UBGraphicsScene> UBGraphicsScene::sceneDeepCopy() const
         UBItem* ubItem = dynamic_cast<UBItem*>(item);
 
         // copy visible top-level items
-        if (ubItem && item->isVisible() && !item->parentItem())
+        if (ubItem && item->isVisible() && !item->parentItem() && !isPolygonPreviewItem(item))
         {
             QGraphicsItem* cloneItem = nullptr;
             UBGraphicsGroupContainerItem* group = dynamic_cast<UBGraphicsGroupContainerItem*>(item);
@@ -2309,6 +2326,12 @@ UBItem* UBGraphicsScene::deepCopy() const
 
 void UBGraphicsScene::clearContent(clearCase pCase)
 {
+    // An unfinished polygon is a preview, not an undoable annotation yet.
+    // Drop both its items and vertices so moving the pointer cannot restore it.
+    if ((pCase == clearItemsAndAnnotations || pCase == clearAnnotations)
+            && polygonDrawingActive())
+        cancelPolygonDrawing();
+
     QSet<QGraphicsItem*> removedItems;
     UBGraphicsItemUndoCommand::GroupDataTable groupsMap;
 
@@ -3700,7 +3723,7 @@ void UBGraphicsScene::drawItems (QPainter * painter, int numItems,
 
         for (int i = 0; i < numItems; i++)
         {
-            if (!mTools.contains(rootItem(items[i])))
+            if (!mTools.contains(rootItem(items[i])) && !isPolygonPreviewItem(items[i]))
             {
                 bool isPdfItem =  qgraphicsitem_cast<UBGraphicsPDFItem*> (items[i]) != NULL;
                 if(!isPdfItem || mRenderingContext == NonScreen)

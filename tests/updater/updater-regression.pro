@@ -1,0 +1,11 @@
+QT += core widgets network concurrent
+CONFIG += console c++17
+CONFIG -= app_bundle debug_and_release
+TEMPLATE = app
+TARGET = updater-regression
+OPENBOARD_ROOT = $$clean_path($$PWD/../..)
+exists($$PWD/../src/core/UBApplicationController.cpp):OPENBOARD_ROOT = $$clean_path($$PWD/..)
+INCLUDEPATH += $$OPENBOARD_ROOT/src/core
+SOURCES += updater_regression.cpp generated_updater.cpp
+HEADERS += updater_harness.h $$OPENBOARD_ROOT/src/core/UBUpdateDownloadSupport.h
+win32:QMAKE_LFLAGS += /STACK:1048576

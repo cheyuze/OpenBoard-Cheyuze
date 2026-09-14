@@ -149,22 +149,30 @@ void UBDocument::movePage(int fromIndex, int toIndex)
 
 void UBDocument::copyPage(int fromIndex, std::shared_ptr<UBDocumentProxy> to, int toIndex)
 {
+    if (!to || fromIndex < 0 || fromIndex >= mProxy->pageCount()
+            || toIndex < 0 || toIndex > to->pageCount()
+            || (to == mProxy && toIndex <= fromIndex))
+        return;
+    // A target not currently displayed has no live entry in the weak cache.
+    // Load it before inserting the page so its existing labels keep their indexes.
+    const auto toDocument = getDocument(to);
+    const int previousPageCount = to->pageCount();
+    const QString copiedName = pageName(fromIndex);
     UBPersistenceManager::persistenceManager()->copyDocumentScene(mProxy, fromIndex, to, toIndex);
 
-    const auto toDocument = findDocument(to);
-
-    if (toDocument)
+    if (to->pageCount() == previousPageCount + 1)
     {
-        toDocument->insertPageName(toIndex, pageName(fromIndex));
+        toDocument->insertPageName(toIndex, copiedName);
         toDocument->mThumbnailScene->insertThumbnail(toIndex);
     }
 }
 
-void UBDocument::insertPage(std::shared_ptr<UBGraphicsScene> scene, int index, bool persist, bool deleting)
+void UBDocument::insertPage(std::shared_ptr<UBGraphicsScene> scene, int index, bool persist, bool deleting,
+                            const QString& name)
 {
     UBPersistenceManager::persistenceManager()->insertDocumentSceneAt(mProxy, scene, index, persist, deleting);
 
-    insertPageName(index);
+    insertPageName(index, name);
     mThumbnailScene->insertThumbnail(index);
 }
 
@@ -205,8 +213,14 @@ void UBDocument::renamePage(int index, const QString& name)
         return;
     }
 
+    const QString previousName = mPageNames.at(index);
     mPageNames[index] = normalizedName;
-    savePageNames();
+    if (!savePageNames())
+    {
+        mPageNames[index] = previousName;
+        UBApplication::showMessage(UBDocumentController::tr("The page name could not be saved. Check the document folder permissions and available disk space."));
+        return;
+    }
     mThumbnailScene->renameThumbnail(index, normalizedName);
 }
 
@@ -233,14 +247,15 @@ void UBDocument::loadPageNames()
     normalizePageNames();
 }
 
-void UBDocument::savePageNames() const
+bool UBDocument::savePageNames() const
 {
     if (mProxy->persistencePath().isEmpty())
     {
-        return;
+        return false;
     }
 
-    QDir().mkpath(mProxy->persistencePath());
+    if (!QDir().mkpath(mProxy->persistencePath()))
+        return false;
     QJsonArray pages;
     for (const QString& name : mPageNames)
     {
@@ -252,11 +267,13 @@ void UBDocument::savePageNames() const
     root.insert(QStringLiteral("pages"), pages);
 
     QSaveFile file{mProxy->persistencePath() + QLatin1Char('/') + pageNamesFileName};
-    if (file.open(QFile::WriteOnly))
+    const QByteArray contents = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    if (!file.open(QFile::WriteOnly) || file.write(contents) != contents.size() || !file.commit())
     {
-        file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
-        file.commit();
+        qWarning() << "Could not save page names:" << file.errorString();
+        return false;
     }
+    return true;
 }
 
 void UBDocument::normalizePageNames()

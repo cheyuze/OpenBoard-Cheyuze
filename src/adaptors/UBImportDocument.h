@@ -51,6 +51,7 @@ class UBImportDocument : public UBDocumentBasedImportAdaptor
         virtual bool addFileToDocument(std::shared_ptr<UBDocumentProxy> pDocument, const QFile& pFile);
 
     private:
+        friend class UBImportDocumentTest;
         bool extractFileToDir(const QFile& pZipFile, const QString& pDir, QString& documentRoot);
 };
 

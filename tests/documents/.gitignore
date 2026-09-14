@@ -1,0 +1,4 @@
+/build/
+/results*.txt
+/.qmake.stash
+*.user

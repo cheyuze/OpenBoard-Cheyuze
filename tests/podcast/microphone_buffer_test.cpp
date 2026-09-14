@@ -2,6 +2,7 @@
 #include <QAudioInput>
 #include <QAudioDevice>
 #include <QAudioSource>
+#include <cstdio>
 
 // Exercise actual input-buffer code without opening any recording device.
 #define private public
@@ -32,6 +33,25 @@ static void prepare(UBMicrophoneInput& microphone, QBuffer& device)
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
+    // Silent PCM must show no level for every supported capture format.
+    UBMicrophoneInput meter;
+    meter.mAudioFormat.setSampleRate(48000);
+    meter.mAudioFormat.setChannelCount(1);
+    const QAudioFormat::SampleFormat formats[] = {
+        QAudioFormat::Int16, QAudioFormat::Int32,
+        QAudioFormat::Float, QAudioFormat::UInt8
+    };
+    bool meterPass = true;
+    for (QAudioFormat::SampleFormat format : formats) {
+        meter.mAudioFormat.setSampleFormat(format);
+        const QByteArray silence(meter.mAudioFormat.bytesForFrames(16),
+                                 format == QAudioFormat::UInt8 ? '\x80' : '\0');
+        const int level = meter.audioLevel(silence);
+        std::printf("silent format %d -> level %d\n", int(format), level);
+        meterPass = meterPass && level == 0;
+    }
+    if (!meterPass)
+        return 1;
     UBMicrophoneInput microphone;
     int errors = 0;
     QObject::connect(&microphone, &UBMicrophoneInput::error,

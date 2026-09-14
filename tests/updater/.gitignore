@@ -1,0 +1,10 @@
+Makefile*
+.qmake.stash
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.idb
+generated_updater.cpp
+debug/
+release/

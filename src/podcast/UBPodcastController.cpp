@@ -498,13 +498,16 @@ void UBPodcastController::setSourceWidget(QWidget* pWidget)
 
                 startNextChapter();
 
-                if (mIsDesktopMode || UBApplication::applicationController->displayMode() == UBApplicationController::Internet)
-                {
-                    mScreenGrabingTimerEventID  = startTimer(1000 / mVideoFramesPerSecondAtStart);
-                }
             }
 
             mSourceWidget->installEventFilter(this);
+
+            // Source switching stopped the old timer above. The whiteboard
+            // also needs periodic frames for its cursor and camera overlay,
+            // even while no scene item is changing. Keep it ready during pause
+            // so resuming after a source switch resumes capture as well.
+            if (mRecordingState == Recording || mRecordingState == Paused)
+                mScreenGrabingTimerEventID = startTimer(1000 / mVideoFramesPerSecondAtStart);
         }
     }
 }
