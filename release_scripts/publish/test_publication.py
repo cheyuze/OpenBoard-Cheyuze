@@ -72,6 +72,14 @@ class PublicationTests(unittest.TestCase):
         files = self.fixture(); files["SHA256SUMS.txt"] = b"wrong"
         with self.assertRaises(ValueError): self.stage(files)
 
+    def test_interrupt_unwinds_cleanup(self):
+        parent = self.root / "interrupted"
+        parent.mkdir()
+        with self.assertRaises(TimeoutError):
+            with tempfile.TemporaryDirectory(dir=parent):
+                receiver.interrupted(15, None)
+        self.assertEqual(list(parent.iterdir()), [])
+
     def test_wrong_version(self):
         with self.assertRaises(ValueError): self.stage(self.fixture(), "1.9.2")
 

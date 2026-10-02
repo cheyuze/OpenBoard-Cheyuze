@@ -37,5 +37,9 @@ older `update.json` is a separate, intentional server-admin operation, not allow
 through the restricted CI key. Server configuration backups are retained under
 `/opt/platform/backups/openboard-191-*`.
 
+The receiver has a 25-minute hard deadline and unwinds private staging/locks on
+termination. An upload that times out does not change the currently published
+version; retry it from the workflow page after checking network connectivity.
+
 The static service shares server bandwidth with teaching tools. Monitor egress
 and move package storage behind a CDN/object store if download traffic grows.

@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import sys
 import tarfile
 import tempfile
@@ -167,8 +168,17 @@ def publish(staged, manifest, public_root):
     return target
 
 
+def interrupted(signum, _frame):
+    raise TimeoutError(f"Publication interrupted or timed out (signal {signum})")
+
+
 def main():
     import fcntl
+    # A broken SSH transport must not leave the publication lock held forever.
+    # Raising (rather than an abrupt exit) unwinds TemporaryDirectory and flock.
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGALRM, interrupted)
+    signal.alarm(25 * 60)
     command = os.environ.get("SSH_ORIGINAL_COMMAND", "")
     match = re.fullmatch(r"publish v([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4})", command)
     if not match:
@@ -182,6 +192,7 @@ def main():
             manifest = unpack(sys.stdin.buffer, staged, version)
             target = publish(staged, manifest, PUBLIC_ROOT)
         print(f"Published {version}; SHA256={manifest['sha256']}; directory={target}")
+    signal.alarm(0)
 
 
 if __name__ == "__main__":
