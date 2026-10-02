@@ -1,27 +1,30 @@
 {
-  "version": "1.9.0",
+  "version": "1.9.1",
+  "websiteUrl": "https://xiwang.cheyuze.top/openboard/releases/1.9.1/OpenBoard-cheyuze-1.9.1-x64.exe",
+  "githubUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.1/OpenBoard-cheyuze-1.9.1-x64.exe",
   "urls": [
-    "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.0/OpenBoard-cheyuze-1.9.0-x64.exe",
-    "https://ghproxy.net/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.0/OpenBoard-cheyuze-1.9.0-x64.exe",
-    "https://gh-proxy.com/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.0/OpenBoard-cheyuze-1.9.0-x64.exe",
-    "https://gh-proxy.org/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.0/OpenBoard-cheyuze-1.9.0-x64.exe"
+    "https://xiwang.cheyuze.top/openboard/releases/1.9.1/OpenBoard-cheyuze-1.9.1-x64.exe",
+    "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.1/OpenBoard-cheyuze-1.9.1-x64.exe",
+    "https://ghproxy.net/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.1/OpenBoard-cheyuze-1.9.1-x64.exe",
+    "https://gh-proxy.com/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.1/OpenBoard-cheyuze-1.9.1-x64.exe",
+    "https://gh-proxy.org/https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.1/OpenBoard-cheyuze-1.9.1-x64.exe"
   ],
-  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.0/OpenBoard-cheyuze-1.9.0-x64.exe",
+  "url": "https://github.com/cheyuze/OpenBoard-Cheyuze/releases/download/v1.9.1/OpenBoard-cheyuze-1.9.1-x64.exe",
   "baiduUrl": "https://pan.baidu.com/s/1bM8S8NFruXXRo96MWpLOwA?pwd=8y86",
   "baiduPassword": "8y86",
-  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.9.0",
-  "publishedAt": "2026-09-14",
+  "sourceUrl": "https://github.com/cheyuze/OpenBoard-Cheyuze/tree/v1.9.1",
+  "publishedAt": "2026-10-02",
   "required": false,
-  "sha256": "5A77902EECE308B53B1C4C228262DA4EF2394893DE28A39BC0A4CFF2C4110D01",
+  "sha256": "EA4E136D6C7F351C4B0CFDF1B12C7D6BF1E2719B0CABC86694009BC13A26F5FD",
+  "size": 270807328,
   "notes": [
-    "修复旧版自动下载接近100%时的闪退；旧1.8.5/原1.8.6若仍闪退，请通过浏览器手动安装1.9.0一次",
-    "安装包校验与原子转存改为后台处理，加强取消、断点续传、自动换源及退出清理，防止重复下载竞争写入",
-    "修复UBZ追加后的页数与缩略图同步，增加路径与名称冲突检查及失败回滚",
-    "复制页面保留名称，重命名写入失败时恢复旧名称并提示",
-    "修复空文档侧栏异常、拖拽残留和中键平移卡住；缩放预设与双击恢复精确比例",
-    "未完成多边形不再进入保存、导出或复制页，清除时正确取消临时预览",
-    "修复摄像头关闭后的旧帧与错误回调，切回白板后恢复周期抓帧，校正音量表显示",
-    "更新器10组、文档37项、输入/图形21项及录制合成时间线回归通过；实体设备仍需实机验证",
-    "保留GitHub与百度网盘渠道；网盘由维护者手动同步，尚未确认1.9.0已上传，请核对安装包文件名与版本"
+    "新增 xiwang.cheyuze.top 网站更新渠道，检查版本与下载不再仅依赖 GitHub；保留 GitHub 与百度网盘入口",
+    "GitHub 正式发布后自动同步同一安装包到网站，校验完成后才推送新版，支持失败重试和断点续传",
+    "全屏录制时控件仍可见可操作，成品排除控制条、菜单和工具，保留桌面批注；需 Windows 10 2004 或更新系统",
+    "新增仅录麦克风、仅录电脑声音、同时录两者三种音频方式，并实际应用播放设备选择",
+    "采用 WASAPI 回环采集与统一立体声时间线，改善静音、暂停恢复、混音和缓冲处理",
+    "保留长时间录制、暂停后直接结束以及更新下载接近完成时闪退的修复；重要录制前请用实际设备先试录",
+    "旧 1.8.5 / 原 1.8.6 若自动下载仍闪退，请通过浏览器手动安装本版一次",
+    "百度网盘由维护者手动同步，尚未确认 1.9.1 已上传，请核对安装包版本"
   ]
 }
