@@ -1,0 +1,74 @@
+name: Sync release to update website
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing stable release tag (for example v1.9.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openboard-website-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'cheyuze/OpenBoard-Cheyuze' && (github.event_name == 'workflow_dispatch' || !github.event.release.prerelease)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out trusted publication tools
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Download the published assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]]
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease > "$RUNNER_TEMP/release-state.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert not d["isDraft"] and not d["isPrerelease"], "Only published stable releases can be mirrored"' "$RUNNER_TEMP/release-state.json"
+          mkdir -p "$RUNNER_TEMP/openboard-release"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/openboard-release" \
+            --pattern "OpenBoard-cheyuze-${RELEASE_TAG#v}-x64.exe" --pattern update.json --pattern SHA256SUMS.txt
+      - name: Verify and publish through restricted SSH
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          PUBLISH_KEY: ${{ secrets.OPENBOARD_PUBLISH_SSH_KEY }}
+          PUBLISH_HOST: ${{ vars.OPENBOARD_PUBLISH_HOST }}
+          PUBLISH_USER: ${{ vars.OPENBOARD_PUBLISH_USER }}
+          PUBLISH_KNOWN_HOSTS: ${{ vars.OPENBOARD_PUBLISH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key_dir=$(mktemp -d "$RUNNER_TEMP/openboard-key.XXXXXX")
+          trap 'rm -f "$key_dir/key" "$key_dir/known_hosts"; rmdir "$key_dir"' EXIT
+          printf '%s\n' "$PUBLISH_KEY" > "$key_dir/key"
+          printf '%s\n' "$PUBLISH_KNOWN_HOSTS" > "$key_dir/known_hosts"
+          unset PUBLISH_KEY
+          python3 release_scripts/publish/send-release.py --tag "$RELEASE_TAG" \
+            --directory "$RUNNER_TEMP/openboard-release" --host "$PUBLISH_HOST" --user "$PUBLISH_USER" \
+            --key "$key_dir/key" --known-hosts "$key_dir/known_hosts"
+      - name: Verify the public metadata and resumable installer
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --max-time 30 \
+            https://xiwang.cheyuze.top/openboard/update.json -o "$RUNNER_TEMP/site-update.json"
+          cmp "$RUNNER_TEMP/openboard-release/update.json" "$RUNNER_TEMP/site-update.json"
+          url="https://xiwang.cheyuze.top/openboard/releases/${RELEASE_TAG#v}/OpenBoard-cheyuze-${RELEASE_TAG#v}-x64.exe"
+          status=$(curl --fail --silent --show-error --max-time 30 --range 0-3 --dump-header "$RUNNER_TEMP/site-headers" \
+            --output "$RUNNER_TEMP/site-magic" --write-out '%{http_code}' "$url")
+          test "$status" = 206
+          python3 -c 'import pathlib,sys; assert pathlib.Path(sys.argv[1]).read_bytes()[:2] == b"MZ"' "$RUNNER_TEMP/site-magic"
+          echo "Website release verified: $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

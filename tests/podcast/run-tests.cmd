@@ -7,5 +7,10 @@ if not defined FFMPEG_ROOT set "FFMPEG_ROOT=%OPENBOARD_ROOT%\thirdparty\ffmpeg\f
 set "PATH=%FFMPEG_ROOT%\bin;%PATH%"
 build\recording-clock\bin\recording-clock-test.exe || exit /b 1
 build\microphone-buffer\bin\microphone-buffer-test.exe || exit /b 1
+rem Deterministic mixer/visibility checks require no connected microphone.
+build\windows-audio\bin\windows-audio-test.exe || exit /b 1
+build\clean-screen\bin\clean-screen-test.exe || exit /b 1
+rem For a real playback-device test (plays two short tones), run separately:
+rem build\windows-audio\bin\windows-audio-test.exe --loopback --mp4
 build\encoder-regression\bin\encoder-regression.exe %*
 exit /b %ERRORLEVEL%

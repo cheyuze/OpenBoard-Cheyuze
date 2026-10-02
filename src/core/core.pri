@@ -13,6 +13,7 @@ HEADERS      += src/core/UB.h \
                 src/core/UBDocumentManager.h \
                 src/core/UBApplicationController.h \
                 src/core/UBUpdateDownloadSupport.h \
+                src/core/UBUpdateSources.h \
                 src/core/UBDownloadManager.h \
                 src/core/UBDownloadThread.h \
                 src/core/UBTextTools.h \

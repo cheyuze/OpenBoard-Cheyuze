@@ -1,16 +1,22 @@
 
 HEADERS      += src/podcast/UBPodcastController.h \
+                src/podcast/UBCleanScreenRecording.h \
                 src/podcast/UBAbstractVideoEncoder.h \
                 src/podcast/UBRecordingClock.h \
                 src/podcast/UBCameraPreviewWindow.h \
                 src/podcast/UBPodcastRecordingPalette.h \
                 
 SOURCES      += src/podcast/UBPodcastController.cpp \
+                src/podcast/UBCleanScreenRecording.cpp \
                 src/podcast/UBAbstractVideoEncoder.cpp \
                 src/podcast/UBCameraPreviewWindow.cpp \
                 src/podcast/UBPodcastRecordingPalette.cpp \
 
 win32 {
+
+    SOURCES += src/podcast/ffmpeg/UBWindowsAudioInput.cpp
+    HEADERS += src/podcast/ffmpeg/UBWindowsAudioInput.h src/podcast/ffmpeg/UBAudioTimeline.h
+    LIBS += -lole32 -lavrt -ldwmapi -luuid
 
     SOURCES  += src/podcast/ffmpeg/UBFFmpegVideoEncoder.cpp \
                 src/podcast/ffmpeg/UBMicrophoneInput.cpp \

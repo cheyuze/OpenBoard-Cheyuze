@@ -42,6 +42,7 @@ class UBGraphicsScene;
 class WebView;
 class UBPodcastRecordingPalette;
 class UBCameraPreviewWindow;
+class UBCleanScreenRecording;
 
 
 class UBPodcastController : public QObject
@@ -62,6 +63,11 @@ class UBPodcastController : public QObject
         QStringList cameraDevices() const;
         QString selectedAudioInputDevice() const;
         QString selectedAudioOutputDevice() const;
+        QString configuredAudioInputDevice() const;
+        QString configuredAudioOutputDevice() const;
+        enum AudioSourceMode { MicrophoneOnly = 0, SystemOnly, MicrophoneAndSystem, NoAudio };
+        AudioSourceMode audioSourceMode() const;
+        void selectAudioSourceMode(AudioSourceMode mode);
         QString selectedCameraDevice() const;
         void selectAudioInputDevice(const QString &deviceName);
         void selectAudioOutputDevice(const QString &deviceName);
@@ -148,6 +154,9 @@ class UBPodcastController : public QObject
         void widgetSizeChanged(const QSizeF size);
 
         void setRecordingState(RecordingState pRecordingState);
+        bool prepareCleanScreenRecording();
+        void updateCleanScreenRecording();
+        QList<QWidget *> cleanScreenControls() const;
 
         void positionRecordingPalette(bool desktopMode);
 
@@ -211,6 +220,7 @@ class UBPodcastController : public QObject
 
         UBPodcastRecordingPalette *mRecordingPalette;
         UBCameraPreviewWindow *mCameraPreview;
+        UBCleanScreenRecording *mCleanScreenRecording;
 
         RecordingState mRecordingState;
 

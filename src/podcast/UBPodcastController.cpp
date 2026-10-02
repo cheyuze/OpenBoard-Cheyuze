@@ -55,6 +55,7 @@
 
 #include "UBPodcastRecordingPalette.h"
 #include "UBCameraPreviewWindow.h"
+#include "UBCleanScreenRecording.h"
 
 #include <QFileDialog>
 #include <QAudioDevice>
@@ -74,6 +75,7 @@
 #ifdef Q_OS_WIN
     #include <windows.h>
     #include "ffmpeg/UBFFmpegVideoEncoder.h"
+    #include "ffmpeg/UBWindowsAudioInput.h"
     #include "windowsmedia/UBWaveRecorder.h"
 #elif defined(Q_OS_OSX)
     #include "ffmpeg/UBFFmpegVideoEncoder.h"
@@ -339,6 +341,7 @@ UBPodcastController::UBPodcastController(QObject* pParent)
     , mRecordingProgressTimerEventID(0)
     , mRecordingPalette(0)
     , mCameraPreview(0)
+    , mCleanScreenRecording(new UBCleanScreenRecording(this))
     , mRecordingState(Stopped)
     , mApplicationIsClosing(false)
     , mDefaultAudioInputDeviceAction(0)
@@ -369,10 +372,26 @@ UBPodcastController::UBPodcastController(QObject* pParent)
     connect(UBApplication::app(), SIGNAL(aboutToQuit()),
             this, SLOT(applicationAboutToQuit()));
 
+    connect(mCleanScreenRecording, &UBCleanScreenRecording::pauseRequested, this, [this] {
+        if (mRecordingState == Recording) pause();
+        else if (mRecordingState == Paused) unpause();
+    });
+    connect(mCleanScreenRecording, &UBCleanScreenRecording::stopRequested, this, &UBPodcastController::stop);
+    connect(mCleanScreenRecording, &UBCleanScreenRecording::exclusionFailed, this,
+            [this](const QString &reason) {
+        if (mRecordingState == Recording && mCleanScreenRecording->prepared()
+                && !mCleanScreenRecording->captureReady())
+        {
+            pause();
+            UBApplication::showMessage(tr("录制已暂停：%1").arg(reason), false);
+        }
+    }, Qt::QueuedConnection);
+
 }
 
 UBPodcastController::~UBPodcastController()
 {
+    delete mCleanScreenRecording;
     delete mCameraPreview;
     mCameraPreview = 0;
     delete mRecordingPalette;
@@ -569,6 +588,17 @@ void UBPodcastController::start()
             return;
         }
 
+        if (desktopRecording && mDesktopCaptureMode == FullScreenCapture
+                && !prepareCleanScreenRecording())
+        {
+            const QString reason = mCleanScreenRecording->lastError();
+            mCleanScreenRecording->finish();
+            QSignalBlocker blocker(UBApplication::mainWindow->actionPodcastRecord);
+            UBApplication::mainWindow->actionPodcastRecord->setChecked(false);
+            QMessageBox::warning(mRecordingPalette, tr("无法开始全屏录制"), reason);
+            return;
+        }
+
         // Area/window selection may change the source rectangle after the
         // camera was enabled. Keep the on-screen avatar inside the exact
         // region that will be recorded.
@@ -669,7 +699,9 @@ void UBPodcastController::start()
             }
 
             const QString selectedInput = selectedAudioInputDevice();
-            mVideoEncoder->setRecordAudio(selectedInput != QStringLiteral("None"));
+            const QString selectedOutput = selectedAudioOutputDevice();
+            mVideoEncoder->setRecordAudio(selectedInput != QStringLiteral("None") || selectedOutput != QStringLiteral("None"));
+            mVideoEncoder->setSystemAudioDevice(selectedOutput);
 
             const QString recordingDevice = selectedInput == QStringLiteral("Default")
                     ? QString() : selectedInput;
@@ -738,6 +770,7 @@ void UBPodcastController::start()
             else
             {
                 const QString error = mVideoEncoder->lastErrorMessage();
+                mCleanScreenRecording->finish();
                 UBAbstractVideoEncoder *failedEncoder = mVideoEncoder;
                 mVideoEncoder = nullptr;
                 disconnect(failedEncoder, nullptr, this, nullptr);
@@ -757,6 +790,7 @@ void UBPodcastController::start()
             UBApplication::mainWindow->actionPodcastRecord->setChecked(false);
             emit recordingStateChanged(Stopped);
             UBApplication::showMessage(tr("No Podcast encoder available ..."), false);
+            mCleanScreenRecording->finish();
         }
     }
 }
@@ -1007,6 +1041,9 @@ void UBPodcastController::processScenePaintEvent()
 
 void UBPodcastController::applicationMainModeChanged(UBApplicationController::MainMode pMode)
 {
+    // Restore capture affinity only. Never show/hide controls on a mode switch.
+    if (mCleanScreenRecording->prepared())
+        mCleanScreenRecording->finish();
     mIsDesktopMode = false;
 
     if (pMode == UBApplicationController::Internet)
@@ -1051,6 +1088,7 @@ void UBPodcastController::applicationDesktopMode(bool displayed)
 
     if (mCameraPreview && mCameraPreview->isVisible())
         positionCameraPreview();
+    updateCleanScreenRecording();
 }
 
 
@@ -1477,6 +1515,9 @@ QStringList UBPodcastController::audioRecordingDevices()
 
 QStringList UBPodcastController::audioOutputDevices() const
 {
+#ifdef Q_OS_WIN
+    return UBWindowsAudioInput::outputDevices();
+#else
     QStringList devices;
     for (const QAudioDevice &device : QMediaDevices::audioOutputs())
     {
@@ -1487,6 +1528,7 @@ QStringList UBPodcastController::audioOutputDevices() const
         }
     }
     return devices;
+#endif
 }
 
 QStringList UBPodcastController::cameraDevices() const
@@ -1505,12 +1547,55 @@ QStringList UBPodcastController::cameraDevices() const
 
 QString UBPodcastController::selectedAudioInputDevice() const
 {
-    return UBSettings::settings()->podcastAudioRecordingDevice->get().toString();
+    const auto mode = audioSourceMode();
+    return mode == MicrophoneOnly || mode == MicrophoneAndSystem
+            ? configuredAudioInputDevice() : QStringLiteral("None");
 }
 
 QString UBPodcastController::selectedAudioOutputDevice() const
 {
-    return UBSettings::settings()->podcastAudioOutputDevice->get().toString();
+#ifndef Q_OS_WIN
+    return QStringLiteral("None");
+#else
+    const auto mode = audioSourceMode();
+    return mode == SystemOnly || mode == MicrophoneAndSystem
+            ? configuredAudioOutputDevice() : QStringLiteral("None");
+#endif
+}
+
+QString UBPodcastController::configuredAudioInputDevice() const
+{
+    const QString name = UBSettings::settings()->podcastAudioRecordingDevice->get().toString();
+    return name.isEmpty() || name == QStringLiteral("None") ? QStringLiteral("Default") : name;
+}
+
+QString UBPodcastController::configuredAudioOutputDevice() const
+{
+    const QString name = UBSettings::settings()->podcastAudioOutputDevice->get().toString();
+    return name.isEmpty() || name == QStringLiteral("None") ? QStringLiteral("Default") : name;
+}
+
+UBPodcastController::AudioSourceMode UBPodcastController::audioSourceMode() const
+{
+    const int saved = UBSettings::settings()->podcastAudioSourceMode->get().toInt();
+    if (saved >= MicrophoneOnly && saved <= NoAudio)
+        return static_cast<AudioSourceMode>(saved);
+    // Migrate the previous independent switches without turning on a source
+    // that the user had muted. Device preferences are never overwritten.
+    const bool microphone = UBSettings::settings()->podcastAudioRecordingDevice->get().toString() != QStringLiteral("None");
+#ifdef Q_OS_WIN
+    const bool system = UBSettings::settings()->podcastSystemAudioEnabled->get().toBool();
+#else
+    const bool system = false;
+#endif
+    return microphone ? (system ? MicrophoneAndSystem : MicrophoneOnly)
+                      : (system ? SystemOnly : NoAudio);
+}
+
+void UBPodcastController::selectAudioSourceMode(AudioSourceMode mode)
+{
+    if (mode >= MicrophoneOnly && mode <= NoAudio)
+        UBSettings::settings()->podcastAudioSourceMode->set(static_cast<int>(mode));
 }
 
 QString UBPodcastController::selectedCameraDevice() const
@@ -1520,12 +1605,15 @@ QString UBPodcastController::selectedCameraDevice() const
 
 void UBPodcastController::selectAudioInputDevice(const QString &deviceName)
 {
+    // Freeze the current source mode before updating a legacy device setting.
+    selectAudioSourceMode(audioSourceMode());
     UBSettings::settings()->podcastAudioRecordingDevice->set(
             deviceName.isEmpty() ? QStringLiteral("Default") : deviceName);
 }
 
 void UBPodcastController::selectAudioOutputDevice(const QString &deviceName)
 {
+    selectAudioSourceMode(audioSourceMode());
     UBSettings::settings()->podcastAudioOutputDevice->set(
             deviceName.isEmpty() ? QStringLiteral("Default") : deviceName);
 }
@@ -1637,7 +1725,47 @@ void UBPodcastController::setRecordingState(RecordingState pRecordingState)
     {
         mRecordingState = pRecordingState;
         emit recordingStateChanged(mRecordingState);
+        updateCleanScreenRecording();
     }
+}
+
+bool UBPodcastController::prepareCleanScreenRecording()
+{
+    return mCleanScreenRecording->prepare()
+            && mCleanScreenRecording->excludeControls(cleanScreenControls());
+}
+
+void UBPodcastController::updateCleanScreenRecording()
+{
+    if (mRecordingState == Stopped || mRecordingState == Stopping)
+    {
+        mCleanScreenRecording->finish();
+        return;
+    }
+    // Exclusions stay installed while paused; controls remain visible throughout.
+    if (mRecordingState == Paused) return;
+    if (!mIsDesktopMode || mDesktopCaptureMode != FullScreenCapture) return;
+    if (!prepareCleanScreenRecording())
+    {
+        pause();
+        UBApplication::showMessage(tr("录制已暂停：%1").arg(mCleanScreenRecording->lastError()), false);
+    }
+}
+
+QList<QWidget *> UBPodcastController::cleanScreenControls() const
+{
+    QWidget *desktop = UBApplication::applicationController->uninotesController()->drawingView();
+    // Desktop tools are child widgets in the transparent drawing window.
+    // Exclude that native surface, then composite just its annotation scene.
+    QList<QWidget *> controls { desktop, mRecordingPalette, mCameraPreview };
+    for (QWidget *widget : desktop->findChildren<QWidget *>())
+        if (widget->isWindow()) controls.append(widget);
+    for (QWidget *widget : QApplication::topLevelWidgets())
+        if (widget != UBApplication::mainWindow &&
+                (desktop->isAncestorOf(widget) || widget->inherits("UBFloatingPalette")
+                    || widget->inherits("UBDockPalette")))
+            controls.append(widget);
+    return controls;
 }
 
 
@@ -1814,6 +1942,8 @@ void UBPodcastController::cameraToggled(bool enabled)
 
 void UBPodcastController::compositeCameraPreview(QImage &frame)
 {
+    if (mIsDesktopMode && mDesktopCaptureMode == FullScreenCapture)
+        return; // Pure desktop capture never adds an avatar to the recording.
     if (!mCameraPreview || !mCameraPreview->isVisible()
             || !mCameraPreview->hasFrame() || frame.isNull())
     {
@@ -2051,5 +2181,22 @@ QPixmap UBPodcastController::grabDesktopCapture() const
         return windowContent;
     }
 #endif
-    return UBApplication::displayManager->grabGlobal(currentDesktopCaptureRect());
+    if (mDesktopCaptureMode == FullScreenCapture && !mCleanScreenRecording->captureReady())
+        return QPixmap(); // Never encode a frame with unexcluded control windows.
+
+    QPixmap desktopContent = UBApplication::displayManager->grabGlobal(currentDesktopCaptureRect());
+    if (!desktopContent.isNull() && mDesktopCaptureMode == FullScreenCapture)
+    {
+        // The OS exclusion removes the entire transparent desktop HWND, which
+        // contains both controls and ink. Restore only ink, never child widgets.
+        auto *desktopController = UBApplication::applicationController->uninotesController();
+        const QPixmap annotations = desktopController->grabAnnotations(
+                currentDesktopCaptureRect(), desktopContent.devicePixelRatio());
+        if (!annotations.isNull())
+        {
+            QPainter painter(&desktopContent);
+            painter.drawPixmap(QPointF(0, 0), annotations);
+        }
+    }
+    return desktopContent;
 }

@@ -12,11 +12,12 @@
 - 录屏暂停/继续，并直接录制 H.264/AAC MP4。
 - 录制鼠标光标，书写时使用铅笔光标。
 - Shift 直线、常用形状与中文化界面。
-- 启动时检查 GitHub Releases 更新，也可从菜单手动检查。
+- 从网站检查更新，GitHub 作为备用；网站、GitHub 与百度网盘下载入口并存。
+- 全屏录制时控制条仍可操作，但成品排除控件；音频可选麦克风、电脑声音或两者混合。
 
-安装包、更新说明和对应版本源码见 [Releases](https://github.com/cheyuze/OpenBoard-Cheyuze/releases)。
+安装包见 [网站下载页](https://xiwang.cheyuze.top/openboard/) 或 [GitHub Releases](https://github.com/cheyuze/OpenBoard-Cheyuze/releases)。对应版本源码随 GitHub 标签公开。
 
-当前定制版为 **1.9.0**，重点修复更新下载闪退及文档、绘图、侧栏和录制稳定性问题，详见 [1.9.0 发布说明](https://github.com/cheyuze/OpenBoard-Cheyuze/releases/tag/v1.9.0)。旧 1.8.5 / 1.8.6 如在下载接近完成时退出，请通过浏览器手动安装 1.9.0 一次。
+当前定制版为 **1.9.1**，新增独立网站更新渠道、GitHub 发布自动同步，改进电脑声音录制与控件排除，详见 [1.9.1 发布说明](https://github.com/cheyuze/OpenBoard-Cheyuze/releases/tag/v1.9.1)。旧 1.8.5 / 原 1.8.6 如在下载接近完成时退出，请通过浏览器手动安装本版一次。百度网盘由维护者手动同步，请核对文件版本。
 
 本项目继续按 GNU GPL v3 发布，详见 [LICENSE](LICENSE)。第三方组件说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 

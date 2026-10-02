@@ -244,12 +244,13 @@ void UBSettings::init()
     appToolBarPositionedAtTop = new UBSetting(this, "App", "ToolBarPositionedAtTop", true);
     appToolBarDisplayText = new UBSetting(this, "App", "ToolBarDisplayText", true);
     appEnableAutomaticSoftwareUpdates = new UBSetting(this, "App", "EnableAutomaticSoftwareUpdates", true);
-    const QString cheyuzeUpdateUrl = "https://raw.githubusercontent.com/cheyuze/OpenBoard-Cheyuze/main/update.json";
+    const QString cheyuzeUpdateUrl = "https://xiwang.cheyuze.top/openboard/update.json";
     appSoftwareUpdateURL = new UBSetting(this, "App", "SoftwareUpdateURL", cheyuzeUpdateUrl);
     const QString legacyUpdateRepository = QString::fromLatin1(QByteArray::fromBase64("T3BlbkJvYXJkLVhpd2FuZ3h1ZQ=="));
     const QString configuredUpdateUrl = appSoftwareUpdateURL->get().toString();
     if (configuredUpdateUrl.contains(legacyUpdateRepository, Qt::CaseInsensitive)
-            || configuredUpdateUrl.contains("openboard.ch/update.json", Qt::CaseInsensitive))
+            || configuredUpdateUrl.contains("openboard.ch/update.json", Qt::CaseInsensitive)
+            || configuredUpdateUrl == "https://raw.githubusercontent.com/cheyuze/OpenBoard-Cheyuze/main/update.json")
         appSoftwareUpdateURL->set(cheyuzeUpdateUrl);
     appHideCheckForSoftwareUpdate = new UBSetting(this, "App", "HideCheckForSoftwareUpdate", false);
     appToolBarOrientationVertical = new UBSetting(this, "App", "ToolBarOrientationVertical", false);
@@ -446,6 +447,8 @@ void UBSettings::init()
     podcastVideoSize = new UBSetting(this, "Podcast", "VideoSize", "Full");
     podcastAudioRecordingDevice = new UBSetting(this, "Podcast", "AudioRecordingDevice", "Default");
     podcastAudioOutputDevice = new UBSetting(this, "Podcast", "AudioOutputDevice", "Default");
+    podcastSystemAudioEnabled = new UBSetting(this, "Podcast", "SystemAudioEnabled", false);
+    podcastAudioSourceMode = new UBSetting(this, "Podcast", "AudioSourceMode", -1);
     podcastCameraDevice = new UBSetting(this, "Podcast", "CameraDevice", "Default");
 
     podcastWindowsMediaBitsPerSecond = new UBSetting(this, "Podcast", "WindowsMediaBitsPerSecond", 12000000);

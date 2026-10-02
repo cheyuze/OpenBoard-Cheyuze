@@ -23,3 +23,11 @@ executable reserves a 1 MiB stack, matching the application crash constraint.
 
 This is an updater-method integration test, not the full OpenBoard UI, actual
 GitHub/Baidu networks, UAC elevation or an installation end-to-end test.
+
+`sources-regression.pro` also compiles the unchanged production metadata
+request/response methods extracted by `extract-metadata.ps1`. A controlled Qt
+network manager supplies responses without external traffic. Coverage includes
+website-only success (no GitHub dependency), old-profile source ordering,
+website failure/fallback, actual JSON and SHA validation, origin/redirect
+restrictions, redirect loops, response-size limits, repeated clicks and recovery
+after all sources fail. The shared URL policy is the production header.

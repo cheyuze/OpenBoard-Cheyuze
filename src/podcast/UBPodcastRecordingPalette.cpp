@@ -108,6 +108,7 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
      , mLevelMeter(nullptr)
      , mCameraAction(nullptr)
      , mCameraEnabledAction(nullptr)
+     , mAudioSourceMenu(nullptr)
      , mMicrophoneMenu(nullptr)
      , mSpeakerMenu(nullptr)
      , mCameraMenu(nullptr)
@@ -187,12 +188,49 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
         }
     }
 
-    mMicrophoneMenu = new QMenu(QStringLiteral("麦克风"), this);
+    mAudioSourceMenu = new QMenu(QStringLiteral("音频来源"), this);
+    auto *sourceGroup = new QActionGroup(mAudioSourceMenu);
+    sourceGroup->setExclusive(true);
+    const QList<QPair<QString, UBPodcastController::AudioSourceMode>> sources {
+        {QStringLiteral("仅录制麦克风"), UBPodcastController::MicrophoneOnly},
+        {QStringLiteral("仅录制电脑声音"), UBPodcastController::SystemOnly},
+        {QStringLiteral("同时录制麦克风和电脑声音"), UBPodcastController::MicrophoneAndSystem}
+    };
+    for (const auto &source : sources)
+    {
+        QAction *action = mAudioSourceMenu->addAction(source.first);
+        action->setCheckable(true);
+        action->setData(static_cast<int>(source.second));
+        sourceGroup->addAction(action);
+#ifndef Q_OS_WIN
+        if (source.second != UBPodcastController::MicrophoneOnly) action->setEnabled(false);
+#endif
+    }
+    // Keep the existing silent-video option separate from the three sources.
+    mAudioSourceMenu->addSeparator();
+    QAction *silent = mAudioSourceMenu->addAction(QStringLiteral("不录制声音"));
+    silent->setCheckable(true);
+    silent->setData(static_cast<int>(UBPodcastController::NoAudio));
+    sourceGroup->addAction(silent);
+    connect(sourceGroup, &QActionGroup::triggered, this, [](QAction *action) {
+        UBPodcastController::instance()->selectAudioSourceMode(
+                static_cast<UBPodcastController::AudioSourceMode>(action->data().toInt()));
+    });
+    connect(mAudioSourceMenu, &QMenu::aboutToShow, this, [sourceGroup] {
+        const auto mode = UBPodcastController::instance()->audioSourceMode();
+        for (QAction *action : sourceGroup->actions())
+            action->setChecked(action->data().toInt() == static_cast<int>(mode));
+    });
+
+    mMicrophoneMenu = new QMenu(QStringLiteral("麦克风设备"), this);
     mMicrophoneMenu->setIcon(recordingDeviceIcon(RecordingDeviceIcon::Microphone));
     connect(mMicrophoneMenu, &QMenu::aboutToShow,
             this, &UBPodcastRecordingPalette::populateMicrophoneMenu);
 
-    mSpeakerMenu = new QMenu(QStringLiteral("扬声器"), this);
+    mSpeakerMenu = new QMenu(QStringLiteral("电脑声音设备（扬声器 / 耳机）"), this);
+#ifndef Q_OS_WIN
+    mSpeakerMenu->setEnabled(false);
+#endif
     mSpeakerMenu->setIcon(recordingDeviceIcon(RecordingDeviceIcon::Speaker));
     connect(mSpeakerMenu, &QMenu::aboutToShow,
             this, &UBPodcastRecordingPalette::populateSpeakerMenu);
@@ -223,9 +261,16 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
             }
 
             menu->addSeparator();
+            menu->addMenu(mAudioSourceMenu);
             menu->addMenu(mMicrophoneMenu);
             menu->addMenu(mSpeakerMenu);
             menu->addMenu(mCameraMenu);
+            menu->addSeparator();
+            menu->addAction(QStringLiteral("合录电脑声音与麦克风时，建议使用耳机"))->setEnabled(false);
+            menu->addSeparator();
+            menu->addAction(QStringLiteral("全屏录制：控件保持显示，不会出现在成品中"))->setEnabled(false);
+            menu->addAction(QStringLiteral("全屏录制：Ctrl+Shift+F9 暂停 / 继续"))->setEnabled(false);
+            menu->addAction(QStringLiteral("全屏录制：Ctrl+Shift+F10 结束并保存"))->setEnabled(false);
 
             tb->setMenu(menu);
         }
@@ -417,7 +462,7 @@ void UBPodcastRecordingPalette::populateMicrophoneMenu()
 {
     mMicrophoneMenu->clear();
     UBPodcastController *controller = UBPodcastController::instance();
-    const QString selected = controller->selectedAudioInputDevice();
+    const QString selected = controller->configuredAudioInputDevice();
 
     auto addChoice = [this, controller, &selected](const QString &label,
             const QString &value) {
@@ -428,7 +473,6 @@ void UBPodcastRecordingPalette::populateMicrophoneMenu()
                 [controller, value]() { controller->selectAudioInputDevice(value); });
     };
 
-    addChoice(QStringLiteral("不使用麦克风"), QStringLiteral("None"));
     addChoice(QStringLiteral("默认麦克风"), QStringLiteral("Default"));
     mMicrophoneMenu->addSeparator();
     const QStringList devices = controller->audioRecordingDevices();
@@ -445,7 +489,7 @@ void UBPodcastRecordingPalette::populateSpeakerMenu()
 {
     mSpeakerMenu->clear();
     UBPodcastController *controller = UBPodcastController::instance();
-    const QString selected = controller->selectedAudioOutputDevice();
+    const QString selected = controller->configuredAudioOutputDevice();
 
     auto addChoice = [this, controller, &selected](const QString &label,
             const QString &value) {
@@ -456,7 +500,7 @@ void UBPodcastRecordingPalette::populateSpeakerMenu()
                 [controller, value]() { controller->selectAudioOutputDevice(value); });
     };
 
-    addChoice(QStringLiteral("默认扬声器"), QStringLiteral("Default"));
+    addChoice(QStringLiteral("默认播放设备（扬声器 / 耳机）"), QStringLiteral("Default"));
     mSpeakerMenu->addSeparator();
     const QStringList devices = controller->audioOutputDevices();
     for (const QString &device : devices)

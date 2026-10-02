@@ -10,8 +10,8 @@ set "PODCAST_QMAKE=qmake.exe"
 if defined QT_ROOT set "PODCAST_QMAKE=%QT_ROOT%\bin\qmake.exe"
 set "PODCAST_TEST_DIR=%~dp0"
 if not "%~1"=="" (
-    if /I not "%~1"=="recording-clock" if /I not "%~1"=="microphone-buffer" if /I not "%~1"=="encoder-regression" (
-        echo Unknown project. Choose recording-clock, microphone-buffer, or encoder-regression.
+    if /I not "%~1"=="recording-clock" if /I not "%~1"=="microphone-buffer" if /I not "%~1"=="encoder-regression" if /I not "%~1"=="windows-audio" if /I not "%~1"=="clean-screen" (
+        echo Unknown project. Choose recording-clock, microphone-buffer, encoder-regression, windows-audio, or clean-screen.
         exit /b 1
     )
     call :build "%~1"
@@ -21,6 +21,8 @@ if not "%~1"=="" (
 call :build recording-clock || exit /b 1
 call :build microphone-buffer || exit /b 1
 call :build encoder-regression || exit /b 1
+call :build windows-audio || exit /b 1
+call :build clean-screen || exit /b 1
 echo All podcast regression harnesses built successfully.
 exit /b 0
 

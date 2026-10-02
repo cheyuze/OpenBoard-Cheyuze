@@ -386,6 +386,8 @@ class UBSettings : public QObject
         UBSetting* podcastWindowsMediaBitsPerSecond;
         UBSetting* podcastAudioRecordingDevice;
         UBSetting* podcastAudioOutputDevice;
+        UBSetting* podcastSystemAudioEnabled;
+        UBSetting* podcastAudioSourceMode;
         UBSetting* podcastCameraDevice;
         UBSetting* podcastQuickTimeQuality;
 

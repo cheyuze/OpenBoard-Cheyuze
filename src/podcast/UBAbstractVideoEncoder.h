@@ -114,6 +114,9 @@ class UBAbstractVideoEncoder : public QObject
 
         virtual void setRecordAudio(bool pRecordAudio) = 0;
 
+        void setSystemAudioDevice(const QString &device) { mSystemAudioDevice = device; }
+        QString systemAudioDevice() const { return mSystemAudioDevice; }
+
     signals:
 
         void encodingStatus(const QString& pStatus);
@@ -137,6 +140,7 @@ class UBAbstractVideoEncoder : public QObject
         long mVideoBitsPerSecond;
 
         QString mAudioRecordingDevice;
+        QString mSystemAudioDevice = QStringLiteral("None");
 
 };
 

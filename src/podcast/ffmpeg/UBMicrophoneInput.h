@@ -43,17 +43,17 @@ public:
     UBMicrophoneInput();
     virtual ~UBMicrophoneInput();
 
-    bool init();
-    void start();
-    void stop();
+    virtual bool init();
+    virtual void start();
+    virtual void stop();
 
     static QStringList availableDevicesNames();
-    void setInputDevice(QString name = "");
+    virtual void setInputDevice(QString name = "");
 
-    int channelCount();
-    int sampleRate();
-    int sampleSize();
-    int sampleFormat();
+    virtual int channelCount();
+    virtual int sampleRate();
+    virtual int sampleSize();
+    virtual int sampleFormat();
 
 signals:
     /// Send the new audio level, between 0 and 255

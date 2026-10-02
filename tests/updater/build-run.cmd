@@ -8,4 +8,9 @@ qmake updater-regression.pro || exit /b 1
 nmake /nologo || exit /b 1
 set "QT_QPA_PLATFORM=offscreen"
 updater-regression.exe
+if errorlevel 1 exit /b 1
+powershell -NoProfile -ExecutionPolicy Bypass -File extract-metadata.ps1 || exit /b 1
+qmake sources-regression.pro || exit /b 1
+nmake /nologo || exit /b 1
+sources-regression.exe
 exit /b %ERRORLEVEL%

@@ -180,7 +180,7 @@ class UBApplicationController : public QObject
         bool isNoUpdateDisplayed;
         void checkUpdate(const QUrl &url = QUrl(),
                          const QList<QUrl> &urls = QList<QUrl>(),
-                         int urlIndex = 0, int retryAttempt = 0);
+                         int urlIndex = 0, int retryAttempt = 0, int redirectCount = 0);
         void downloadUpdateInstaller(const QList<QUrl> &urls, const QString &version,
                                      const QString &expectedSha256,
                                      const QUrl &baiduUrl = QUrl(),

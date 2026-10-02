@@ -28,6 +28,7 @@
 
 #include "UBApplicationController.h"
 #include "UBUpdateDownloadSupport.h"
+#include "UBUpdateSources.h"
 #include <QFutureWatcher>
 #include <QtConcurrent>
 
@@ -107,7 +108,9 @@ namespace
         return QStringLiteral(
                 "<div>%1</div>"
                 "<div style=\"margin-top: 12px;\">"
-                "<a href=\"%2\">GitHub 项目页面</a>"
+                "<a href=\"https://xiwang.cheyuze.top/openboard/\">网站下载</a> · "
+                "<a href=\"%2\">GitHub 项目页面</a> · "
+                "<a href=\"https://pan.baidu.com/s/1bM8S8NFruXXRo96MWpLOwA?pwd=8y86\">百度网盘（8y86）</a>"
                 "</div>")
                 .arg(escapedText, kGitHubProjectUrl);
     }
@@ -132,31 +135,6 @@ namespace
                                parent);
         enableUpdateMessageLinks(messageBox);
         messageBox.exec();
-    }
-
-    bool isTrustedGitHubManifestUrl(const QUrl &url)
-    {
-        if (!url.isValid()
-                || url.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) != 0
-                || !url.userInfo().isEmpty())
-        {
-            return false;
-        }
-
-        const int port = url.port(-1);
-        if (port != -1 && port != 443)
-            return false;
-
-        const QString host = url.host().toLower();
-        return host == QStringLiteral("github.com")
-                || host == QStringLiteral("raw.githubusercontent.com")
-                || host.endsWith(QStringLiteral(".githubusercontent.com"));
-    }
-
-    void appendUniqueUrl(QList<QUrl> &urls, const QUrl &url)
-    {
-        if (isTrustedGitHubManifestUrl(url) && !urls.contains(url))
-            urls.append(url);
     }
 
     struct UBUpdateDownloadMonitor
@@ -601,30 +579,26 @@ void UBApplicationController::showDesktop(bool dontSwitchFrontProcess)
 void UBApplicationController::checkUpdate(const QUrl& url,
                                           const QList<QUrl>& urls,
                                           int urlIndex,
-                                          int retryAttempt)
+                                          int retryAttempt,
+                                          int redirectCount)
 {
     QList<QUrl> manifestUrls = urls;
     QUrl jsonUrl = url;
 
     if (manifestUrls.isEmpty())
     {
+        if (mCheckingForUpdates)
+            return;
+        mCheckingForUpdates = true;
         const QUrl configuredUrl = url.isEmpty()
                 ? UBSettings::settings()->appSoftwareUpdateURL->get().toUrl()
                 : url;
         const QString configuredUrlString = configuredUrl.toString();
 
-        // Update metadata controls both the installer URL and its expected
-        // digest.  Fetch it only from GitHub-owned HTTPS endpoints; public
-        // proxies remain available for the much larger installer payload but
-        // are never trusted as a source of verification data.
-        appendUniqueUrl(manifestUrls, configuredUrl);
-        appendUniqueUrl(manifestUrls, QUrl(
-                "https://raw.githubusercontent.com/cheyuze/"
-                "OpenBoard-Cheyuze/main/update.json"));
-        appendUniqueUrl(manifestUrls, QUrl(
-                "https://github.com/cheyuze/OpenBoard-Cheyuze/"
-                "releases/latest/download/update.json"));
-        if (!isTrustedGitHubManifestUrl(configuredUrl))
+        // Try the maintained website even on profiles that still store the
+        // old GitHub URL. Proxies may carry payloads, never verification data.
+        manifestUrls = UBUpdateSources::manifests(configuredUrl);
+        if (!UBUpdateSources::trustedManifest(configuredUrl))
             qWarning() << "Ignoring untrusted update manifest URL:" << configuredUrlString;
 
         // The initial URL argument may have come from a locally modified
@@ -641,7 +615,7 @@ void UBApplicationController::checkUpdate(const QUrl& url,
         jsonUrl = manifestUrls.at(urlIndex);
     }
 
-    if (!isTrustedGitHubManifestUrl(jsonUrl))
+    if (!UBUpdateSources::trustedManifest(jsonUrl) || redirectCount > 5)
     {
         qWarning() << "Blocked untrusted update manifest URL:" << jsonUrl;
         if (urlIndex + 1 < manifestUrls.size())
@@ -650,9 +624,11 @@ void UBApplicationController::checkUpdate(const QUrl& url,
                 checkUpdate(QUrl(), manifestUrls, urlIndex + 1, 0);
             });
         }
-        else if (isNoUpdateDisplayed)
+        else
         {
-            showUpdateInformation(mMainWindow, tr("Check for updates"),
+            mCheckingForUpdates = false;
+            if (isNoUpdateDisplayed)
+                showUpdateInformation(mMainWindow, tr("Check for updates"),
                                   tr("Unable to check for updates securely."));
         }
         return;
@@ -665,6 +641,9 @@ void UBApplicationController::checkUpdate(const QUrl& url,
                       QString("OpenBoard-cheyuze/%1").arg(qApp->applicationVersion()));
     request.setRawHeader("Accept", "application/json");
     request.setRawHeader("Cache-Control", "no-cache");
+    // Validate every redirect before making the next request.
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::ManualRedirectPolicy);
 #if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
     // Some networks used by our teachers reset GitHub's HTTP/2 streams while
     // Qt is downloading.  HTTP/1.1 is slower to negotiate but considerably
@@ -681,6 +660,11 @@ void UBApplicationController::checkUpdate(const QUrl& url,
     reply->setProperty("updateManifestUrls", manifestUrlStrings);
     reply->setProperty("updateManifestUrlIndex", urlIndex);
     reply->setProperty("updateManifestRetryAttempt", retryAttempt);
+    reply->setProperty("updateManifestRedirectCount", redirectCount);
+    connect(reply, &QNetworkReply::readyRead, reply, [reply]() {
+        if (reply->bytesAvailable() > 256 * 1024)
+            reply->abort();
+    });
 
 }
 
@@ -714,6 +698,7 @@ void UBApplicationController::updateRequestFinished(QNetworkReply * reply)
             return;
         }
 
+        mCheckingForUpdates = false;
         if (isNoUpdateDisplayed)
             showUpdateInformation(mMainWindow, tr("Check for updates"),
                                   tr("Unable to check for updates. Please check your network connection and try again."));
@@ -728,7 +713,8 @@ void UBApplicationController::updateRequestFinished(QNetworkReply * reply)
         // The returned URL might be relative. resolved() creates an absolute url from it
         QUrl redirect_url(reply->url().resolved(redirect_target.toUrl()));
 
-        checkUpdate(redirect_url, manifestUrls, urlIndex, retryAttempt);
+        checkUpdate(redirect_url, manifestUrls, urlIndex, retryAttempt,
+                    reply->property("updateManifestRedirectCount").toInt() + 1);
         reply->deleteLater();
         return;
     }
@@ -737,10 +723,9 @@ void UBApplicationController::updateRequestFinished(QNetworkReply * reply)
 
     QString responseString = QString::fromUtf8(reply->readAll());
 
-    if (!responseString.isEmpty() &&
-            responseString.contains("version") &&
-            responseString.contains("url")) {
+    if (UBUpdateSources::validManifest(responseString.toUtf8())) {
 
+        mCheckingForUpdates = false;
         downloadJsonFinished(responseString);
     }
     else {
@@ -753,6 +738,7 @@ void UBApplicationController::updateRequestFinished(QNetworkReply * reply)
             return;
         }
 
+        mCheckingForUpdates = false;
         if (isNoUpdateDisplayed)
             showUpdateInformation(mMainWindow, tr("Check for updates"),
                                   tr("The update information returned by the server is invalid."));
@@ -827,46 +813,28 @@ void UBApplicationController::downloadJsonFinished(QString currentJson)
         enableUpdateMessageLinks(messageBox);
         const QString baiduUrlString = jsonObject.value("baiduUrl").toString().trimmed();
         const QString baiduPassword = jsonObject.value("baiduPassword").toString().trimmed();
-        QPushButton *downloadButton = messageBox.addButton(
-                tr("Download from domestic mirrors"), QMessageBox::AcceptRole);
+        const QList<QUrl> websiteUrls = UBUpdateSources::installers(jsonObject);
+        const QList<QUrl> githubUrls = UBUpdateSources::installers(jsonObject, false);
+        QPushButton *websiteButton = nullptr;
+        if (!websiteUrls.isEmpty() && UBUpdateSources::websiteInstaller(websiteUrls.first()))
+            websiteButton = messageBox.addButton(tr("Download from website (recommended)"), QMessageBox::AcceptRole);
+        QPushButton *githubButton = messageBox.addButton(
+                tr("Download from GitHub"), QMessageBox::ActionRole);
+        githubButton->setEnabled(!githubUrls.isEmpty()
+                                 && UBUpdateSources::githubInstaller(githubUrls.first()));
         QPushButton *baiduButton = nullptr;
         if (!baiduUrlString.isEmpty())
             baiduButton = messageBox.addButton(tr("Download from Baidu Netdisk"),
                                                QMessageBox::ActionRole);
         messageBox.addButton(tr("Remind me later"), QMessageBox::RejectRole);
+        if (websiteButton)
+            messageBox.setDefaultButton(websiteButton);
         messageBox.exec();
 
-        if (messageBox.clickedButton() == downloadButton) {
-            QList<QUrl> urls;
-            const QJsonValue urlsValue = jsonObject.value("urls");
-            if (urlsValue.isArray()) {
-                for (const QJsonValue &urlValue : urlsValue.toArray()) {
-                    const QUrl candidate(urlValue.toString());
-                    if (candidate.isValid() && !candidate.isEmpty() && !urls.contains(candidate))
-                        urls.append(candidate);
-                }
-            }
-
-            // Keep the original single URL field for compatibility and use it
-            // as the last fallback when a future manifest supplies mirrors.
-            const QUrl fallbackUrl(jsonObject.value("url").toString());
-            if (fallbackUrl.isValid() && !fallbackUrl.isEmpty() && !urls.contains(fallbackUrl))
-                urls.append(fallbackUrl);
-
-            // Prefer the official GitHub release asset. Public proxy services
-            // are fallbacks only, and receive a Range request so switching to
-            // them never discards bytes already downloaded from GitHub.
-            QList<QUrl> orderedUrls;
-            for (const QUrl &candidate : urls) {
-                if (candidate.host().compare(QStringLiteral("github.com"),
-                                             Qt::CaseInsensitive) == 0)
-                    orderedUrls.append(candidate);
-            }
-            for (const QUrl &candidate : urls) {
-                if (!orderedUrls.contains(candidate))
-                    orderedUrls.append(candidate);
-            }
-
+        if ((websiteButton && messageBox.clickedButton() == websiteButton)
+                || messageBox.clickedButton() == githubButton) {
+            const QList<QUrl> orderedUrls = messageBox.clickedButton() == websiteButton
+                    ? websiteUrls : githubUrls;
             if (!orderedUrls.isEmpty())
                 downloadUpdateInstaller(orderedUrls,
                                         jsonObject.value("version").toString(),

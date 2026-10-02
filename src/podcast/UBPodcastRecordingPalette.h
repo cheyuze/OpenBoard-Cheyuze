@@ -76,6 +76,7 @@ class UBPodcastRecordingPalette : public UBActionPalette
         UBVuMeter *mLevelMeter;
         QAction *mCameraAction;
         QAction *mCameraEnabledAction;
+        QMenu *mAudioSourceMenu;
         QMenu *mMicrophoneMenu;
         QMenu *mSpeakerMenu;
         QMenu *mCameraMenu;

@@ -6,5 +6,6 @@ Makefile*
 *.ilk
 *.idb
 generated_updater.cpp
+generated_metadata.cpp
 debug/
 release/

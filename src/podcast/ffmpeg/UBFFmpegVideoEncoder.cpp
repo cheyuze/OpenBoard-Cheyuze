@@ -20,6 +20,9 @@
  */
 
 #include "UBFFmpegVideoEncoder.h"
+#if defined(Q_OS_WIN) && !defined(UB_AUDIO_CAPTURE_TEST_STUB)
+#include "UBWindowsAudioInput.h"
+#endif
 
 // Due to the whole FFmpeg / libAV silliness, we have to support libavresample instead
 // of libswresapmle on some platforms, as well as now-obsolete function names
@@ -283,7 +286,7 @@ UBFFmpegVideoEncoder::UBFFmpegVideoEncoder(QObject* parent)
     , mAudioCodecContext(nullptr)
     , mSwrContext(nullptr)
     , mAudioOutBuffer(nullptr)
-    , mAudioSampleRate(44100)
+    , mAudioSampleRate(48000)
     , mAudioFrameCount(0)
 {
 
@@ -352,6 +355,12 @@ bool UBFFmpegVideoEncoder::start()
         mVideoEncoderThread->start();
         if (mShouldRecordAudio)
             mAudioInput->start();
+        if (!mLastErrorMessage.isEmpty()) {
+            mAcceptingData = false;
+            mVideoWorker->stopEncoding();
+            mVideoEncoderThread->wait();
+            return false;
+        }
     } else
         releaseResources();
 
@@ -404,7 +413,7 @@ bool UBFFmpegVideoEncoder::unpause()
     mPaused = false;
     if (mShouldRecordAudio && mAudioInput)
         mAudioInput->start();
-    return true;
+    return mLastErrorMessage.isEmpty();
 }
 
 bool UBFFmpegVideoEncoder::init()
@@ -520,9 +529,14 @@ bool UBFFmpegVideoEncoder::init()
     // -------------------------------------
     if (mShouldRecordAudio) {
 
-        // Microphone input
-
-        mAudioInput = new UBMicrophoneInput();
+        // Native loopback is only used when explicitly enabled. Existing
+        // microphone-only recordings keep their Qt capture backend.
+#if defined(Q_OS_WIN) && !defined(UB_AUDIO_CAPTURE_TEST_STUB)
+        if (systemAudioDevice() != QStringLiteral("None"))
+            mAudioInput = new UBWindowsAudioInput(systemAudioDevice());
+        else
+#endif
+            mAudioInput = new UBMicrophoneInput();
 
         connect(mAudioInput, SIGNAL(audioLevelChanged(quint8)),
                 this, SIGNAL(audioLevelChanged(quint8)));
@@ -566,7 +580,7 @@ bool UBFFmpegVideoEncoder::init()
             return false;
         }
 
-        c->bit_rate = 96000;
+        c->bit_rate = 192000;
 #if LIBAVCODEC_VERSION_MAJOR >= 62
         const void* supportedSampleFormats = nullptr;
         avcodec_get_supported_config(c, audioCodec, AV_CODEC_CONFIG_SAMPLE_FORMAT,

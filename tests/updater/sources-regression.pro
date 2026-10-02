@@ -1,0 +1,9 @@
+QT += core network widgets
+CONFIG += console c++17
+CONFIG -= app_bundle debug_and_release
+TEMPLATE = app
+TARGET = sources-regression
+INCLUDEPATH += ../../src/core
+SOURCES += sources_regression.cpp generated_metadata.cpp
+HEADERS += metadata_harness.h ../../src/core/UBUpdateSources.h
+win32:QMAKE_CXXFLAGS += /utf-8

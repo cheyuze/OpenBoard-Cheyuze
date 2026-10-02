@@ -1,5 +1,6 @@
 include(common.pri)
 QT += core gui
+DEFINES += UB_AUDIO_CAPTURE_TEST_STUB
 TARGET = encoder-regression
 !exists($$FFMPEG_ROOT/include/libavcodec/avcodec.h): error("Set FFMPEG_ROOT to a shared FFmpeg development installation")
 

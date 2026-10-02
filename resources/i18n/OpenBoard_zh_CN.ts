@@ -1454,6 +1454,9 @@ Do you wish to override the security check and continue ?   </source>
     <message><source>Current version: %1</source><translation>当前版本：%1</translation></message>
     <message><source>What's new:</source><translation>更新内容：</translation></message>
     <message><source>Download from domestic mirrors</source><translation>自动下载（GitHub 优先）</translation></message>
+    <message><source>Download from website (recommended)</source><translation>网站下载（推荐）</translation></message>
+    <message><source>Download from GitHub</source><translation>GitHub 下载</translation></message>
+    <message><source>Unable to check for updates securely.</source><translation>暂时无法安全检查更新，可通过下方的网站或网盘入口手动下载。</translation></message>
     <message><source>Download from Baidu Netdisk</source><translation>从百度网盘下载</translation></message>
     <message><source>Verifying and saving the update...</source><translation>正在校验并保存更新，请稍候…</translation></message>
     <message><source>Baidu Netdisk download</source><translation>百度网盘下载</translation></message>

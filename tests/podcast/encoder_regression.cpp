@@ -215,7 +215,7 @@ public:
         require(encoder.start(), "audio64 init");
         const qint64 initial = qint64(std::numeric_limits<qint32>::max()) - 1023;
         encoder.mAudioFrameCount = initial;
-        const qint64 timestamp = initial * 1000 / 44100;
+        const qint64 timestamp = initial * 1000 / encoder.mAudioSampleRate;
         for (int n = 0; n < 3; ++n) encoder.newPixmap(picture(n, QSize(64,64)), timestamp + qint64(n)*1000/30);
         encoder.onAudioAvailable(tone(0, 4410, 44100));
         require(encoder.mAudioFrameCount > std::numeric_limits<qint32>::max(), "Audio sample counter wrapped at 32-bit boundary");
@@ -375,7 +375,7 @@ public:
             encoder.onAudioAvailable(tone(qint64(n)*4410, 4410, 44100));
         const int pending = encoder.mVideoWorker->mAudioQueue.size();
         const bool failed = encoder.mVideoWorker->hasFailed();
-        const int limit = 44100 * 10 / encoder.mAudioCodecContext->frame_size;
+        const int limit = encoder.mAudioSampleRate * 10 / encoder.mAudioCodecContext->frame_size;
         encoder.mVideoEncoderThread->blockSignals(false);
         require(QMetaObject::invokeMethod(encoder.mVideoWorker, "runEncoding", Qt::QueuedConnection), "Invoke worker after audio overload");
         waitFinished(completion);
