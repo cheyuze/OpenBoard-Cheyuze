@@ -56,6 +56,7 @@ jobs:
           printf '%s\n' "$PUBLISH_KNOWN_HOSTS" > "$key_dir/known_hosts"
           unset PUBLISH_KEY
           python3 release_scripts/publish/send-release.py --tag "$RELEASE_TAG" \
+            --server-pull \
             --directory "$RUNNER_TEMP/openboard-release" --host "$PUBLISH_HOST" --user "$PUBLISH_USER" \
             --key "$key_dir/key" --known-hosts "$key_dir/known_hosts"
       - name: Verify the public metadata and resumable installer

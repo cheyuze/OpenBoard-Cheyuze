@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -31,16 +32,10 @@ def digest(path):
     return result.hexdigest()
 
 
-def validate(directory, version):
+def validate_metadata(directory, version):
     if not VERSION.fullmatch(version):
         raise ValueError("Invalid release version")
     name = f"OpenBoard-cheyuze-{version}-x64.exe"
-    package = directory / name
-    if not 1024 * 1024 <= package.stat().st_size <= MAX_PACKAGE:
-        raise ValueError("Installer size outside allowed range")
-    with package.open("rb") as stream:
-        if stream.read(2) != b"MZ":
-            raise ValueError("Not a Windows installer")
     data = (directory / "update.json").read_bytes()
     if len(data) > 256 * 1024:
         raise ValueError("Oversized manifest")
@@ -52,11 +47,12 @@ def validate(directory, version):
         raise ValueError("Manifest version or release URLs mismatch")
     if expected_site not in manifest.get("urls", []) or expected_github not in manifest.get("urls", []):
         raise ValueError("Missing official download channels")
-    checksum = digest(package)
-    if checksum != str(manifest.get("sha256", "")).lower():
-        raise ValueError("Installer SHA-256 mismatch")
-    if manifest.get("size") != package.stat().st_size:
-        raise ValueError("Installer size does not match manifest")
+    checksum = str(manifest.get("sha256", "")).lower()
+    if not re.fullmatch(r"[a-f0-9]{64}", checksum):
+        raise ValueError("Invalid installer checksum")
+    size = manifest.get("size")
+    if type(size) is not int or not 1024 * 1024 <= size <= MAX_PACKAGE:
+        raise ValueError("Installer size outside allowed range")
     sums = (directory / "SHA256SUMS.txt").read_text(encoding="utf-8").strip()
     if sums.lower() != f"{checksum}  {name}".lower():
         raise ValueError("SHA256SUMS does not match installer")
@@ -68,9 +64,23 @@ def validate(directory, version):
     return manifest
 
 
-def unpack(stream, directory, version):
-    expected = {f"OpenBoard-cheyuze-{version}-x64.exe": MAX_PACKAGE,
-                "update.json": 256 * 1024, "SHA256SUMS.txt": 4096}
+def validate(directory, version):
+    manifest = validate_metadata(directory, version)
+    package = directory / f"OpenBoard-cheyuze-{version}-x64.exe"
+    if package.stat().st_size != manifest["size"]:
+        raise ValueError("Installer size does not match manifest")
+    with package.open("rb") as stream:
+        if stream.read(2) != b"MZ":
+            raise ValueError("Not a Windows installer")
+    if digest(package) != manifest["sha256"].lower():
+        raise ValueError("Installer SHA-256 mismatch")
+    return manifest
+
+
+def unpack(stream, directory, version, include_installer=True):
+    expected = {"update.json": 256 * 1024, "SHA256SUMS.txt": 4096}
+    if include_installer:
+        expected[f"OpenBoard-cheyuze-{version}-x64.exe"] = MAX_PACKAGE
     seen = set()
     # Never use extract()/extractall(): paths, links, devices and sparse files
     # from the sender are not allowed to control filesystem operations.
@@ -92,7 +102,33 @@ def unpack(stream, directory, version):
             destination.chmod(0o644)
     if seen != set(expected):
         raise ValueError("Incomplete release bundle")
-    return validate(directory, version)
+    return validate(directory, version) if include_installer else validate_metadata(directory, version)
+
+
+def fetch_installer(directory, manifest):
+    # Payload mirrors are untrusted. Only the authenticated CI-supplied digest
+    # can authorize publication. Never fetch metadata or arbitrary supplied URLs.
+    github = manifest["githubUrl"]
+    urls = ["https://gh-proxy.com/" + github, "https://ghproxy.net/" + github,
+            "https://gh-proxy.org/" + github, github]
+    package = directory / f"OpenBoard-cheyuze-{manifest['version']}-x64.exe"
+    for url in urls:
+        print(f"Fetching installer via {urlsplit(url).hostname}", flush=True)
+        result = subprocess.run(["curl", "-q", "--fail", "--location", "--silent", "--show-error",
+            "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "15",
+            "--max-time", "600", "--speed-limit", "65536", "--speed-time", "40",
+            "--max-filesize", str(manifest["size"]), "--output", str(package), url],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=620)
+        if result.returncode == 0:
+            try:
+                validate(directory, manifest["version"])
+                package.chmod(0o644)
+                return
+            except ValueError:
+                print("Downloaded payload failed validation; trying another source.", flush=True)
+        else:
+            print(f"Payload source failed with curl exit {result.returncode}; trying another source.", flush=True)
+    raise ValueError("No source provided the exact verified installer")
 
 
 def landing_page(manifest):
@@ -180,16 +216,19 @@ def main():
     signal.signal(signal.SIGALRM, interrupted)
     signal.alarm(25 * 60)
     command = os.environ.get("SSH_ORIGINAL_COMMAND", "")
-    match = re.fullmatch(r"publish v([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4})", command)
+    match = re.fullmatch(r"(publish|fetch) v([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4})", command)
     if not match:
-        raise ValueError("Only 'publish vMAJOR.MINOR.PATCH' is permitted")
-    version = match.group(1)
+        raise ValueError("Only 'publish/fetch vMAJOR.MINOR.PATCH' is permitted")
+    version = match.group(2)
+    include_installer = match.group(1) == "publish"
     with (WORK_ROOT / "publish.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         with tempfile.TemporaryDirectory(prefix="release-", dir=WORK_ROOT) as temporary:
             staged = Path(temporary) / "bundle"
             staged.mkdir()
-            manifest = unpack(sys.stdin.buffer, staged, version)
+            manifest = unpack(sys.stdin.buffer, staged, version, include_installer)
+            if not include_installer:
+                fetch_installer(staged, manifest)
             target = publish(staged, manifest, PUBLIC_ROOT)
         print(f"Published {version}; SHA256={manifest['sha256']}; directory={target}")
     signal.alarm(0)

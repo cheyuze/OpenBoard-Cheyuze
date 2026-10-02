@@ -6,6 +6,8 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
+import subprocess
 
 spec = importlib.util.spec_from_file_location("receiver", Path(__file__).with_name("receive-release.py"))
 receiver = importlib.util.module_from_spec(spec); spec.loader.exec_module(receiver)
@@ -113,6 +115,33 @@ class PublicationTests(unittest.TestCase):
         path, manifest = self.stage(self.fixture())
         with self.assertRaises(ValueError): receiver.publish(path, manifest, self.public)
         self.assertEqual(json.loads((self.public / "update.json").read_bytes())["version"], "1.9.2")
+
+    def test_small_bundle_fetch_and_hash_validation(self):
+        files = self.fixture()
+        payload = files.pop("OpenBoard-cheyuze-1.9.1-x64.exe")
+        staged = Path(tempfile.mkdtemp(dir=self.root))
+        manifest = receiver.unpack(self.bundle(files), staged, "1.9.1", False)
+        calls = []
+        def download(args, **kwargs):
+            calls.append(args[-1])
+            output = Path(args[args.index("--output") + 1])
+            # A mirror serving a different binary cannot cause publication.
+            output.write_bytes(b"MZ" + b"bad" if len(calls) == 1 else payload)
+            return subprocess.CompletedProcess(args, 0, stderr=b"")
+        with patch.object(receiver.subprocess, "run", side_effect=download):
+            receiver.fetch_installer(staged, manifest)
+        self.assertEqual(len(calls), 2)
+        self.assertNotEqual(calls[0], calls[1])
+        receiver.publish(staged, manifest, self.public)
+        self.assertEqual(json.loads((self.public / "update.json").read_bytes())["version"], "1.9.1")
+
+    def test_all_fetch_sources_fail_no_publication(self):
+        files = self.fixture(); files.pop("OpenBoard-cheyuze-1.9.1-x64.exe")
+        staged = Path(tempfile.mkdtemp(dir=self.root))
+        manifest = receiver.unpack(self.bundle(files), staged, "1.9.1", False)
+        with patch.object(receiver.subprocess, "run", return_value=subprocess.CompletedProcess([], 28, stderr=b"timeout")):
+            with self.assertRaises(ValueError): receiver.fetch_installer(staged, manifest)
+        self.assertFalse((self.public / "update.json").exists())
 
 
 if __name__ == "__main__":

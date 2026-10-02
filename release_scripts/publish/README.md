@@ -5,6 +5,14 @@ Stable GitHub releases automatically mirror their installer, `update.json` and
 to a **draft** release first; publish the draft only when every asset is ready.
 An existing stable release can be retried using the workflow's `tag` input.
 
+CI verifies the GitHub asset, then sends only the small manifest/checksum bundle
+over restricted SSH (`fetch v...`). The server pulls the **payload only** over
+HTTPS using the existing fixed mirrors, with direct GitHub as a fallback. Each
+payload is checked against the CI-supplied digest and size before publication;
+mirrors are never trusted to supply metadata. This avoids the server's slow SSH
+bulk-transfer path. `send-release.py` without `--server-pull` retains the original
+full-bundle upload protocol for other environments.
+
 ## Publication contract
 
 - `version`, filename, tag, `websiteUrl`, `githubUrl`, `url`, `size`, SHA-256 and

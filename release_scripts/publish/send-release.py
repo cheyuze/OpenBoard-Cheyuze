@@ -14,6 +14,7 @@ def main():
     parser = argparse.ArgumentParser()
     for name in ("tag", "directory", "host", "user", "key", "known-hosts"):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--server-pull", action="store_true", help="Send authenticated metadata; server fetches and verifies the payload")
     args = parser.parse_args()
     if not re.fullmatch(r"v[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}", args.tag):
         raise ValueError("Invalid version tag")
@@ -25,6 +26,8 @@ def main():
     version = args.tag[1:]
     receiver.validate(directory, version)
     files = [f"OpenBoard-cheyuze-{version}-x64.exe", "update.json", "SHA256SUMS.txt"]
+    if args.server_pull:
+        files = files[1:]
     with tempfile.TemporaryFile() as bundle:
         with tarfile.open(fileobj=bundle, mode="w", format=tarfile.USTAR_FORMAT) as archive:
             for name in files:
@@ -35,7 +38,7 @@ def main():
                         "-o", "UserKnownHostsFile=" + str(Path(args.known_hosts).resolve()),
                         "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30",
                         "-o", "ServerAliveCountMax=4", f"{args.user}@{args.host}",
-                        "publish " + args.tag], stdin=bundle, check=True, timeout=1800)
+                        ("fetch " if args.server_pull else "publish ") + args.tag], stdin=bundle, check=True, timeout=1800)
 
 
 if __name__ == "__main__":
