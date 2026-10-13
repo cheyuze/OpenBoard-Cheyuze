@@ -28,6 +28,7 @@
 
 
 #include "UBDesktopPalette.h"
+#include "gui/UBUiTheme.h"
 
 #include <QtGui>
 
@@ -53,31 +54,33 @@ UBDesktopPalette::UBDesktopPalette(QWidget *parent, UBRightPalette* _rightPalett
 {
     QList<QAction*> actions;
 
-    mActionUniboard = new QAction(QIcon(":/images/toolbar/board.png"), tr("Show OpenBoard"), this);
+    setObjectName(QStringLiteral("desktopToolsPalette"));
+    setGrip(false);
+    mActionUniboard = new QAction(UBUiTheme::icon("pages"), tr("Show OpenBoard"), this);
     connect(mActionUniboard, SIGNAL(triggered()), this, SIGNAL(uniboardClick()));
     actions << mActionUniboard;
 
 
     actions << UBApplication::mainWindow->actionPen;
-    actions << UBApplication::mainWindow->actionEraser;
     actions << UBApplication::mainWindow->actionMarker;
+    actions << UBApplication::mainWindow->actionEraser;
     actions << UBApplication::mainWindow->actionSelector;
     actions << UBApplication::mainWindow->actionPointer;
 
     if (UBPlatformUtils::hasVirtualKeyboard())
         actions << UBApplication::mainWindow->actionVirtualKeyboard;
 
-    mActionCustomSelect = new QAction(QIcon(":/images/toolbar/captureArea.png"), tr("Capture Part of the Screen"), this);
+    mActionCustomSelect = new QAction(UBUiTheme::icon("capture"), tr("Capture Part of the Screen"), this);
     connect(mActionCustomSelect, SIGNAL(triggered()), this, SIGNAL(customClick()));
     actions << mActionCustomSelect;
 
-    mDisplaySelectAction = new QAction(QIcon(":/images/toolbar/captureScreen.png"), tr("Capture the Screen"), this);
+    mDisplaySelectAction = new QAction(UBUiTheme::icon("monitor"), tr("Capture the Screen"), this);
     connect(mDisplaySelectAction, SIGNAL(triggered()), this, SIGNAL(screenClick()));
     actions << mDisplaySelectAction;
 
     QIcon showHideIcon;
-    showHideIcon.addPixmap(QPixmap(":/images/toolbar/eyeOpened.png"), QIcon::Normal , QIcon::On);
-    showHideIcon.addPixmap(QPixmap(":/images/toolbar/eyeClosed.png"), QIcon::Normal , QIcon::Off);
+    showHideIcon.addPixmap(UBUiTheme::icon("eye").pixmap(24, 24), QIcon::Normal, QIcon::On);
+    showHideIcon.addPixmap(UBUiTheme::icon("eyeoff").pixmap(24, 24), QIcon::Normal, QIcon::Off);
     mShowHideAction = new QAction(showHideIcon, "", this);
     mShowHideAction->setCheckable(true);
 
@@ -85,13 +88,14 @@ UBDesktopPalette::UBDesktopPalette(QWidget *parent, UBRightPalette* _rightPalett
     actions << mShowHideAction;
 
     setActions(actions);
-    setButtonIconSize(QSize(42, 42));
+    setButtonIconSize(QSize(24, 24));
+    styleButtons();
 
     adjustSizeAndPosition();
 
     //  This palette can be minimized
     QIcon maximizeIcon;
-    maximizeIcon.addPixmap(QPixmap(":/images/toolbar/stylusTab.png"), QIcon::Normal, QIcon::On);
+    maximizeIcon = UBUiTheme::icon("pen");
     mMaximizeAction = new QAction(maximizeIcon, tr("Show the stylus palette"), this);
     connect(mMaximizeAction, SIGNAL(triggered()), this, SLOT(maximizeMe()));
     connect(this, SIGNAL(maximizeStart()), this, SLOT(maximizeMe()));
@@ -170,6 +174,7 @@ void UBDesktopPalette::minimizeMe(eMinimizedLocation location)
 
     actions << mMaximizeAction;
     setActions(actions);
+    styleButtons();
 
     adjustSizeAndPosition();
 
@@ -186,8 +191,8 @@ void UBDesktopPalette::maximizeMe()
 
     actions << mActionUniboard;
     actions << UBApplication::mainWindow->actionPen;
-    actions << UBApplication::mainWindow->actionEraser;
     actions << UBApplication::mainWindow->actionMarker;
+    actions << UBApplication::mainWindow->actionEraser;
     actions << UBApplication::mainWindow->actionSelector;
     actions << UBApplication::mainWindow->actionPointer;
     if (UBPlatformUtils::hasVirtualKeyboard())
@@ -198,6 +203,7 @@ void UBDesktopPalette::maximizeMe()
     actions << mShowHideAction;
 
     setActions(actions);
+    styleButtons();
 
     adjustSizeAndPosition();
 
@@ -216,11 +222,39 @@ void UBDesktopPalette::showEvent(QShowEvent *event)
             UBResources::resources()->coloredPenIcon(true));
     UBApplication::mainWindow->actionMarker->setIcon(
             UBResources::resources()->coloredMarkerIcon(true));
-    eraserIcon.addFile(":images/stylusPalette/eraserArrow.svg", QSize(), QIcon::Normal, QIcon::Off);
-    eraserIcon.addFile(":images/stylusPalette/eraserOnArrow.svg", QSize(), QIcon::Normal, QIcon::On);
+    eraserIcon = UBUiTheme::icon("eraser");
     UBApplication::mainWindow->actionEraser->setIcon(eraserIcon);
 
     adjustPosition();
+}
+
+void UBDesktopPalette::styleButtons()
+{
+    layout()->setContentsMargins(9, 18, 9, 10);
+    layout()->setSpacing(4);
+    for (auto* button : mButtons)
+    {
+        button->setFixedSize(44, 44);
+        button->setIconSize(QSize(24, 24));
+        button->setCursor(Qt::ArrowCursor);
+        button->setAccessibleName(button->defaultAction()->text());
+        button->setStyleSheet(QStringLiteral(
+            "QToolButton {background:transparent; border:1px solid transparent; border-radius:10px; padding:0;}"
+            "QToolButton:hover {background:#f1f5fa; border-color:#dbe2eb;}"
+            "QToolButton:checked, QToolButton:pressed {background:#eaf1ff; border-color:#a8c6ff;}"
+            "QToolButton:focus {border-color:#2563eb;}"));
+    }
+}
+
+void UBDesktopPalette::paintEvent(QPaintEvent*)
+{
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(UBUiTheme::border(), 1));
+    painter.setBrush(QColor(255, 255, 255, 248));
+    painter.drawRoundedRect(QRectF(rect()).adjusted(1, 1, -1, -1), 14, 14);
+    painter.setPen(QPen(QColor("#b8c4d4"), 2, Qt::SolidLine, Qt::RoundCap));
+    painter.drawLine(QPointF(width()/2.-7, 9), QPointF(width()/2.+7, 9));
 }
 
 void UBDesktopPalette::hideEvent(QHideEvent *event)
@@ -231,8 +265,7 @@ void UBDesktopPalette::hideEvent(QHideEvent *event)
             UBResources::resources()->coloredPenIcon(false));
     UBApplication::mainWindow->actionMarker->setIcon(
             UBResources::resources()->coloredMarkerIcon(false));
-    eraserIcon.addFile(":images/stylusPalette/eraser.svg", QSize(), QIcon::Normal, QIcon::Off);
-    eraserIcon.addFile(":images/stylusPalette/eraserOn.svg", QSize(), QIcon::Normal, QIcon::On);
+    eraserIcon = UBUiTheme::icon(QStringLiteral("eraser"));
     UBApplication::mainWindow->actionEraser->setIcon(eraserIcon);
 }
 

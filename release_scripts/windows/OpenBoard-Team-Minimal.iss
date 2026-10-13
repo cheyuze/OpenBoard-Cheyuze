@@ -1,5 +1,7 @@
+#ifndef ProductRoot
 #define ProductRoot "..\..\build\win32\release\product"
-#define ApplicationVersion GetVersionNumbersString(ProductRoot + "\OpenBoard.exe")
+#endif
+#define ApplicationVersion GetStringFileInfo(ProductRoot + "\OpenBoard.exe", "ProductVersion")
 
 [Setup]
 AppId={{D8C4AB4A-75D6-4EF4-B9AC-99A7D46316D4}
@@ -14,7 +16,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DefaultDirName={autopf}\OpenBoard 车厘子定制版
 DefaultGroupName=OpenBoard 车厘子定制版
 OutputDir=..\..\install\win32
-OutputBaseFilename=OpenBoard-cheyuze-1.9.1-x64
+OutputBaseFilename=OpenBoard-cheyuze-1.9.5-x64
 SetupIconFile=..\..\resources\win\OpenBoard.ico
 Compression=lzma2/ultra64
 SolidCompression=yes

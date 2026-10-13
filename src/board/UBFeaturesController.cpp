@@ -35,6 +35,7 @@
 #include "board/UBBoardController.h"
 #include "document/UBDocumentController.h"
 #include "UBFeaturesController.h"
+#include "gui/UBUiTheme.h"
 #include "core/UBSettings.h"
 #include "tools/UBToolsManager.h"
 #include "frameworks/UBFileSystemUtils.h"
@@ -333,18 +334,18 @@ UBFeaturesController::UBFeaturesController(QWidget *pParentWidget) :
     mLibSearchDirectoryPath =QUrl::fromLocalFile(UBSettings::settings()->userSearchDirectory());
     trashDirectoryPath = QUrl::fromLocalFile(UBSettings::userTrashDirPath());
 
-    rootElement = UBFeature(rootPath, QImage( ":images/libpalette/home.png" ), "root", QUrl());
-    audiosElement = UBFeature( audiosPath, QImage(":images/libpalette/AudiosCategory.svg"), tr("Audios") , mUserAudioDirectoryPath, FEATURE_CATEGORY);
-    moviesElement = UBFeature( moviesPath, QImage(":images/libpalette/MoviesCategory.svg"), tr("Movies") , mUserVideoDirectoryPath, FEATURE_CATEGORY);
-    picturesElement = UBFeature( picturesPath, QImage(":images/libpalette/PicturesCategory.svg"), tr("Pictures") , mUserPicturesDirectoryPath, FEATURE_CATEGORY);
+    rootElement = UBFeature(rootPath, UBUiTheme::icon(QStringLiteral("home")).pixmap(48, 48).toImage(), "root", QUrl());
+    audiosElement = UBFeature( audiosPath, UBUiTheme::icon(QStringLiteral("volume")).pixmap(48, 48).toImage(), tr("Audios") , mUserAudioDirectoryPath, FEATURE_CATEGORY);
+    moviesElement = UBFeature( moviesPath, UBUiTheme::icon(QStringLiteral("play")).pixmap(48, 48).toImage(), tr("Movies") , mUserVideoDirectoryPath, FEATURE_CATEGORY);
+    picturesElement = UBFeature( picturesPath, UBUiTheme::icon(QStringLiteral("picture")).pixmap(48, 48).toImage(), tr("Pictures") , mUserPicturesDirectoryPath, FEATURE_CATEGORY);
     //flashElement = UBFeature( flashPath, QImage(":images/libpalette/FlashCategory.svg"), tr("Animations") , mUserAnimationDirectoryPath, FEATURE_CATEGORY);
-    interactElement = UBFeature( interactPath, QImage(":images/libpalette/InteractivesCategory.svg"), tr("Interactivities") ,  mLibInteractiveDirectoryPath, FEATURE_CATEGORY);
-    applicationsElement = UBFeature( appPath, QImage(":images/libpalette/ApplicationsCategory.svg"), tr("Applications") , mUserInteractiveDirectoryPath, FEATURE_CATEGORY);
-    shapesElement = UBFeature( shapesPath, QImage(":images/libpalette/ShapesCategory.svg"), tr("Shapes") , mLibShapesDirectoryPath, FEATURE_CATEGORY );
-    favoriteElement = UBFeature( favoritePath, QImage(":images/libpalette/FavoritesCategory.svg"), tr("Favorites"), QUrl("favorites"), FEATURE_FAVORITE );
-    webSearchElement = UBFeature( webSearchPath, QImage(":images/libpalette/WebSearchCategory.svg"), tr("Web search"), mLibSearchDirectoryPath, FEATURE_CATEGORY);
+    interactElement = UBFeature( interactPath, UBUiTheme::icon(QStringLiteral("hand")).pixmap(48, 48).toImage(), tr("Interactivities") ,  mLibInteractiveDirectoryPath, FEATURE_CATEGORY);
+    applicationsElement = UBFeature( appPath, UBUiTheme::icon(QStringLiteral("apps")).pixmap(48, 48).toImage(), tr("Applications") , mUserInteractiveDirectoryPath, FEATURE_CATEGORY);
+    shapesElement = UBFeature( shapesPath, UBUiTheme::icon(QStringLiteral("shapes")).pixmap(48, 48).toImage(), tr("Shapes") , mLibShapesDirectoryPath, FEATURE_CATEGORY );
+    favoriteElement = UBFeature( favoritePath, UBUiTheme::icon(QStringLiteral("star")).pixmap(48, 48).toImage(), tr("Favorites"), QUrl("favorites"), FEATURE_FAVORITE );
+    webSearchElement = UBFeature( webSearchPath, UBUiTheme::icon(QStringLiteral("globe")).pixmap(48, 48).toImage(), tr("Web search"), mLibSearchDirectoryPath, FEATURE_CATEGORY);
 
-    trashElement = UBFeature( trashPath, QImage(":images/libpalette/TrashCategory.svg"), tr("Trash"), trashDirectoryPath, FEATURE_TRASH);
+    trashElement = UBFeature( trashPath, UBUiTheme::icon(QStringLiteral("trash")).pixmap(48, 48).toImage(), tr("Trash"), trashDirectoryPath, FEATURE_TRASH);
 
     featuresList = new QList <UBFeature>();
 

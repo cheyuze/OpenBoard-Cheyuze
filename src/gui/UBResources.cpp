@@ -28,6 +28,7 @@
 
 
 #include "UBResources.h"
+#include "UBUiTheme.h"
 
 #include <QtGui>
 #include <QFile>
@@ -165,19 +166,8 @@ void UBResources::updatePenColor(const QColor &color)
 
 QIcon UBResources::coloredPenIcon(bool desktopArrow) const
 {
-    const QString offPath = desktopArrow
-            ? QStringLiteral(":/images/stylusPalette/penArrow.svg")
-            : QStringLiteral(":/images/stylusPalette/pen.svg");
-    const QString onPath = desktopArrow
-            ? QStringLiteral(":/images/stylusPalette/penOnArrow.svg")
-            : QStringLiteral(":/images/stylusPalette/penOn.svg");
-
-    QIcon icon;
-    icon.addPixmap(renderColoredPen(offPath, mPenColor),
-            QIcon::Normal, QIcon::Off);
-    icon.addPixmap(renderColoredPen(onPath, mPenColor),
-            QIcon::Normal, QIcon::On);
-    return icon;
+    Q_UNUSED(desktopArrow);
+    return UBUiTheme::icon(QStringLiteral("pen"), mPenColor);
 }
 
 QPixmap UBResources::renderColoredMarker(const QString &resourcePath,
@@ -223,12 +213,8 @@ void UBResources::updateMarkerColor(const QColor &color)
 
 QIcon UBResources::coloredMarkerIcon(bool desktopArrow) const
 {
-    QIcon icon;
-    icon.addPixmap(renderMarkerBrushIcon(false, desktopArrow),
-            QIcon::Normal, QIcon::Off);
-    icon.addPixmap(renderMarkerBrushIcon(true, desktopArrow),
-            QIcon::Normal, QIcon::On);
-    return icon;
+    Q_UNUSED(desktopArrow);
+    return UBUiTheme::icon(QStringLiteral("brush"), mMarkerColor);
 }
 
 QPixmap UBResources::renderMarkerBrushIcon(bool selected, bool desktopArrow) const

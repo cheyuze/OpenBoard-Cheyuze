@@ -4,6 +4,9 @@ HEADERS += src/domain/UBGraphicsScene.h \
     src/domain/UBGraphicsTextItemUndoCommand.h \
     src/domain/UBGraphicsItemTransformUndoCommand.h \
     src/domain/UBGraphicsPixmapItem.h \
+    src/domain/UBGraphicsPixmapItemDelegate.h \
+    src/domain/UBImageTransform.h \
+    src/domain/UBImageLayerPolicy.h \
     src/domain/UBPageSizeUndoCommand.h \
     src/domain/UBGraphicsSvgItem.h \
     src/domain/UBGraphicsPolygonItem.h \
@@ -33,6 +36,7 @@ SOURCES += src/domain/UBGraphicsScene.cpp \
     src/domain/UBGraphicsTextItemUndoCommand.cpp \
     src/domain/UBGraphicsItemTransformUndoCommand.cpp \
     src/domain/UBGraphicsPixmapItem.cpp \
+    src/domain/UBGraphicsPixmapItemDelegate.cpp \
     src/domain/UBPageSizeUndoCommand.cpp \
     src/domain/UBGraphicsSvgItem.cpp \
     src/domain/UBGraphicsPolygonItem.cpp \

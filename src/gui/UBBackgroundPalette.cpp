@@ -175,18 +175,10 @@ void UBBackgroundPalette::toggleIntermediateLines(bool checked)
 
 void UBBackgroundPalette::backgroundChanged()
 {
-    bool dark = UBApplication::boardController->activeScene()->isDarkBackground();
-
-    if (dark)
-    {
-        mSliderLabel->setStyleSheet("QLabel { color : white; }");
-        mIntermediateLinesLabel->setStyleSheet("QLabel { color : white; }");
-    }
-    else
-    {
-        mSliderLabel->setStyleSheet("QLabel { color : black; }");
-        mIntermediateLinesLabel->setStyleSheet("QLabel { color : black; }");
-    }
+    // The control panel is always light, even when opening a legacy document
+    // with a dark canvas. Panel readability must not depend on canvas colour.
+    mSliderLabel->setStyleSheet("QLabel { color: #202936; }");
+    mIntermediateLinesLabel->setStyleSheet("QLabel { color: #202936; }");
 }
 
 void UBBackgroundPalette::refresh()

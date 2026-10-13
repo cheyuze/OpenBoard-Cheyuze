@@ -69,7 +69,7 @@ UBFloatingPalette::UBFloatingPalette(Qt::Corner position, QWidget *parent)
 #endif
     }
 
-    mBackgroundBrush = QBrush(UBSettings::paletteColor);
+    mBackgroundBrush = QBrush(QColor(255, 255, 255, 245));
     mbGrip = true;
 }
 
@@ -276,7 +276,7 @@ void UBFloatingPalette::paintEvent(QPaintEvent *)
 
     if(mbGrip)
     {
-        painter.setBrush(QBrush(QColor(170, 170 ,170)));
+        painter.setBrush(QBrush(QColor("#dbe2eb")));
         QPainterPath borderPath;
         borderPath.addRoundedRect(0, 0, width(), height(), radius(), radius());
         borderPath.addRoundedRect(border(), border(), width() - 2 * border(), height() - 2 * border(), radius(), radius());
@@ -286,6 +286,7 @@ void UBFloatingPalette::paintEvent(QPaintEvent *)
     }
     else
     {
+        painter.setPen(QPen(QColor("#cbd6e5"), 1));
         painter.drawRoundedRect(border(), border(), width() - 2 * border(), height() - 2 * border(), radius(), radius());
     }
 }

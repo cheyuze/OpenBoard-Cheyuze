@@ -61,7 +61,13 @@ XPDFRenderer::XPDFRenderer(const QString &filename, bool importingFile)
 #endif
         globalParams->setupBaseFonts(QFile::encodeName(UBPlatformUtils::applicationResourcesDirectory() + "/" + "fonts").data());
     }
-#if POPPLER_VERSION_MAJOR > 25 || (POPPLER_VERSION_MAJOR == 25 && POPPLER_VERSION_MINOR >= 12)
+#ifdef Q_OS_WIN
+    // The narrow Poppler constructor opens Windows paths using the current
+    // ANSI code page. Preserve Chinese/non-ANSI directory and file names by
+    // using its native UTF-16 filename overload instead.
+    std::wstring nativeFilename = QDir::toNativeSeparators(filename).toStdWString();
+    mDocument = new PDFDoc(nativeFilename.data(), static_cast<int>(nativeFilename.size()));
+#elif POPPLER_VERSION_MAJOR > 25 || (POPPLER_VERSION_MAJOR == 25 && POPPLER_VERSION_MINOR >= 12)
     mDocument = new PDFDoc(std::make_unique<GooString>(static_cast<std::string_view>(filename.toLocal8Bit())));
 #elif POPPLER_VERSION_MAJOR > 22 || (POPPLER_VERSION_MAJOR == 22 && POPPLER_VERSION_MINOR >= 3)
     mDocument = new PDFDoc(std::make_unique<GooString>(filename.toLocal8Bit()));

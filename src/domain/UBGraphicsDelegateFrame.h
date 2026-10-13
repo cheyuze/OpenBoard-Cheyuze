@@ -56,7 +56,7 @@ class UBGraphicsDelegateFrame: public QGraphicsRectItem, public QObject
         virtual void mouseMoveEvent(QGraphicsSceneMouseEvent *event);
         virtual void mouseReleaseEvent(QGraphicsSceneMouseEvent *event);
 
-        void positionHandles();
+        virtual void positionHandles();
         void setVisible(bool visible);
 
         virtual void setAntiScale(qreal pAntiScale);

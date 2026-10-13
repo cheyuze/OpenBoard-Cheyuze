@@ -40,9 +40,12 @@
 
 #include "globals/UBGlobals.h"
 #include "core/UBSettings.h"
+#include "gui/UBMainWindow.h"
 
 namespace
 {
+const QString seenVersionKey = QStringLiteral("App/LastStartupHintsVersion");
+
 class UBStartupHintsPage : public QWebEnginePage
 {
 public:
@@ -55,6 +58,12 @@ protected:
     bool acceptNavigationRequest(const QUrl &url, NavigationType type, bool isMainFrame) override
     {
         if (url.scheme().compare(QStringLiteral("yach"), Qt::CaseInsensitive) == 0)
+        {
+            QDesktopServices::openUrl(url);
+            return false;
+        }
+
+        if (type == NavigationTypeLinkClicked && url.scheme() == QStringLiteral("https"))
         {
             QDesktopServices::openUrl(url);
             return false;
@@ -104,6 +113,27 @@ UBStartupHintsPalette::~UBStartupHintsPalette()
 //    DELETEPTR(mLayout);
 }
 
+bool UBStartupHintsPalette::shouldShowAtStartup(bool recurringHintsEnabled,
+        const QString& lastSeenVersion, const QString& currentVersion)
+{
+    return recurringHintsEnabled || (!currentVersion.isEmpty() && lastSeenVersion != currentVersion);
+}
+
+void UBStartupHintsPalette::showAtStartup()
+{
+    auto* settings = UBSettings::settings();
+    if (!shouldShowAtStartup(settings->appStartupHintsEnabled->get().toBool(),
+            settings->value(seenVersionKey).toString(), QCoreApplication::applicationVersion()))
+        return;
+
+    // The board container is hidden when starting in document history. Keep
+    // release notes on the shared central surface so they are visible there too.
+    if (UBApplication::mainWindow && UBApplication::mainWindow->centralWidget())
+        setParent(UBApplication::mainWindow->centralWidget());
+    show();
+    raise();
+}
+
 void UBStartupHintsPalette::paintEvent(QPaintEvent *event)
 {
     UBFloatingPalette::paintEvent(event);
@@ -138,9 +168,21 @@ void UBStartupHintsPalette::onShowNextTimeStateChanged(int state)
 
 void UBStartupHintsPalette::showEvent(QShowEvent *event)
 {
-    Q_UNUSED(event);
+    UBFloatingPalette::showEvent(event);
     adjustSizeAndPosition();
-    move((parentWidget()->width() - width()) / 2, (parentWidget()->height() - height()) / 5);
+    if (parentWidget())
+        move(qMax(0, (parentWidget()->width() - width()) / 2),
+             qMax(0, (parentWidget()->height() - height()) / 5));
+
+    const QString version = QCoreApplication::applicationVersion();
+    auto* settings = UBSettings::settings();
+    if (!version.isEmpty() && settings->value(seenVersionKey).toString() != version)
+    {
+        settings->setValue(seenVersionKey, version);
+        // Persist immediately, including for users who close the app without
+        // another normal startup. Never reset their recurring-hints checkbox.
+        settings->save();
+    }
 }
 
 

@@ -58,6 +58,7 @@
 #include "document/UBDocument.h"
 
 #include "gui/UBThumbnail.h"
+#include "gui/UBUiTheme.h"
 #include "gui/UBThumbnailArranger.h"
 #include "gui/UBThumbnailScene.h"
 
@@ -76,6 +77,7 @@ UBBoardThumbnailsView::UBBoardThumbnailsView(QWidget *parent, const char *name)
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setFrameShadow(QFrame::Plain);
+    setAlignment(Qt::AlignTop | Qt::AlignHCenter);
 
     mThumbnailWidth = width() - 2*mMargin;
 
@@ -360,13 +362,13 @@ void UBBoardThumbnailsView::contextMenuEvent(QContextMenuEvent* event)
     QMenu menu(this);
     menu.setObjectName(QStringLiteral("ubPageContextMenu"));
     QAction* renameAction = menu.addAction(
-            QIcon(QStringLiteral(":/images/toolbar/rename.png")),
+            UBUiTheme::icon(QStringLiteral("rename")),
             tr("Rename Page"));
     QAction* duplicateAction = menu.addAction(
-            QIcon(QStringLiteral(":/images/addItemToNewPage.svg")),
+            UBUiTheme::icon(QStringLiteral("copy")),
             tr("Duplicate Page"));
     QAction* deleteAction = menu.addAction(
-            QIcon(QStringLiteral(":/images/toolbar/deleteDocument.png")),
+            UBUiTheme::icon(QStringLiteral("trash")),
             tr("Delete Page"));
     deleteAction->setEnabled(mDocument->proxy()->pageCount() > 1);
 
@@ -379,30 +381,11 @@ void UBBoardThumbnailsView::contextMenuEvent(QContextMenuEvent* event)
         dialog.setModal(true);
         dialog.setMinimumWidth(420);
         dialog.setAttribute(Qt::WA_StyledBackground, true);
-        dialog.setStyleSheet(QStringLiteral(
-                "QDialog#ubPageRenameDialog { color: #202124; background-color: #ffffff; "
-                "border: 1px solid #9eafc6; border-radius: 9px; }"
-                "QDialog#ubPageRenameDialog QLabel { color: #202124; background: transparent; }"
-                "QLabel#ubPageRenameTitle { color: #202124; font-size: 15px; font-weight: 600; }"
-                "QLineEdit#ubPageRenameEditor { color: #202124; background-color: #ffffff; "
-                "border: 1px solid #9eafc6; border-radius: 7px; padding: 7px 9px; "
-                "selection-color: #ffffff; selection-background-color: #3278d4; }"
-                "QLineEdit#ubPageRenameEditor:focus { border: 2px solid #3278d4; padding: 6px 8px; }"
-                "QPushButton#ubPageRenameCloseButton { color: #34445b; background: transparent; "
-                "border: 1px solid transparent; border-radius: 6px; padding: 0; font-size: 22px; }"
-                "QPushButton#ubPageRenameCloseButton:hover { color: #174ea6; background-color: #e8f1ff; "
-                "border-color: #a9c9f7; }"
-                "QDialogButtonBox#ubPageRenameButtons QPushButton { min-width: 74px; color: #202124; "
-                "background-color: #ffffff; border: 1px solid #9eafc6; border-radius: 7px; "
-                "padding: 6px 12px; }"
-                "QDialogButtonBox#ubPageRenameButtons QPushButton:hover { color: #174ea6; "
-                "background-color: #e8f1ff; border-color: #6b9fe5; }"
-                "QDialogButtonBox#ubPageRenameButtons QPushButton:default { color: #202124; "
-                "background-color: #ffffff; border: 2px solid #3278d4; padding: 5px 11px; }"));
+        // Use the shared light dialog style, including focus and disabled states.
 
         auto* dialogLayout = new QVBoxLayout(&dialog);
-        dialogLayout->setContentsMargins(18, 14, 18, 16);
-        dialogLayout->setSpacing(10);
+        dialogLayout->setContentsMargins(24, 20, 24, 24);
+        dialogLayout->setSpacing(14);
 
         auto* titleLayout = new QHBoxLayout;
         titleLayout->setContentsMargins(0, 0, 0, 0);

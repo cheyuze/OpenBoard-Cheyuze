@@ -34,6 +34,7 @@
 #include "core/UBApplication.h"
 
 #include "gui/UBResources.h"
+#include "gui/UBUiTheme.h"
 
 #include "core/UBSettings.h"
 
@@ -56,49 +57,11 @@ namespace
 
     QIcon recordingDeviceIcon(RecordingDeviceIcon type)
     {
-        QPixmap pixmap(48, 48);
-        pixmap.fill(Qt::transparent);
-
-        QPainter painter(&pixmap);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setPen(QPen(QColor(241, 245, 249), 2.8,
-                Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.setBrush(Qt::NoBrush);
         if (type == RecordingDeviceIcon::Microphone)
-        {
-            painter.drawRoundedRect(QRectF(17, 7, 14, 24), 7, 7);
-            painter.drawArc(QRectF(11, 19, 26, 20), 180 * 16, 180 * 16);
-            painter.drawLine(QPointF(24, 39), QPointF(24, 44));
-            painter.drawLine(QPointF(17, 44), QPointF(31, 44));
-        }
-        else if (type == RecordingDeviceIcon::Speaker)
-        {
-            QPainterPath body;
-            body.moveTo(7, 20);
-            body.lineTo(15, 20);
-            body.lineTo(25, 11);
-            body.lineTo(25, 37);
-            body.lineTo(15, 28);
-            body.lineTo(7, 28);
-            body.closeSubpath();
-            painter.drawPath(body);
-            painter.drawArc(QRectF(24, 15, 13, 18), -70 * 16, 140 * 16);
-            painter.drawArc(QRectF(23, 10, 21, 28), -65 * 16, 130 * 16);
-        }
-        else
-        {
-            painter.drawRoundedRect(QRectF(8.5, 14.5, 25, 20), 4, 4);
-            painter.drawEllipse(QPointF(21, 24.5), 5.5, 5.5);
-
-            QPainterPath lens;
-            lens.moveTo(34, 20);
-            lens.lineTo(41, 16.5);
-            lens.lineTo(41, 32.5);
-            lens.lineTo(34, 29);
-            lens.closeSubpath();
-            painter.drawPath(lens);
-        }
-        return QIcon(pixmap);
+            return UBUiTheme::icon(QStringLiteral("mic"));
+        if (type == RecordingDeviceIcon::Speaker)
+            return UBUiTheme::icon(QStringLiteral("volume"));
+        return UBUiTheme::icon(QStringLiteral("camera"));
     }
 }
 
@@ -128,13 +91,13 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
     QAction *pauseAction = UBApplication::mainWindow->actionPodcastPause;
     QAction *configAction = UBApplication::mainWindow->actionPodcastConfig;
 
-    recordAction->setIcon(QIcon(":/images/podcast/record.svg"));
+    recordAction->setIcon(UBUiTheme::icon(QStringLiteral("record")));
     recordAction->setText(QStringLiteral("录制"));
     recordAction->setToolTip(QStringLiteral("录制"));
-    pauseAction->setIcon(QIcon(":/images/podcast/pause.svg"));
+    pauseAction->setIcon(UBUiTheme::icon(QStringLiteral("pause")));
     pauseAction->setText(QStringLiteral("暂停"));
     pauseAction->setToolTip(QStringLiteral("暂停"));
-    configAction->setIcon(QIcon(":/images/podcast/settings.svg"));
+    configAction->setIcon(UBUiTheme::icon(QStringLiteral("settings")));
     configAction->setToolTip(QStringLiteral("录制设置"));
 
     addAction(recordAction);
@@ -144,7 +107,7 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
     mTimerLabel->setAlignment(Qt::AlignCenter);
     mTimerLabel->setMinimumWidth(56);
     mTimerLabel->setStyleSheet(QStringLiteral(
-        "QLabel { color: #F8FAFC; font-size: 15px; font-weight: 600; "
+        "QLabel { color: #202936; font-size: 13px; font-weight: 600; "
         "font-family: 'Segoe UI'; background: transparent; border: none; "
         "padding: 0 4px; }"));
     recordingProgressChanged(0);
@@ -169,10 +132,10 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
     const QString buttonStyle = QStringLiteral(
         "QToolButton { background: transparent; border: 1px solid transparent; "
         "border-radius: 10px; padding: 6px; }"
-        "QToolButton:hover { background: rgba(255, 255, 255, 32); "
-        "border-color: rgba(255, 255, 255, 38); }"
-        "QToolButton:pressed, QToolButton:checked { background: rgba(59, 130, 246, 58); "
-        "border-color: rgba(96, 165, 250, 105); }"
+        "QToolButton:hover { background: #f5f7fa; "
+        "border-color: #dbe2eb; }"
+        "QToolButton:pressed, QToolButton:checked { background: #eaf1ff; "
+        "border-color: #9cbbfb; }"
         "QToolButton:disabled { background: transparent; border-color: transparent; }"
         "QToolButton::menu-indicator { image: none; }"
     );
@@ -296,13 +259,13 @@ void UBPodcastRecordingPalette::recordingStateChanged(UBPodcastController::Recor
     {
         recordAction->setChecked(true);
         recordAction->setEnabled(true);
-        recordAction->setIcon(QIcon(":/images/podcast/stop.svg"));
+        recordAction->setIcon(UBUiTheme::icon(QStringLiteral("stop")));
         recordAction->setText(QStringLiteral("停止"));
         recordAction->setToolTip(QStringLiteral("停止"));
 
         pauseAction->setChecked(false);
         pauseAction->setEnabled(true);
-        pauseAction->setIcon(QIcon(":/images/podcast/pause.svg"));
+        pauseAction->setIcon(UBUiTheme::icon(QStringLiteral("pause")));
         pauseAction->setText(QStringLiteral("暂停"));
         pauseAction->setToolTip(QStringLiteral("暂停"));
 
@@ -314,13 +277,13 @@ void UBPodcastRecordingPalette::recordingStateChanged(UBPodcastController::Recor
     {
         recordAction->setChecked(false);
         recordAction->setEnabled(true);
-        recordAction->setIcon(QIcon(":/images/podcast/record.svg"));
+        recordAction->setIcon(UBUiTheme::icon(QStringLiteral("record")));
         recordAction->setText(QStringLiteral("录制"));
         recordAction->setToolTip(QStringLiteral("录制"));
 
         pauseAction->setChecked(false);
         pauseAction->setEnabled(false);
-        pauseAction->setIcon(QIcon(":/images/podcast/pause.svg"));
+        pauseAction->setIcon(UBUiTheme::icon(QStringLiteral("pause")));
         pauseAction->setText(QStringLiteral("暂停"));
         pauseAction->setToolTip(QStringLiteral("暂停"));
 
@@ -331,13 +294,13 @@ void UBPodcastRecordingPalette::recordingStateChanged(UBPodcastController::Recor
     {
         recordAction->setChecked(true);
         recordAction->setEnabled(true);
-        recordAction->setIcon(QIcon(":/images/podcast/stop.svg"));
+        recordAction->setIcon(UBUiTheme::icon(QStringLiteral("stop")));
         recordAction->setText(QStringLiteral("停止"));
         recordAction->setToolTip(QStringLiteral("停止"));
 
         pauseAction->setChecked(true);
         pauseAction->setEnabled(true);
-        pauseAction->setIcon(QIcon(":/images/podcast/play.svg"));
+        pauseAction->setIcon(UBUiTheme::icon(QStringLiteral("play")));
         pauseAction->setText(QStringLiteral("播放"));
         pauseAction->setToolTip(QStringLiteral("播放"));
 
@@ -346,7 +309,7 @@ void UBPodcastRecordingPalette::recordingStateChanged(UBPodcastController::Recor
     }
     else
     {
-        recordAction->setIcon(QIcon(":/images/podcast/stop.svg"));
+        recordAction->setIcon(UBUiTheme::icon(QStringLiteral("stop")));
         recordAction->setText(QStringLiteral("停止"));
         recordAction->setToolTip(QStringLiteral("停止"));
         recordAction->setEnabled(false);
@@ -404,14 +367,14 @@ void UBVuMeter::paintEvent(QPaintEvent* e)
     painter.setRenderHint(QPainter::Antialiasing);
     const QRectF track(0, 0, width(), height());
     painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(71, 85, 105));
+    painter.setBrush(QColor("#e2e7ee"));
     painter.drawRoundedRect(track, width() / 2.0, width() / 2.0);
 
     const qreal levelHeight = track.height() * mVolume / 255.0;
     if (levelHeight > 0.5)
     {
         QRectF levelRect(0, track.bottom() - levelHeight + 1, width(), levelHeight);
-        QColor levelColor = mVolume > 220 ? QColor(248, 113, 113) : QColor(52, 211, 153);
+        QColor levelColor = mVolume > 220 ? QColor("#dc3545") : QColor("#258560");
         painter.setBrush(levelColor);
         painter.drawRoundedRect(levelRect, width() / 2.0, width() / 2.0);
     }
@@ -426,10 +389,10 @@ void UBPodcastRecordingPalette::paintEvent(QPaintEvent *event)
 
     const QRectF panel = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
     QLinearGradient background(panel.topLeft(), panel.bottomLeft());
-    background.setColorAt(0.0, QColor(30, 41, 59, 248));
-    background.setColorAt(1.0, QColor(15, 23, 42, 248));
+    background.setColorAt(0.0, QColor(255, 255, 255, 248));
+    background.setColorAt(1.0, QColor(251, 252, 254, 248));
     painter.setBrush(background);
-    painter.setPen(QPen(QColor(148, 163, 184, 95), 1.0));
+    painter.setPen(QPen(QColor("#cbd6e5"), 1.0));
     painter.drawRoundedRect(panel, radius(), radius());
 }
 

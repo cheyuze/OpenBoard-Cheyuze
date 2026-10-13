@@ -1,4 +1,6 @@
 HEADERS +=  \
+    src/gui/UBUiTheme.h \
+    src/gui/UBTeachingWorkbench.h \
     src/gui/UBThumbnail.h \
     src/gui/UBThumbnailArranger.h \
     src/gui/UBThumbnailScene.h \
@@ -48,6 +50,7 @@ HEADERS +=  \
     src/gui/UBBoardThumbnailsView.h \
     src/gui/UBSnapIndicator.h
 SOURCES +=  \
+    src/gui/UBUiTheme.cpp \
     src/gui/UBThumbnail.cpp \
     src/gui/UBThumbnailArranger.cpp \
     src/gui/UBThumbnailScene.cpp \

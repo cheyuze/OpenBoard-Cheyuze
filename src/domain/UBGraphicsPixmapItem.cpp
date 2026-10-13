@@ -36,6 +36,8 @@
 #include "UBGraphicsScene.h"
 
 #include "UBGraphicsItemDelegate.h"
+#include "UBGraphicsPixmapItemDelegate.h"
+#include <QGraphicsSceneContextMenuEvent>
 
 #include "frameworks/UBFileSystemUtils.h"
 
@@ -49,11 +51,8 @@
 UBGraphicsPixmapItem::UBGraphicsPixmapItem(QGraphicsItem* parent)
     : QGraphicsPixmapItem(parent)
 {
-    setDelegate(new UBGraphicsItemDelegate(this, 0, GF_COMMON
-                                           | GF_FLIPPABLE_ALL_AXIS
-                                           | GF_REVOLVABLE
-                                           | GF_RESPECT_RATIO
-                                           | GF_TOOLBAR_USED));
+    setDelegate(new UBGraphicsPixmapItemDelegate(this));
+    setShapeMode(QGraphicsPixmapItem::BoundingRectShape);
 
     setData(UBGraphicsItemData::ItemLayerType, UBItemLayerType::Object);
     setTransformationMode(Qt::SmoothTransformation);
@@ -84,14 +83,16 @@ void UBGraphicsPixmapItem::setUuid(const QUuid &pUuid)
 
 void UBGraphicsPixmapItem::mousePressEvent(QGraphicsSceneMouseEvent *event)
 {
-    QMimeData* pMime = new QMimeData();
-    pMime->setImageData(pixmap().toImage());
-    Delegate()->setMimeData(pMime);
-    qreal k = (qreal)pixmap().width() / 100.0;
-
-    QSize newSize((int)(pixmap().width() / k), (int)(pixmap().height() / k));
-
-    Delegate()->setDragPixmap(pixmap().scaled(newSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+    Delegate()->setMimeData(nullptr);
+    // Normal dragging moves the image directly, like presentation editors.
+    // Alt-drag retains the existing image drag/export to the library.
+    if (event->button() == Qt::LeftButton && event->modifiers().testFlag(Qt::AltModifier))
+    {
+        QMimeData* mime = new QMimeData();
+        mime->setImageData(pixmap().toImage());
+        Delegate()->setMimeData(mime);
+        Delegate()->setDragPixmap(pixmap().scaled(100, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    }
 
     if (Delegate()->mousePressEvent(event))
     {
@@ -101,6 +102,27 @@ void UBGraphicsPixmapItem::mousePressEvent(QGraphicsSceneMouseEvent *event)
     {
 //        QGraphicsPixmapItem::mousePressEvent(event);
     }
+}
+
+void UBGraphicsPixmapItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event)
+{
+    if (scene() && scene()->backgroundObject() != this)
+    {
+        if (!isSelected()) {
+            scene()->deselectAllItemsExcept(this);
+            setSelected(true);
+        }
+        static_cast<UBGraphicsPixmapItemDelegate*>(Delegate())->openMenu(event->screenPos());
+        event->accept();
+    } else {
+        event->ignore();
+    }
+}
+
+void UBGraphicsPixmapItem::keyPressEvent(QKeyEvent* event)
+{
+    if (!Delegate()->keyPressEvent(event))
+        QGraphicsPixmapItem::keyPressEvent(event);
 }
 
 void UBGraphicsPixmapItem::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
@@ -165,6 +187,7 @@ void UBGraphicsPixmapItem::copyItemParameters(UBItem *copy) const
         cp->setData(UBGraphicsItemData::ItemIsHiddenOnDisplay, this->data(UBGraphicsItemData::ItemIsHiddenOnDisplay));
         cp->setData(UBGraphicsItemData::ItemOwnZValue, this->data(UBGraphicsItemData::ItemOwnZValue));
         cp->setSourceUrl(this->sourceUrl());
+        cp->setOpacity(this->opacity());
 
         cp->setZValue(this->zValue());
     }

@@ -81,6 +81,7 @@
    <addaction name="actionBoard"/>
    <addaction name="actionDesktop"/>
    <addaction name="actionDocument"/>
+   <addaction name="actionTeachingWorkbench"/>
    <addaction name="actionMenu"/>
   </widget>
   <widget class="QToolBar" name="webToolBar">
@@ -183,10 +184,19 @@
    <addaction name="separator"/>
    <addaction name="actionBoard"/>
    <addaction name="actionWeb"/>
-   <addaction name="actionDocument"/>
    <addaction name="actionDesktop"/>
+   <addaction name="actionDocument"/>
+   <addaction name="actionTeachingWorkbench"/>
    <addaction name="actionMenu"/>
   </widget>
+  <action name="actionTeachingWorkbench">
+   <property name="text">
+    <string notr="true">工作台</string>
+   </property>
+   <property name="toolTip">
+    <string notr="true">打开教学培训工作台（默认浏览器）</string>
+   </property>
+  </action>
   <action name="actionStylus">
    <property name="checkable">
     <bool>true</bool>

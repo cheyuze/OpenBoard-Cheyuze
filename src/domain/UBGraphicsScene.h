@@ -36,6 +36,7 @@
 #include "core/UB.h"
 
 #include "UBItem.h"
+#include "UBImageLayerPolicy.h"
 
 class UBGraphicsPixmapItem;
 class UBGraphicsSvgItem;
@@ -304,6 +305,7 @@ class UBGraphicsScene: public UBCoreGraphicsScene, public UBItem, public std::en
         void setNominalSize(int pWidth, int pHeight);
 
         qreal changeZLevelTo(QGraphicsItem *item, UBZLayerController::moveDestination dest, bool addUndo=false);
+        void arrangeImage(QGraphicsItem* image, UBImageLayerPolicy::Placement placement, bool addUndo = true);
 
         enum RenderingContext
         {

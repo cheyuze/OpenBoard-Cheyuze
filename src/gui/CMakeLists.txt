@@ -1,4 +1,7 @@
 target_sources(${PROJECT_NAME} PRIVATE
+    UBUiTheme.cpp
+    UBUiTheme.h
+    UBTeachingWorkbench.h
     UBActionPalette.cpp
     UBActionPalette.h
     UBBackgroundPalette.cpp

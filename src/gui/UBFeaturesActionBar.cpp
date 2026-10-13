@@ -54,13 +54,13 @@ UBFeaturesActionBar::UBFeaturesActionBar( UBFeaturesController *controller, QWid
     , mpNewFolderBtn(NULL)
 {
     setObjectName(name);
-    setStyleSheet(QString("background: #EEEEEE; border-radius : 10px; border : 2px solid #999999;"));
+    setStyleSheet(QStringLiteral("background: #ffffff; color: #202936; border-radius: 8px; border: 1px solid #dbe2eb;"));
 
     setAcceptDrops(true);
 
     mButtonGroup = new QButtonGroup(this);
     mSearchBar = new QLineEdit(this);
-    mSearchBar->setStyleSheet(QString("background-color:white; border-radius : 10px; padding : 2px;"));
+    mSearchBar->setStyleSheet(QString("background-color:white; color: #202936; border: 1px solid #cbd6e5; border-radius: 8px; padding: 5px;"));
 
     mLayout = new QHBoxLayout();
     setLayout(mLayout);
@@ -331,7 +331,7 @@ UBActionButton::UBActionButton(QWidget *parent, QAction* action, const char *nam
     setDefaultAction(action);
     setIconSize(QSize(BUTTON_SIZE, BUTTON_SIZE));
     setToolButtonStyle(Qt::ToolButtonIconOnly);
-    setStyleSheet(QString("QToolButton {color: white; font-weight: bold; font-family: Arial; background-color: transparent; border: none}"));
+    setStyleSheet(QString("QToolButton {color: #526174; background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 3px;} QToolButton:hover {color: #1d4ed8; background: #eaf1ff;} QToolButton:checked {color: #1d4ed8; background: #eaf1ff; border-color: #9cbbfb;}"));
     setFocusPolicy(Qt::NoFocus);
 }
 

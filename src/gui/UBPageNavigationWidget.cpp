@@ -33,6 +33,7 @@
 #include "board/UBBoardController.h"
 #include "globals/UBGlobals.h"
 #include "gui/UBMainWindow.h"
+#include "gui/UBUiTheme.h"
 
 #include "core/memcheck.h"
 
@@ -55,8 +56,8 @@ UBPageNavigationWidget::UBPageNavigationWidget(QWidget *parent, const char *name
 
     SET_STYLE_SHEET();
 
-    mIconToRight = QPixmap(":images/pages_open.png");
-    mIconToLeft = QPixmap(":images/pages_close.png");
+    mIconToRight = UBUiTheme::icon(QStringLiteral("pages")).pixmap(28, 28);
+    mIconToLeft = UBUiTheme::icon(QStringLiteral("back")).pixmap(28, 28);
 
     // Build the gui
     mLayout = new QVBoxLayout(this);
@@ -64,23 +65,23 @@ UBPageNavigationWidget::UBPageNavigationWidget(QWidget *parent, const char *name
     mLayout->setSpacing(10);
     setLayout(mLayout);
 
-    mImportButton = new QPushButton(QIcon(":/images/toolbar/import.png"), tr("Import PPT/PDF"), this);
+    mImportButton = new QPushButton(UBUiTheme::icon(QStringLiteral("import")), tr("Import PPT/PDF"), this);
     mImportButton->setObjectName("PageImportButton");
     mImportButton->setMinimumHeight(46);
-    mImportButton->setIconSize(QSize(28, 28));
+    mImportButton->setIconSize(QSize(20, 20));
     mImportButton->setCursor(Qt::PointingHandCursor);
     mImportButton->setToolTip(tr("Import PPT, PPTX, PDF or image files"));
     mImportButton->setStyleSheet(QStringLiteral(
         "QPushButton#PageImportButton {"
-        " color: #17324d; background-color: rgba(255, 255, 255, 225);"
-        " border: 1px solid #b8c9dc; border-radius: 8px;"
-        " padding: 7px 12px; font-size: 15px; font-weight: 600; text-align: left;"
+        " color: #1d4ed8; background-color: white;"
+        " border: 1px solid #cfdbee; border-radius: 8px;"
+        " padding: 7px 10px; font-size: 12px; font-weight: 500; text-align: center;"
         "}"
         "QPushButton#PageImportButton:hover {"
-        " background-color: white; border-color: #4e8ed8;"
+        " background-color: #eaf1ff; border-color: #9cbbfb;"
         "}"
         "QPushButton#PageImportButton:pressed {"
-        " background-color: #e3edf8; border-color: #2f73c7;"
+        " background-color: #eaf1ff; border-color: #2563eb;"
         "}"
     ));
     connect(mImportButton, &QPushButton::clicked,
@@ -99,12 +100,12 @@ UBPageNavigationWidget::UBPageNavigationWidget(QWidget *parent, const char *name
     mHLayout->addWidget(mClock);
 
     // Configure the page number indicator
-    mPageNbr->setStyleSheet(QString("QLabel { color: white; background-color: transparent; border: none; font-family: Arial; font-weight: bold; font-size: 20px }"));
+    mPageNbr->setStyleSheet(QStringLiteral("QLabel { color: #526174; background: transparent; border: none; font-size: 11px; }"));
     setPageNumber(0, 0);
     mPageNbr->setAlignment(Qt::AlignHCenter);
 
     // Configure the clock
-    mClock->setStyleSheet(QString("QLabel {color: white; background-color: transparent; text-align: center; font-family: Arial; font-weight: bold; font-size: 20px}"));
+    mClock->setStyleSheet(QStringLiteral("QLabel { color: #526174; background: transparent; border: none; font-size: 11px; }"));
     mTimeFormat = QLocale::system().timeFormat(QLocale::ShortFormat);
     mClock->setAlignment(Qt::AlignHCenter);
 

@@ -73,6 +73,7 @@ class UBMainWindow : public QMainWindow, public Ui::MainWindow
         void oneButtonMessageBox(QString windowTitle, QString text, QMessageBox::Icon type);
 
         virtual void keyPressEvent(QKeyEvent *event);
+        void resizeEvent(QResizeEvent* event) override;
         virtual void closeEvent (QCloseEvent *event);
 
         virtual QMenu* createPopupMenu ()

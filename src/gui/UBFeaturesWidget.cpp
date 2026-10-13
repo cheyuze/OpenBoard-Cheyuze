@@ -1123,7 +1123,7 @@ void UBFeatureProperties::onSetAsBackground()
 UBFeatureItemButton::UBFeatureItemButton(QWidget *parent, const char *name):QPushButton(parent)
 {
     setObjectName(name);
-    setStyleSheet(QString("background-color : #DDDDDD; color : #555555; border-radius : 6px; padding : 5px; font-weight : bold; font-size : 12px;"));
+    setStyleSheet(QString("background: white; color: #526174; border: 1px solid #dbe2eb; border-radius: 7px; padding: 7px; font-weight: 500; font-size: 12px;"));
 }
 
 UBFeatureItemButton::~UBFeatureItemButton()

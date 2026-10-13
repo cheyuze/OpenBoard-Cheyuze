@@ -31,9 +31,10 @@
 #include "gui/UBThumbnailArranger.h"
 #include "gui/UBThumbnailScene.h"
 #include "gui/UBThumbnailTextItem.h"
+#include "gui/UBUiTheme.h"
 
 
-constexpr int cSelectionWidth{8};
+constexpr int cSelectionWidth{2};
 constexpr QMarginsF cSelectionMargins{QMarginsF{} + cSelectionWidth / 2 + 1};
 constexpr int cLabelOffset{5};
 
@@ -260,7 +261,7 @@ QVariant UBThumbnail::itemChange(GraphicsItemChange change, const QVariant& valu
 {
     if (change == QGraphicsItem::ItemSelectedHasChanged)
     {
-        const auto penColor = isSelected() ? UBSettings::treeViewBackgroundColor : Qt::transparent;
+        const auto penColor = isSelected() ? UBUiTheme::blue() : QColor(Qt::transparent);
         setPen({penColor, cSelectionWidth});
     }
 
@@ -288,8 +289,10 @@ void UBThumbnail::paint(QPainter* painter, const QStyleOptionGraphicsItem* optio
     if (isSelected())
     {
         const auto selectionRect = mapRectFromItem(mPixmapItem, mPixmapItem->boundingRect()) + cSelectionMargins;
+        painter->setRenderHint(QPainter::Antialiasing);
         painter->setPen(pen());
-        painter->drawRect(selectionRect);
+        painter->setBrush(Qt::NoBrush);
+        painter->drawRoundedRect(selectionRect, 5, 5);
     }
 
     // do not call superclass - do not paint the rectangle itself or the default dashed selection rectangle

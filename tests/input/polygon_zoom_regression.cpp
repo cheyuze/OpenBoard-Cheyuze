@@ -46,7 +46,7 @@ public:
     int type() const override { return Type; }
 };
 struct UBGraphicsItemData { enum { ItemLayerType }; };
-struct UBItemLayerType { enum { FixedBackground = -2000, Tool = 1000 }; };
+struct UBItemLayerType { enum { FixedBackground = -2000, Tool = 1000, Control = 2000 }; };
 class UBGraphicsItem {
 public:
     static UBGraphicsItemDelegate* Delegate(QGraphicsItem* item) {

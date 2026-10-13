@@ -32,6 +32,8 @@
 #include <QStackedLayout>
 
 #include "UBMainWindow.h"
+#include "UBUiTheme.h"
+#include "UBTeachingWorkbench.h"
 #include "core/UBApplication.h"
 #include "core/UBApplicationController.h"
 #include "board/UBBoardController.h"
@@ -53,6 +55,10 @@ UBMainWindow::UBMainWindow(QWidget *parent, Qt::WindowFlags flags)
     , mpDownloadWidget(NULL)
 {
     Ui::MainWindow::setupUi(this);
+    UBUiTheme::applyActionIcons(this);
+    UBTeachingWorkbench::configure(actionTeachingWorkbench, this);
+    setProperty("ubWorkbenchReady", true);
+    actionTeachingWorkbench->setVisible(width() >= 1360);
 
     // The team edition intentionally does not expose OpenBoard's embedded
     // browser mode. Keep the underlying web components available for local
@@ -66,7 +72,7 @@ UBMainWindow::UBMainWindow(QWidget *parent, Qt::WindowFlags flags)
 
     //Setting tooltip colors staticly, since they look not quite well on different color themes
     QPalette toolTipPalette;
-    toolTipPalette.setColor(QPalette::ToolTipBase, QColor("#FFFFDC"));
+    toolTipPalette.setColor(QPalette::ToolTipBase, Qt::white);
     toolTipPalette.setColor(QPalette::ToolTipText, Qt::black);
     QToolTip::setPalette(toolTipPalette);
 
@@ -168,6 +174,15 @@ void UBMainWindow::switchToDocumentsWidget()
 void UBMainWindow::keyPressEvent(QKeyEvent *event)
 {
     QMainWindow::keyPressEvent(event);
+}
+
+void UBMainWindow::resizeEvent(QResizeEvent* event)
+{
+    QMainWindow::resizeEvent(event);
+    // On compact windows leave room for editing/recording actions. The full
+    // external-link entry remains available in Settings at every width.
+    if (property("ubWorkbenchReady").toBool())
+        actionTeachingWorkbench->setVisible(event->size().width() >= 1360);
 }
 
 void UBMainWindow::closeEvent(QCloseEvent *event)

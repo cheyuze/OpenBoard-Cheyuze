@@ -170,6 +170,7 @@ UBGraphicsItemDelegate::UBGraphicsItemDelegate(QGraphicsItem* pDelegated, QObjec
     , mMenu(0)
     , mLockAction(0)
     , mShowOnDisplayAction(0)
+    , mSetAsBackgroundAction(nullptr)
     , mGotoContentSourceAction(0)
     , mFrame(0)
     , mFrameWidth(UBSettings::settings()->objectFrameWidth)
@@ -365,6 +366,9 @@ std::shared_ptr<UBGraphicsScene> UBGraphicsItemDelegate::castUBGraphicsScene()
 void UBGraphicsItemDelegate::postpaint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
     Q_UNUSED(widget)
+    const auto scene = castUBGraphicsScene();
+    if (scene && scene->renderingContext() != UBGraphicsScene::Screen)
+        return; // Selection feedback is editor UI, not exported/recorded content.
     if (option->state & QStyle::State_Selected && !controlsExist()) {
         if (UBStylusTool::Play != UBDrawingController::drawingController()->stylusTool())
         {
@@ -530,6 +534,8 @@ void UBGraphicsItemDelegate::positionHandles()
 
 void UBGraphicsItemDelegate::setZOrderButtonsVisible(bool visible)
 {
+    if (!mZOrderUpButton || !mZOrderDownButton)
+        return; // Image controls expose these commands in their Arrange menu.
     if (visible) {
         updateFrame();
         updateButtons();
@@ -628,7 +634,7 @@ void UBGraphicsItemDelegate::lock(bool locked)
     mDelegated->update();
 
     positionHandles();
-    mFrame->positionHandles();
+    if (mFrame) mFrame->positionHandles();
 }
 
 

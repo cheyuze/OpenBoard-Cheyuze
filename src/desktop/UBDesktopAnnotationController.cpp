@@ -145,10 +145,11 @@ UBDesktopAnnotationController::UBDesktopAnnotationController(QObject *parent, UB
     mDesktopMarkerPalette = new UBDesktopMarkerPalette(mTransparentDrawingView, rightPalette, "desktop");
     mDesktopEraserPalette = new UBDesktopEraserPalette(mTransparentDrawingView, rightPalette, "desktop");
 
-    mDesktopPalette->setBackgroundBrush(UBSettings::settings()->opaquePaletteColor);
-    mDesktopPenPalette->setBackgroundBrush(UBSettings::settings()->opaquePaletteColor);
-    mDesktopMarkerPalette->setBackgroundBrush(UBSettings::settings()->opaquePaletteColor);
-    mDesktopEraserPalette->setBackgroundBrush(UBSettings::settings()->opaquePaletteColor);
+    const QBrush desktopPanelBrush(QColor(255, 255, 255, 248));
+    mDesktopPalette->setBackgroundBrush(desktopPanelBrush);
+    mDesktopPenPalette->setBackgroundBrush(desktopPanelBrush);
+    mDesktopMarkerPalette->setBackgroundBrush(desktopPanelBrush);
+    mDesktopEraserPalette->setBackgroundBrush(desktopPanelBrush);
 
 
     // Hack : the size of the property palettes is computed the first time the palette is visible

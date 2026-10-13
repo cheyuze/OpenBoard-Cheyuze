@@ -46,10 +46,14 @@ public:
     UBStartupHintsPalette(QWidget *parent = 0);
     ~UBStartupHintsPalette();
 
+    static bool shouldShowAtStartup(bool recurringHintsEnabled,
+            const QString& lastSeenVersion, const QString& currentVersion);
+
 
 signals:
 
 public slots:
+    void showAtStartup();
 
 protected:
     virtual void paintEvent(QPaintEvent *event);

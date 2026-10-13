@@ -76,6 +76,7 @@
 #include "gui/UBMainWindow.h"
 #include "gui/UBMessageWindow.h"
 #include "gui/UBResources.h"
+#include "gui/UBUiTheme.h"
 #include "gui/UBThumbnailScene.h"
 #include "gui/UBToolWidget.h"
 #include "gui/UBToolbarButtonGroup.h"
@@ -963,8 +964,9 @@ void UBBoardController::setupUndoRedoControl()
         QToolButton* button = new QToolButton(mUndoRedoControl);
         button->setObjectName(objectName);
         button->setIcon(icon);
-        button->setIconSize(QSize(28, 28));
+        button->setIconSize(QSize(22, 22));
         button->setToolTip(tooltip);
+        button->setAccessibleName(tooltip);
         button->setCursor(Qt::PointingHandCursor);
         button->setAutoRaise(true);
         button->setFocusPolicy(Qt::NoFocus);
@@ -984,10 +986,10 @@ void UBBoardController::setupUndoRedoControl()
     };
 
     mUndoButton = createButton(QStringLiteral("ubBoardUndoButton"),
-            historyArrowIcon(false), QStringLiteral("撤销"),
+            UBUiTheme::icon(QStringLiteral("undo")), QStringLiteral("撤销"),
             mMainWindow->actionUndo);
     mRedoButton = createButton(QStringLiteral("ubBoardRedoButton"),
-            historyArrowIcon(true), QStringLiteral("重做"),
+            UBUiTheme::icon(QStringLiteral("redo")), QStringLiteral("重做"),
             mMainWindow->actionRedo);
 
     QFrame* separator = new QFrame(mUndoRedoControl);
@@ -997,13 +999,13 @@ void UBBoardController::setupUndoRedoControl()
     layout->addWidget(separator);
 
     mCaptureButton = createButton(QStringLiteral("ubBoardCaptureButton"),
-            quickToolIcon(false), QStringLiteral("截屏"),
+            UBUiTheme::icon(QStringLiteral("capture")), QStringLiteral("截屏"),
             mMainWindow->actionCapture);
     if (UBPlatformUtils::hasVirtualKeyboard())
     {
         mVirtualKeyboardButton = createButton(
                 QStringLiteral("ubBoardKeyboardButton"),
-                quickToolIcon(true), QStringLiteral("虚拟键盘"),
+                UBUiTheme::icon(QStringLiteral("keyboard")), QStringLiteral("虚拟键盘"),
                 mMainWindow->actionVirtualKeyboard);
     }
 
@@ -1184,7 +1186,7 @@ void UBBoardController::setupToolbar()
     // The former diagonal-line glyph suggested that this tool could only draw
     // lines.  Use a compact family-of-shapes icon in both the stylus palette
     // and its checked state instead.
-    mMainWindow->actionLine->setIcon(shapeToolIcon());
+    mMainWindow->actionLine->setIcon(UBUiTheme::icon(QStringLiteral("shapes")));
     mMainWindow->actionLine->setText(QStringLiteral("形状"));
     mMainWindow->actionLine->setToolTip(QStringLiteral("绘制直线和常用几何图形"));
 
@@ -1196,8 +1198,8 @@ void UBBoardController::setupToolbar()
     primaryTools->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     QHBoxLayout* primaryToolsLayout = new QHBoxLayout(primaryTools);
     primaryToolsLayout->setSizeConstraint(QLayout::SetFixedSize);
-    primaryToolsLayout->setContentsMargins(3, 0, 5, 0);
-    primaryToolsLayout->setSpacing(2);
+    primaryToolsLayout->setContentsMargins(0, 0, 5, 0);
+    primaryToolsLayout->setSpacing(3);
 
     const QList<QAction*> primaryToolActions {
         mMainWindow->actionPen,
@@ -1208,13 +1210,28 @@ void UBBoardController::setupToolbar()
         mMainWindow->actionPointer,
         mMainWindow->actionText
     };
-    for (QAction* action : primaryToolActions) {
+    const QStringList primaryToolLabels {
+        QStringLiteral("笔"), QStringLiteral("高亮"), QStringLiteral("橡皮"),
+        QStringLiteral("选择"), QStringLiteral("互动"), QStringLiteral("激光"),
+        QStringLiteral("文本")
+    };
+    for (int index = 0; index < primaryToolActions.size(); ++index) {
+        QAction* action = primaryToolActions.at(index);
         QToolButton* button = new QToolButton(primaryTools);
         button->setObjectName(QStringLiteral("ubPrimaryToolButton"));
         button->setDefaultAction(action);
-        button->setToolButtonStyle(Qt::ToolButtonIconOnly);
-        button->setIconSize(QSize(30, 30));
-        button->setFixedSize(QSize(44, 54));
+        const QString label = primaryToolLabels.at(index);
+        auto refreshLabel = [button, label]() { button->setText(label); };
+        refreshLabel();
+        connect(action, &QAction::changed, button, refreshLabel);
+        auto displayLabel = [button](const QVariant& value) {
+            button->setToolButtonStyle(value.toBool()
+                ? Qt::ToolButtonTextUnderIcon : Qt::ToolButtonIconOnly);
+        };
+        displayLabel(settings->appToolBarDisplayText->get());
+        connect(settings->appToolBarDisplayText, &UBSetting::changed, button, displayLabel);
+        button->setIconSize(QSize(24, 24));
+        button->setFixedSize(QSize(43, 57));
         button->setCursor(Qt::PointingHandCursor);
         primaryToolsLayout->addWidget(button, 0, Qt::AlignVCenter);
     }
@@ -1285,7 +1302,7 @@ void UBBoardController::setupToolbar()
     QHBoxLayout* lineOptionsLayout = new QHBoxLayout(lineOptions);
     lineOptionsLayout->setSizeConstraint(QLayout::SetFixedSize);
     lineOptionsLayout->setContentsMargins(4, 0, 4, 0);
-    lineOptionsLayout->setSpacing(7);
+    lineOptionsLayout->setSpacing(3);
 
     auto makeOptionMenuButton = [lineOptions, lineOptionsLayout](
             const QString& text, const QString& tooltip) {
@@ -1546,7 +1563,7 @@ void UBBoardController::setupToolbar()
     eraserWidthActions.at(settings->eraserWidthIndex())->setChecked(true);
 
     QAction* shapeLibraryAction = new QAction(
-            QIcon(QStringLiteral(":/images/libpalette/home.png")),
+            UBUiTheme::icon(QStringLiteral("home")),
             QStringLiteral("库"), mMainWindow->boardToolBar);
     shapeLibraryAction->setCheckable(true);
     shapeLibraryAction->setToolTip(QStringLiteral("打开完整资源库"));
@@ -1599,8 +1616,8 @@ void UBBoardController::setupToolbar()
             toolbarSpacer);
 
     QAction* newDocumentAction = new QAction(
-            QIcon(QStringLiteral(":/images/toolbar/newPage.png")),
-            QStringLiteral("新建文档"), mMainWindow->boardToolBar);
+            UBUiTheme::icon(QStringLiteral("newdoc")),
+            QStringLiteral("新建"), mMainWindow->boardToolBar);
     newDocumentAction->setObjectName(QStringLiteral("actionBoardNewDocument"));
     newDocumentAction->setToolTip(QStringLiteral("新建文档"));
     connect(newDocumentAction, &QAction::triggered, mMainWindow->boardToolBar,
@@ -1625,7 +1642,7 @@ void UBBoardController::setupToolbar()
 
     UBApplication::app()->decorateActionMenu(mMainWindow->actionMenu);
 
-    mClearAllPagesAction = new QAction(mMainWindow->actionClearPage->icon(),
+    mClearAllPagesAction = new QAction(UBUiTheme::icon(QStringLiteral("clearall")),
             tr("Clear All Pages"), mMainWindow);
     mClearAllPagesAction->setToolTip(
             tr("Clear content from every page"));
@@ -2112,6 +2129,10 @@ UBGraphicsItem *UBBoardController::duplicateItem(UBItem *item)
                 }
                 gitem->setPos(itemPos);
 
+                // Internal clipboard paste/duplicate also follows the same
+                // image-under-ink default as a new external image.
+                mActiveScene->arrangeImage(gitem, UBImageLayerPolicy::BelowInk, false);
+
                 mLastCreatedItem = gitem;
                 gitem->setSelected(true);
             }
@@ -2136,8 +2157,10 @@ UBGraphicsItem *UBBoardController::duplicateItem(UBItem *item)
         item->copyItemParameters(createdItem);
 
         QGraphicsItem *createdGitem = dynamic_cast<QGraphicsItem*>(createdItem);
-        if (createdGitem)
+        if (createdGitem) {
             createdGitem->setPos(itemPos);
+            mActiveScene->arrangeImage(createdGitem, UBImageLayerPolicy::BelowInk, false);
+        }
         mLastCreatedItem = dynamic_cast<QGraphicsItem*>(createdItem);
         mLastCreatedItem->setSelected(true);
 

@@ -157,18 +157,18 @@ UBApplication::UBApplication(const QString &id, int &argc, char **argv) : Single
     // drawing colours are managed separately and are intentionally unaffected.
     QPalette lightPalette;
     lightPalette.setColor(QPalette::Window, QColor("#ffffff"));
-    lightPalette.setColor(QPalette::WindowText, QColor("#202124"));
+    lightPalette.setColor(QPalette::WindowText, QColor("#202936"));
     lightPalette.setColor(QPalette::Base, QColor("#ffffff"));
-    lightPalette.setColor(QPalette::AlternateBase, QColor("#f4f7fb"));
-    lightPalette.setColor(QPalette::ToolTipBase, QColor("#ffffdc"));
-    lightPalette.setColor(QPalette::ToolTipText, QColor("#202124"));
-    lightPalette.setColor(QPalette::Text, QColor("#202124"));
+    lightPalette.setColor(QPalette::AlternateBase, QColor("#f5f7fa"));
+    lightPalette.setColor(QPalette::ToolTipBase, QColor("#ffffff"));
+    lightPalette.setColor(QPalette::ToolTipText, QColor("#202936"));
+    lightPalette.setColor(QPalette::Text, QColor("#202936"));
     lightPalette.setColor(QPalette::Button, QColor("#ffffff"));
-    lightPalette.setColor(QPalette::ButtonText, QColor("#202124"));
+    lightPalette.setColor(QPalette::ButtonText, QColor("#202936"));
     lightPalette.setColor(QPalette::BrightText, QColor("#ffffff"));
-    lightPalette.setColor(QPalette::Highlight, QColor("#3278d4"));
+    lightPalette.setColor(QPalette::Highlight, QColor("#2563eb"));
     lightPalette.setColor(QPalette::HighlightedText, QColor("#ffffff"));
-    lightPalette.setColor(QPalette::Link, QColor("#174ea6"));
+    lightPalette.setColor(QPalette::Link, QColor("#1d4ed8"));
     lightPalette.setColor(QPalette::Disabled, QPalette::WindowText, QColor("#7a8493"));
     lightPalette.setColor(QPalette::Disabled, QPalette::Text, QColor("#7a8493"));
     lightPalette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor("#7a8493"));
@@ -495,10 +495,10 @@ int UBApplication::exec(const QString& pFileToImport)
     else
         applicationController->showBoard();
 
-    if(UBSettings::settings()->appStartupHintsEnabled->get().toBool())
-    {
-        UBApplication::boardController->paletteManager()->tipsPalette()->show();
-    }
+    // Each newly installed version gets one release-notes presentation even
+    // when recurring startup hints are disabled. The palette records only a
+    // version it actually displayed, without changing that user preference.
+    UBApplication::boardController->paletteManager()->tipsPalette()->showAtStartup();
 
     emit UBDrawingController::drawingController()->colorPaletteChanged();
 
@@ -665,6 +665,12 @@ void UBApplication::decorateActionMenu(QAction* action)
 
             menu->addSeparator();
             menu->addAction(mainWindow->actionHintsAndTips);
+            QAction* workbenchLink = menu->addAction(mainWindow->actionTeachingWorkbench->icon(),
+                    QStringLiteral("教学培训工作台"));
+            workbenchLink->setToolTip(mainWindow->actionTeachingWorkbench->toolTip());
+            connect(workbenchLink, &QAction::triggered, mainWindow, [] {
+                mainWindow->actionTeachingWorkbench->trigger();
+            });
             menu->addSeparator();
             menu->addAction(mainWindow->actionPreferences);
             menu->addAction(mainWindow->actionBackgrounds);

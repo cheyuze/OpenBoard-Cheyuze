@@ -16,23 +16,40 @@
         .updates { display: grid; grid-template-columns: repeat(2, 1fr); gap: 11px; }
         .item { min-height: 88px; background: white; border: 1px solid #dce6f2; border-radius: 12px; padding: 14px 15px 13px 48px; position: relative; box-shadow: 0 4px 12px rgba(46, 83, 124, .05); }
         .icon { position: absolute; left: 14px; top: 14px; width: 25px; height: 25px; border-radius: 8px; color: white; background: #377ed5; line-height: 25px; text-align: center; font-size: 14px; }
+        .icon svg { width: 17px; height: 17px; margin: 4px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
         .item h2 { margin: 0 0 5px; color: #253b59; font-size: 15px; }
-        .item p { margin: 0; color: #617189; font-size: 12px; line-height: 1.6; }
+        .item p { margin: 0; color: #526174; font-size: 13px; line-height: 1.65; }
         .contact { display: flex; align-items: center; gap: 14px; margin-top: 16px; padding: 14px 17px; color: inherit; text-decoration: none; background: linear-gradient(135deg, #ffffff, #edf5ff); border: 1px solid #cfe0f5; border-radius: 14px; transition: transform .15s ease, box-shadow .15s ease; }
         .contact:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(37, 103, 183, .16); }
         .avatar { flex: 0 0 46px; width: 46px; height: 46px; color: white; background: linear-gradient(135deg, #286bc0, #55a0ec); border-radius: 13px; text-align: center; line-height: 46px; font-size: 22px; font-weight: 700; }
         .contact-main { flex: 1; }
         .contact-name { display: block; color: #1d4f91; font-size: 16px; font-weight: 700; }
-        .contact-meta { display: block; margin-top: 3px; color: #697a91; font-size: 12px; }
+        .contact-meta { display: block; margin-top: 3px; color: #526174; font-size: 12px; line-height: 1.6; }
         .contact-action { color: #2569bd; background: #dfeeff; border-radius: 18px; padding: 7px 11px; font-size: 12px; font-weight: 700; }
-        footer { margin-top: 14px; padding-top: 11px; border-top: 1px solid #dce4ee; color: #748196; font-size: 11px; line-height: 1.65; text-align: center; }
+        footer { margin-top: 14px; padding-top: 11px; border-top: 1px solid #dce4ee; color: #526174; font-size: 12px; line-height: 1.65; text-align: center; }
+        a:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+        .contact-main { min-width: 0; }
+        .contact-meta { overflow-wrap: anywhere; }
+        .notice { margin: 14px 2px 0; color: #526174; font-size: 12px; line-height: 1.7; }
+        @media (max-width: 610px) { .updates { grid-template-columns: 1fr; } .contact { flex-wrap: wrap; } h1 { font-size: 23px; } body { padding: 16px; } }
+        @media (prefers-reduced-motion: reduce) { .contact { transition: none; } .contact:hover { transform: none; } }
     </style>
 </head>
 <body>
+    <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+        <defs>
+            <symbol id="layout" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 8h18M8 8v13"/></symbol>
+            <symbol id="image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="2"/><path d="m3 18 6-6 4 4 4-7 4 6"/></symbol>
+            <symbol id="layers" viewBox="0 0 24 24"><path d="m12 3 10 5-10 5L2 8l10-5ZM2 12l10 5 10-5M2 16l10 5 10-5"/></symbol>
+            <symbol id="desktop" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M12 17v4M8 21h8"/></symbol>
+            <symbol id="workbench" viewBox="0 0 24 24"><path d="M13 3H3v18h18V11M15 3h6v6M21 3l-9 9M3 8h8M8 8v13"/></symbol>
+            <symbol id="notes" viewBox="0 0 24 24"><path d="M14 2H5v20h14V7l-5-5Zm0 0v5h5M8 12h8M8 16h6"/></symbol>
+        </defs>
+    </svg>
     <section class="hero">
-        <span class="version">车厘子定制版 · 1.9.1</span>
-        <h1>✨ 更适合理科教学与讲题录制</h1>
-        <p>新增网站更新渠道，检查和下载不再仅依赖 GitHub；改进电脑声音录制。全屏录制时控件仍可操作，但不会进入成品视频。</p>
+        <span class="version">车厘子定制版 · 1.9.5</span>
+        <h1>更清爽的白板，更顺手的图片操作</h1>
+        <p>统一浅色界面与图标，重新设计图片编辑。图片默认放在已有笔迹下方，教学培训工作台一键直达；保留现有录制、导入与多渠道更新功能。</p>
     </section>
 
     <a class="contact" href="yach://yach.zhiyinlou.com/session/p2p?sessionid=285108440437788672" title="通过知音楼联系车禹泽">
@@ -44,15 +61,21 @@
         <span class="contact-action">通过知音楼联系我 ›</span>
     </a>
 
-    <div class="section-title">本版主要更新</div>
-    <section class="updates">
-        <article class="item"><span class="icon">↓</span><h2>网站 / GitHub / 百度网盘</h2><p>优先从自有网站检查更新，可选择网站或 GitHub 自动下载；保留百度网盘手动入口。</p></article>
-        <article class="item"><span class="icon">✓</span><h2>完整性校验与断点续传</h2><p>校验安装包后才允许安装；网络异常可切换备用源，检查失败时仍提供手动下载链接。</p></article>
-        <article class="item"><span class="icon">▣</span><h2>控件可见，成品不录入</h2><p>全屏录制时保留控制条、菜单和批注操作，成品排除控件但保留板书。需 Windows 10 2004 或更新系统。</p></article>
-        <article class="item"><span class="icon">♫</span><h2>三种声音录制方式</h2><p>可仅录麦克风、仅录电脑声音，或同时录制两者；仍可单独选择麦克风和播放设备。</p></article>
-        <article class="item"><span class="icon">≋</span><h2>电脑声音录制优化</h2><p>采用系统回环采集和统一音频时间线，改善静音、暂停恢复与混音时的同步和音质。</p></article>
-        <article class="item"><span class="icon">●</span><h2>延续录制稳定性修复</h2><p>保留长时间录制、暂停后直接结束和异常清理的修复；建议正式授课前对实际设备做短片试录。</p></article>
+    <h2 class="section-title">本版主要更新</h2>
+    <section class="updates" aria-label="1.9.5 更新内容">
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#layout"/></svg></span><h2>统一浅色界面</h2><p>顶部工具栏、页面侧栏、资源库、菜单和录制条采用一致的线形图标与浅蓝高亮，文字更清晰。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#image"/></svg></span><h2>现代图片操作</h2><p>细边框、八向缩放点、旋转手柄与浮动工具条；可精确设置尺寸和角度，支持复制、锁定及右键菜单。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#layers"/></svg></span><h2>笔迹不被新图片遮住</h2><p>新图片默认位于已有笔迹下方，选中或拖动不自动置顶。右键可调整层级，后续新写的笔迹仍显示在上方。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#desktop"/></svg></span><h2>桌面与历史记录更一致</h2><p>桌面浮动工具条重新设计，工具与白板顺序一致；历史记录中的桌面、历史记录入口位置同步统一。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#workbench"/></svg></span><h2>教学培训工作台入口</h2><p>“历史记录”和“设置”之间新增“工作台”，用默认浏览器打开。窄窗口下仍可从设置菜单进入。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#notes"/></svg></span><h2>每版更新首次提示</h2><p>每个新版本首次启动都会展示本页一次，即使未勾选“下次显示”。同一版本后续启动继续尊重原设置。</p></article>
     </section>
+
+    <a class="contact" href="https://xiwang.cheyuze.top" title="在默认浏览器打开教学培训工作台">
+        <span class="contact-main"><span class="contact-name">教学培训工作台</span><span class="contact-meta">常用教学工具与培训资源 · xiwang.cheyuze.top</span></span>
+        <span class="contact-action">打开工作台 ›</span>
+    </a>
+    <p class="notice">同时修复了中文目录 / 文件名的 PDF 导入问题，以及图片选框和工具条进入 PDF / 缩略图的问题。继续保留网站与 GitHub 自动更新、百度网盘手动下载，以及三种声音录制方式。本版未改动录制编码与音频核心；重要授课前仍建议使用实际设备做短片试录。</p>
 
     <footer>
         本软件为基于 OpenBoard 开源项目的非官方定制版本；OpenBoard 原版权及 GNU GPL v3 开源许可证声明继续保留。

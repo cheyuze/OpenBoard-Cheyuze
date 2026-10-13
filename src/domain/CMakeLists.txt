@@ -1,4 +1,8 @@
 target_sources(${PROJECT_NAME} PRIVATE
+    UBGraphicsPixmapItemDelegate.cpp
+    UBGraphicsPixmapItemDelegate.h
+    UBImageTransform.h
+    UBImageLayerPolicy.h
     UBGraphicsDelegateFrame.cpp
     UBGraphicsDelegateFrame.h
     UBGraphicsGroupContainerItem.cpp

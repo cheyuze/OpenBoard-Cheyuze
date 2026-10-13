@@ -188,10 +188,10 @@ UBDockPalette::UBDockPalette(eUBDockPaletteType paletteType, QWidget *parent, co
         setAttribute(Qt::WA_TranslucentBackground);
     }
 
-    mBackgroundBrush = QBrush(UBSettings::paletteColor);
+    mBackgroundBrush = QBrush(QColor("#f9fafc"));
 
     // This is the only way to set the background as transparent!
-    setStyleSheet("QWidget {background-color: transparent}");
+    setStyleSheet("UBDockPalette {background-color: transparent} QStackedWidget {background-color: transparent}");
 
     // Set the position of the tab
     onToolbarPosUpdated();
@@ -845,7 +845,7 @@ void UBTabDockPalette::paintEvent(QPaintEvent *)
         //QPixmap transparencyPix(":/images/tab_mask.png");
         if (dock->mCurrentTab != i) {
             //iconPixmap.setAlphaChannel(transparencyPix); // deprecated; removed for now, to be re-implemented
-            QColor color(0x7F, 0x7F, 0x7F, 0x3F);
+            QColor color("#f5f7fa");
             painter.setBrush(QBrush(color));
         }
 
@@ -864,7 +864,7 @@ void UBTabDockPalette::paintEvent(QPaintEvent *)
             labelFont.setPixelSize(12);
             labelFont.setBold(true);
             painter.setFont(labelFont);
-            painter.setPen(QColor(35, 61, 84));
+            painter.setPen(QColor("#526174"));
             painter.drawText(QRect(0, yFrom + 43, width(), currentTabHeight - 45),
                              Qt::AlignHCenter | Qt::AlignTop,
                              tr("Pages"));

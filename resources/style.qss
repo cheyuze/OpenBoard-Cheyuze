@@ -287,3 +287,45 @@ UBTGAdaptableText {
    border-radius : 10px; 
    padding: 2px;
 }
+
+/* Light sidebar and library surfaces, shared with the teaching toolbar. */
+QWidget#DockPaletteWidgetBox, QWidget#UBLibPathViewer,
+QWidget#UBLibNavigatorWidget, QWidget#UBLibItemProperties,
+QWidget#UBDownloadWidget, QWidget#UBTeacherGuideWidget,
+QWidget#UBFeaturesNavigatorWidget, QWidget#PathList,
+QWidget#UBFeaturesCentralWidget {
+    color: #202936; background: white; border: 1px solid #dbe2eb; border-radius: 8px;
+}
+QWidget#UBBoardThumbnailsView { background: #f9fafc; border: none; border-radius: 0px; }
+QListView { color: #445366; background: white; border: none; selection-background-color: #eaf1ff; }
+QListView::item:selected { color: #1d4ed8; background: #eaf1ff; border-radius: 7px; }
+QListView::item:hover { background: #f5f7fa; border-radius: 7px; }
+QLabel#DockPaletteWidgetTitle { color: #202936; font-size: 14px; font-weight: 600; }
+QColorDialog { color: #202936; background: white; }
+QTextEdit, QLineEdit, QComboBox#DockPaletteWidgetComboBox QAbstractItemView {
+    color: #202936; background: white; selection-background-color: #2563eb; selection-color: white;
+}
+QPushButton#DockPaletteWidgetButton {
+    background: white; color: #526174; border: 1px solid #dbe2eb;
+    border-radius: 7px; padding: 7px; font-size: 12px; font-weight: 500;
+}
+QPushButton#DockPaletteWidgetButton:hover,
+QPushButton#DockPaletteWidgetButton:checked { color: #1d4ed8; background: #eaf1ff; border-color: #9cbbfb; }
+QWidget#mAdditionalDataContainer, QWidget#UBLibWebView,
+QTextEdit#TeacherStudentBox { background: white; border: 1px solid #dbe2eb; border-radius: 8px; }
+QScrollBar:vertical { background: transparent; width: 9px; margin: 0px; }
+QScrollBar::handle:vertical { background: #c8d1dd; border: none; border-radius: 4px; min-height: 28px; }
+QScrollBar::handle:vertical:hover { background: #a2b0c2; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    image: none; height: 0px; border: none; margin: 0px; background: transparent;
+}
+QScrollBar:horizontal { background: transparent; height: 9px; margin: 0px; }
+QScrollBar::handle:horizontal { background: #c8d1dd; border: none; border-radius: 4px; min-width: 28px; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    image: none; width: 0px; border: none; margin: 0px; background: transparent;
+}
+QSlider::groove:horizontal { background: #e2e7ee; border: none; height: 4px; border-radius: 2px; }
+QSlider::handle:horizontal {
+    background: #2563eb; border: 1px solid #2563eb; width: 12px; height: 12px;
+    margin: -5px 0px; border-radius: 7px;
+}

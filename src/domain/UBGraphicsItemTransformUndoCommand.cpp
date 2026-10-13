@@ -75,7 +75,9 @@ void UBGraphicsItemTransformUndoCommand::undo()
 
     mItem->setPos(mPreviousPosition);
     mItem->setTransform(mPreviousTransform);
-    mItem->setZValue(mPreviousZValue);
+    // Ordinary movement/resize undo must not restore a historical layer rank:
+    // image insertion may have made room in the content stack since then.
+    if (mSetToBackground) mItem->setZValue(mPreviousZValue);
 
     UBResizableGraphicsItem* resizableItem = dynamic_cast<UBResizableGraphicsItem*>(mItem);
 
@@ -94,7 +96,7 @@ void UBGraphicsItemTransformUndoCommand::redo()
 
     mItem->setPos(mCurrentPosition);
     mItem->setTransform(mCurrentTransform);
-    mItem->setZValue(mCurrentZValue);
+    if (mSetToBackground) mItem->setZValue(mCurrentZValue);
 
     UBResizableGraphicsItem* resizableItem = dynamic_cast<UBResizableGraphicsItem*>(mItem);
 

@@ -85,6 +85,51 @@
 
 qreal UBZLayerController::errorNumber = -20000001.0;
 
+namespace
+{
+bool containsImage(QGraphicsItem* item)
+{
+    if (item->type() == UBGraphicsPixmapItem::Type || item->type() == UBGraphicsSvgItem::Type) return true;
+    for (auto* child : item->childItems()) if (containsImage(child)) return true;
+    return false;
+}
+
+bool containsInk(QGraphicsItem* item)
+{
+    if (item->type() == UBGraphicsStrokesGroup::Type || item->type() == UBGraphicsPolygonItem::Type) return true;
+    for (auto* child : item->childItems()) if (containsInk(child)) return true;
+    return false;
+}
+
+void applyImageLayers(UBGraphicsScene* scene, const QVector<UBImageLayerPolicy::Entry>& entries)
+{
+    for (const auto& entry : entries) {
+        if (entry.item->scene() != scene) continue;
+        UBGraphicsItem::assignZValue(entry.item, entry.z);
+        scene->notifyZChanged(entry.item, entry.z);
+        if (entry.item->isSelected()) scene->setSelectedZLevel(entry.item);
+    }
+    scene->setModified(true);
+    scene->update();
+    scene->updateSelectionFrame();
+}
+
+class ImageLayerUndoCommand final : public UBUndoCommand
+{
+public:
+    ImageLayerUndoCommand(std::shared_ptr<UBGraphicsScene> scene,
+            QVector<UBImageLayerPolicy::Entry> before, QVector<UBImageLayerPolicy::Entry> after)
+        : mScene(std::move(scene)), mBefore(std::move(before)), mAfter(std::move(after))
+    { setText(QStringLiteral("调整图片图层")); }
+    int getType() const override { return UBUndoType::undotype_GRAPHICITEMZVALUE; }
+    void undo() override { applyImageLayers(mScene.get(), mBefore); }
+    void redo() override { applyImageLayers(mScene.get(), mAfter); }
+private:
+    std::shared_ptr<UBGraphicsScene> mScene;
+    QVector<UBImageLayerPolicy::Entry> mBefore, mAfter;
+};
+}
+
 UBZLayerController::UBZLayerController(QGraphicsScene *scene) :
     mScene(scene)
 
@@ -2454,6 +2499,7 @@ UBGraphicsPixmapItem* UBGraphicsScene::addImage(QByteArray pData, QGraphicsItem*
     pixmapItem->setPos(pPos - half);
 
     addItem(pixmapItem);
+    arrangeImage(pixmapItem, UBImageLayerPolicy::BelowInk, false);
 
     if (mUndoRedoStackEnabled) { //should be deleted after scene own undo stack implemented
         UBGraphicsItemUndoCommand* uc = new UBGraphicsItemUndoCommand(shared_from_this(), replaceFor, pixmapItem);
@@ -2707,6 +2753,7 @@ UBGraphicsSvgItem* UBGraphicsScene::addSvg(const QUrl& pSvgFileUrl, const QPoint
     svgItem->show();
 
     addItem(svgItem);
+    arrangeImage(svgItem, UBImageLayerPolicy::BelowInk, false);
 
     if (mUndoRedoStackEnabled) { //should be deleted after scene own undo stack implemented
         UBGraphicsItemUndoCommand* uc = new UBGraphicsItemUndoCommand(shared_from_this(), 0, svgItem);
@@ -3005,7 +3052,9 @@ QRectF UBGraphicsScene::normalizedSceneRect(qreal ratio)
 
     foreach(QGraphicsItem* gi, items())
     {
-        if(gi && gi->isVisible() && !mTools.contains(gi))
+        if(gi && gi->isVisible() && !mTools.contains(gi)
+                && gi->data(UBGraphicsItemData::ItemLayerType).toInt() != UBItemLayerType::Control
+                && rootItem(gi)->data(UBGraphicsItemData::ItemLayerType).toInt() != UBItemLayerType::Control)
         {
             normalizedRect = normalizedRect.united(gi->sceneBoundingRect());
         }
@@ -3672,6 +3721,9 @@ void UBGraphicsScene::setNominalSize(int pWidth, int pHeight)
 
 void UBGraphicsScene::setSelectedZLevel(QGraphicsItem * item)
 {
+    // Selecting an image (including a group containing one) must not change
+    // its content stacking. Its independent selection controls float above.
+    if (containsImage(item)) return;
     item->setZValue(mZLayerController->generateZLevel(itemLayerType::SelectedItem));
 }
 
@@ -3688,6 +3740,17 @@ QUuid UBGraphicsScene::getPersonalUuid(QGraphicsItem *item)
 
 qreal UBGraphicsScene::changeZLevelTo(QGraphicsItem *item, UBZLayerController::moveDestination dest, bool addUndo)
 {
+    if (item->type() == UBGraphicsPixmapItem::Type || item->type() == UBGraphicsSvgItem::Type) {
+        UBImageLayerPolicy::Placement placement = UBImageLayerPolicy::Up;
+        switch (dest) {
+        case UBZLayerController::down: placement = UBImageLayerPolicy::Down; break;
+        case UBZLayerController::top: placement = UBImageLayerPolicy::Top; break;
+        case UBZLayerController::bottom: placement = UBImageLayerPolicy::Bottom; break;
+        default: break;
+        }
+        arrangeImage(item, placement, addUndo);
+        return item->data(UBGraphicsItemData::ItemOwnZValue).toReal();
+    }
     qreal previousZVal = item->data(UBGraphicsItemData::ItemOwnZValue).toReal();
     qreal res = mZLayerController->changeZLevelTo(item, dest);
 
@@ -3697,6 +3760,31 @@ qreal UBGraphicsScene::changeZLevelTo(QGraphicsItem *item, UBZLayerController::m
     }
 
     return res;
+}
+
+void UBGraphicsScene::arrangeImage(QGraphicsItem* image, UBImageLayerPolicy::Placement placement, bool addUndo)
+{
+    if (!image || image->scene() != this || image->parentItem() || image == backgroundObject()) return;
+    if (image->type() != UBGraphicsPixmapItem::Type && image->type() != UBGraphicsSvgItem::Type) return;
+    QVector<UBImageLayerPolicy::Entry> before;
+    for (auto* item : items(Qt::AscendingOrder)) {
+        if (item->parentItem() || item == backgroundObject()) continue;
+        if (item->data(UBGraphicsItemData::itemLayerType).toInt() != itemLayerType::ObjectItem) continue;
+        if (item->data(UBGraphicsItemData::ItemLayerType).toInt() == UBItemLayerType::Control) continue;
+        const QVariant ownZ = item->data(UBGraphicsItemData::ItemOwnZValue);
+        before.append({item, ownZ.isValid() ? ownZ.toReal() : item->zValue(), containsInk(item)});
+    }
+    before = UBImageLayerPolicy::ordered(before);
+    const auto after = UBImageLayerPolicy::plan(before, image, placement);
+    if (after.isEmpty()) return;
+    bool changed = false;
+    for (int i = 0; i < before.size(); ++i)
+        if (before[i].item != after[i].item) { changed = true; break; }
+    if (!changed) return;
+    if (addUndo && mUndoRedoStackEnabled && UBApplication::undoStack)
+        UBApplication::undoStack->push(new ImageLayerUndoCommand(shared_from_this(), before, after));
+    else
+        applyImageLayers(this, after);
 }
 
 QGraphicsItem* UBGraphicsScene::rootItem(QGraphicsItem* item) const
@@ -3723,7 +3811,13 @@ void UBGraphicsScene::drawItems (QPainter * painter, int numItems,
 
         for (int i = 0; i < numItems; i++)
         {
-            if (!mTools.contains(rootItem(items[i])) && !isPolygonPreviewItem(items[i]))
+            QGraphicsItem* root = rootItem(items[i]);
+            const bool editorControl = items[i]->data(UBGraphicsItemData::ItemLayerType).toInt() == UBItemLayerType::Control
+                    || root->data(UBGraphicsItemData::ItemLayerType).toInt() == UBItemLayerType::Control;
+            // Modern selection frames/proxy toolbars are independent Control
+            // items, not registered measurement tools. Keep all editor controls
+            // out of thumbnails/PDF, just as the Podcast path already does.
+            if (!mTools.contains(root) && !editorControl && !isPolygonPreviewItem(items[i]))
             {
                 bool isPdfItem =  qgraphicsitem_cast<UBGraphicsPDFItem*> (items[i]) != NULL;
                 if(!isPdfItem || mRenderingContext == NonScreen)

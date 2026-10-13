@@ -39,6 +39,7 @@
 #include "core/UBDisplayManager.h"
 
 #include "gui/UBMainWindow.h"
+#include "gui/UBUiTheme.h"
 #include "gui/UBStylusPalette.h"
 #include "gui/UBKeyboardPalette.h"
 #include "gui/UBToolWidget.h"
@@ -271,14 +272,14 @@ void UBBoardPaletteManager::setupPalettes()
     addItemActions << UBApplication::mainWindow->actionAddItemToCurrentPage;
     addItemActions << UBApplication::mainWindow->actionAddItemToNewPage;
     addItemActions << UBApplication::mainWindow->actionAddItemToLibrary;
-    mSaveCapturedImageAction = new QAction(QIcon(QStringLiteral(":/images/saveCapturedImage.svg")),
+    mSaveCapturedImageAction = new QAction(UBUiTheme::icon(QStringLiteral("save")),
             QStringLiteral("另存为"), this);
     mSaveCapturedImageAction->setToolTip(QStringLiteral("将截图保存到电脑"));
     mSaveCapturedImageAction->setVisible(false);
     addItemActions << mSaveCapturedImageAction;
 
     mAddItemPalette = new UBActionPalette(addItemActions, Qt::Horizontal, mContainer);
-    mAddItemPalette->setButtonIconSize(QSize(128, 128));
+    mAddItemPalette->setButtonIconSize(QSize(48, 48));
     mAddItemPalette->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
     mAddItemPalette->groupActions();
     mAddItemPalette->setClosable(true);
@@ -293,7 +294,7 @@ void UBBoardPaletteManager::setupPalettes()
     eraseActions << UBApplication::mainWindow->actionEraseBackground;
 
     mErasePalette = new UBActionPalette(eraseActions, Qt::Horizontal , mContainer);
-    mErasePalette->setButtonIconSize(QSize(128, 128));
+    mErasePalette->setButtonIconSize(QSize(48, 48));
     mErasePalette->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
     mErasePalette->groupActions();
     mErasePalette->setClosable(true);

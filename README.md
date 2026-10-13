@@ -17,7 +17,7 @@
 
 安装包见 [网站下载页](https://xiwang.cheyuze.top/openboard/) 或 [GitHub Releases](https://github.com/cheyuze/OpenBoard-Cheyuze/releases)。对应版本源码随 GitHub 标签公开。
 
-当前定制版为 **1.9.1**，新增独立网站更新渠道、GitHub 发布自动同步，改进电脑声音录制与控件排除，详见 [1.9.1 发布说明](https://github.com/cheyuze/OpenBoard-Cheyuze/releases/tag/v1.9.1)。旧 1.8.5 / 原 1.8.6 如在下载接近完成时退出，请通过浏览器手动安装本版一次。百度网盘由维护者手动同步，请核对文件版本。
+当前定制版为 **1.9.5**，统一浅色界面，重新设计图片编辑与图层操作，增加教学培训工作台入口和新版首次提示。保留网站 / GitHub 更新、电脑声音录制与控件排除功能，详见 [1.9.5 发布说明](https://github.com/cheyuze/OpenBoard-Cheyuze/releases/tag/v1.9.5)。旧 1.8.5 / 原 1.8.6 如在下载接近完成时退出，请通过浏览器手动安装本版一次。百度网盘由维护者手动同步，请核对文件版本。
 
 本项目继续按 GNU GPL v3 发布，详见 [LICENSE](LICENSE)。第三方组件说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 

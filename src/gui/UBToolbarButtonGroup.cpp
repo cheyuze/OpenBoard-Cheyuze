@@ -452,13 +452,12 @@ void UBToolbarButtonGroup::updateSliderAppearance()
     const QString colorName = activeColor.name(QColor::HexRgb);
 
     mSlider->setStyleSheet(QStringLiteral(
-        "QSlider::groove:horizontal { height: 8px; border-radius: 4px; background: #E2E8F0; }"
-        "QSlider::sub-page:horizontal { border-radius: 4px; background: %1; }"
-        "QSlider::add-page:horizontal { border-radius: 4px; background: #E2E8F0; }"
-        "QSlider::handle:horizontal { width: 18px; height: 18px; margin: -6px 0;"
-        " border-radius: 9px; border: 2px solid %1; background: white; }"
-        "QSlider::handle:horizontal:hover { width: 20px; height: 20px; margin: -7px 0;"
-        " border-radius: 10px; background: #F8FAFC; }").arg(colorName));
+        "QSlider::groove:horizontal { height: 4px; border-radius: 2px; background: #e2e7ee; }"
+        "QSlider::sub-page:horizontal { border-radius: 2px; background: %1; }"
+        "QSlider::add-page:horizontal { border-radius: 2px; background: #e2e7ee; }"
+        "QSlider::handle:horizontal { width: 12px; height: 12px; margin: -5px 0;"
+        " border-radius: 7px; border: 1px solid %1; background: %1; }"
+        "QSlider::handle:horizontal:hover { border-color: #2563eb; }").arg(colorName));
 }
 
 void UBToolbarButtonGroup::paintEvent(QPaintEvent *event)

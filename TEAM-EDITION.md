@@ -1,6 +1,6 @@
 # OpenBoard 车厘子定制版
 
-Version 1.9.1 is based on OpenBoard 1.7.7, with Windows-focused changes for
+Version 1.9.5 is based on OpenBoard 1.7.7, with Windows-focused changes for
 classroom screen recording and whiteboard stability:
 
 1. Board mode opens in a normal resizable window on Windows.
@@ -21,6 +21,14 @@ classroom screen recording and whiteboard stability:
    capture (Windows 10 build 19041+); annotations are composited separately.
    Native WASAPI loopback supports computer audio, microphone, or both with
    a shared 48 kHz stereo timeline. Physical-device coverage is not exhaustive.
+7. Version 1.9.5 unifies the light native interface and line icons, redesigns
+   raster-image controls, preserves content stacking during selection, and
+   defaults newly inserted pictures below existing handwriting. Layer commands
+   are explicit, undoable and preserved through SVG persistence.
+8. A teaching-workbench link uses the default browser. Release notes appear once
+   for each application version even when recurring startup hints are disabled;
+   the user's checkbox preference is retained. Recording timing, capture,
+   encoding and audio core are unchanged by this interface release.
 
 OpenBoard remains licensed under GPLv3 with its OpenSSL linking exception; see
 `LICENSE` and `COPYRIGHT`. FFmpeg is distributed separately under its own
