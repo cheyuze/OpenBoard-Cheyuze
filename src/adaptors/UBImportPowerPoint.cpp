@@ -15,8 +15,11 @@
 #include <QImageReader>
 #include <QMessageBox>
 #include <QProcess>
+#include <QPointer>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QTimer>
+#include <memory>
 
 #ifdef Q_OS_WIN
 #include <objbase.h>
@@ -24,7 +27,6 @@
 #endif
 
 #include "UBImportPDF.h"
-#include "UBImportImage.h"
 
 #include "core/UBApplication.h"
 #include "core/UBPersistenceManager.h"
@@ -34,6 +36,8 @@
 #include "document/UBDocumentProxy.h"
 
 #include "gui/UBThumbnailScene.h"
+#include "domain/UBGraphicsScene.h"
+#include "domain/UBGraphicsPixmapItem.h"
 
 namespace
 {
@@ -78,6 +82,47 @@ QString libreOfficeExecutable()
 }
 
 #ifdef Q_OS_WIN
+QPointer<QProcess> pendingPowerPointCleanup;
+
+void waitForPowerPointCleanup()
+{
+    // PowerPoint may reuse the same COM server. Do not open the next import
+    // while a previous worker is asking that server to quit.
+    QElapsedTimer timer;
+    timer.start();
+    while (pendingPowerPointCleanup
+           && pendingPowerPointCleanup->state() != QProcess::NotRunning
+           && timer.elapsed() < 30000) {
+        pendingPowerPointCleanup->waitForFinished(50);
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    }
+    if (pendingPowerPointCleanup && pendingPowerPointCleanup->state() != QProcess::NotRunning) {
+        // Only our hidden PowerShell client, never a user's POWERPNT process.
+        pendingPowerPointCleanup->kill();
+        pendingPowerPointCleanup->waitForFinished(1000);
+    }
+}
+
+void finishPowerPointInBackground(std::unique_ptr<QProcess>& process)
+{
+    if (process->state() == QProcess::NotRunning) return;
+    auto* worker = process.release();
+    worker->setParent(QCoreApplication::instance());
+    worker->setObjectName(QStringLiteral("OpenBoardPowerPointCleanup"));
+    pendingPowerPointCleanup = worker;
+    QObject::connect(worker, &QProcess::finished, worker, &QObject::deleteLater);
+    QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, worker, [worker] {
+        if (worker->state() != QProcess::NotRunning) {
+            worker->kill();
+            worker->waitForFinished(1000);
+        }
+    });
+    QTimer::singleShot(30000, worker, [worker] {
+        if (worker->state() != QProcess::NotRunning) worker->kill();
+    });
+    if (worker->state() == QProcess::NotRunning) worker->deleteLater();
+}
+
 HRESULT invokeAutomation(IDispatch* object,
                          const wchar_t* memberName,
                          WORD flags,
@@ -97,10 +142,15 @@ HRESULT invokeAutomation(IDispatch* object,
     DISPPARAMS parameters = {};
     parameters.rgvarg = arguments;
     parameters.cArgs = argumentCount;
+    DISPID propertyPut = DISPID_PROPERTYPUT;
+    if (flags & DISPATCH_PROPERTYPUT) {
+        parameters.rgdispidNamedArgs = &propertyPut;
+        parameters.cNamedArgs = 1;
+    }
 
     EXCEPINFO exception = {};
     UINT argumentError = 0;
-    return object->Invoke(memberId,
+    const HRESULT invokeStatus = object->Invoke(memberId,
                           IID_NULL,
                           LOCALE_USER_DEFAULT,
                           flags,
@@ -108,6 +158,10 @@ HRESULT invokeAutomation(IDispatch* object,
                           result,
                           &exception,
                           &argumentError);
+    SysFreeString(exception.bstrSource);
+    SysFreeString(exception.bstrDescription);
+    SysFreeString(exception.bstrHelpFile);
+    return invokeStatus;
 }
 
 bool automationMethod(IDispatch* object, const wchar_t* memberName, VARIANT* arguments = nullptr, UINT argumentCount = 0)
@@ -221,20 +275,28 @@ bool UBImportPowerPoint::appendImagePages(std::shared_ptr<UBDocumentProxy> docum
     const int firstPage = document->pageCount();
     int pageIndex = firstPage;
     const auto openBoardDocument = UBDocument::getDocument(document);
-    UBImportImage imageImporter;
 
     for (const QString& imagePath : imagePaths)
     {
         UBApplication::showMessage(
             tr("Importing slide %1 of %2...").arg(pageIndex - firstPage + 1).arg(imagePaths.size()), true);
 
-        QList<UBGraphicsItem*> importedItems = imageImporter.import(QUuid::createUuid(), imagePath);
-        if (importedItems.isEmpty())
-            return false;
-
-        std::shared_ptr<UBGraphicsScene> scene = openBoardDocument->createPage(pageIndex);
-        imageImporter.placeImportedItemToScene(scene, importedItems.first());
-        openBoardDocument->persistPage(scene, pageIndex);
+        QFile imageFile(imagePath);
+        if (!imageFile.open(QIODevice::ReadOnly)) return false;
+        const QByteArray imageData = imageFile.readAll();
+        if (imageData.isEmpty()) return false;
+        auto scene = std::make_shared<UBGraphicsScene>(document, false);
+        // createPage previously initialized nominalSize while saving the blank
+        // page. Initialize it before fitting the image when batching imports.
+        scene->setNominalSize(document->defaultDocumentSize());
+        scene->setBackground(UBSettings::settings()->isDarkBackground(), UBSettings::settings()->pageBackground());
+        scene->setBackgroundGridSize(UBSettings::settings()->crossSize);
+        // Decode the exported PNG only once. UBImportImage used to decode a
+        // disposable pixmap and then decode the same image again in addImage.
+        auto* background = scene->addImage(imageData, nullptr, QPointF(0,0), 1.0, false, true);
+        if (!background || background->pixmap().isNull()) return false;
+        scene->setAsBackgroundObject(background, true);
+        openBoardDocument->appendImportedPage(scene);
         ++pageIndex;
     }
 
@@ -266,127 +328,186 @@ bool UBImportPowerPoint::exportImagesWithPowerShell(const QString& sourcePath,
                                                      QStringList& imagePaths)
 {
     imagePaths.clear();
-
+    waitForPowerPointCleanup();
     QString executable = QStandardPaths::findExecutable(QStringLiteral("powershell.exe"));
-    if (executable.isEmpty())
-    {
-        const QString windowsDirectory = qEnvironmentVariable("SystemRoot");
-        const QString candidate = QDir(windowsDirectory).filePath(
+    if (executable.isEmpty()) {
+        const QString candidate = QDir(qEnvironmentVariable("SystemRoot")).filePath(
             QStringLiteral("System32/WindowsPowerShell/v1.0/powershell.exe"));
-        if (QFileInfo::exists(candidate))
-            executable = candidate;
+        if (QFileInfo::exists(candidate)) executable = candidate;
     }
-
     QDir outputDir(outputDirectory);
-    if (executable.isEmpty() || (!outputDir.exists() && !QDir().mkpath(outputDirectory)))
-        return false;
+    if (executable.isEmpty() || (!outputDir.exists() && !QDir().mkpath(outputDirectory))) return false;
 
-    const QString script = QStringLiteral(
-        "$ErrorActionPreference='Stop';"
-        "$sourcePath=[Environment]::GetEnvironmentVariable('OPENBOARD_PPT_SOURCE');"
-        "$outputDir=[Environment]::GetEnvironmentVariable('OPENBOARD_PPT_IMAGE_DIR');"
-        "$powerPoint=$null;$presentation=$null;"
-        "try {"
-        " $powerPoint=New-Object -ComObject PowerPoint.Application;"
-        " $powerPoint.DisplayAlerts=1;"
-        " for($attempt=1;$attempt -le 3 -and $null -eq $presentation;$attempt++){"
-        "  try{$presentation=$powerPoint.Presentations.Open($sourcePath,$true,$false,$false)}"
-        "  catch{if($attempt -eq 3){throw};Start-Sleep -Milliseconds 800}"
-        " }"
-        " $slideWidth=[double]$presentation.PageSetup.SlideWidth;"
-        " $slideHeight=[double]$presentation.PageSetup.SlideHeight;"
-        " $imageWidth=1920;"
-        " $imageHeight=[Math]::Max(1,[int][Math]::Round($imageWidth*$slideHeight/$slideWidth));"
-        " $count=[int]$presentation.Slides.Count;"
-        " if($count -lt 1){throw 'The presentation contains no slides.'}"
-        " for($index=1;$index -le $count;$index++){"
-        "  $slide=$null;"
-        "  try{"
-        "   $slide=$presentation.Slides.Item($index);"
-        "   $file=Join-Path $outputDir ('slide_{0:D6}.png' -f $index);"
-        "   for($attempt=1;$attempt -le 3;$attempt++){"
-        "    try{$slide.Export($file,'PNG',$imageWidth,$imageHeight);break}"
-        "    catch{if($attempt -eq 3){throw};Start-Sleep -Milliseconds 500}"
-        "   }"
-        "   if(!(Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -le 0){"
-        "    throw ('Slide export failed: '+$index)"
-        "   }"
-        "  } finally {"
-        "   if($null -ne $slide){[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($slide)}"
-        "  }"
-        " }"
-        "} catch {Write-Error $_;exit 1} finally {"
-        " if($null -ne $presentation){"
-        "  $presentation.Close();"
-        "  [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($presentation)"
-        " }"
-        " if($null -ne $powerPoint){"
-        "  $powerPoint.Quit();"
-        "  [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($powerPoint)"
-        " }"
-        " [GC]::Collect();[GC]::WaitForPendingFinalizers()"
-        "}");
-
-    const QByteArray encodedScript(
-        reinterpret_cast<const char*>(script.utf16()), script.size() * static_cast<int>(sizeof(char16_t)));
-
-    QProcess process;
+    const QString script = QStringLiteral(R"powershell(
+$ErrorActionPreference='Stop'
+$sourcePath=[IO.Path]::GetFullPath([Environment]::GetEnvironmentVariable('OPENBOARD_PPT_SOURCE'))
+$outputDir=[IO.Path]::GetFullPath([Environment]::GetEnvironmentVariable('OPENBOARD_PPT_IMAGE_DIR'))
+$powerPoint=$null;$presentations=$null;$presentation=$null;$slides=$null;$pageSetup=$null
+$initialCount=-1;$oldAlerts=$null;$oldSecurity=$null;$initialVisible=$null;$openedByUs=$false
+function Release-Com($value) {
+    if($null -ne $value) { try { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($value) } catch {} }
+}
+try {
+    $powerPoint=New-Object -ComObject PowerPoint.Application
+    $presentations=$powerPoint.Presentations
+    $initialCount=[int]$presentations.Count
+    $initialVisible=[int]$powerPoint.Visible
+    $oldAlerts=$powerPoint.DisplayAlerts
+    $oldSecurity=$powerPoint.AutomationSecurity
+    $powerPoint.DisplayAlerts=1
+    $powerPoint.AutomationSecurity=3
+    $normalizedSource=[IO.Path]::GetFullPath($sourcePath)
+    for($existing=1;$existing -le $initialCount;$existing++) {
+        $candidate=$presentations.Item($existing)
+        try {
+            if([String]::Equals([string]$candidate.FullName,$normalizedSource,[StringComparison]::OrdinalIgnoreCase)) {
+                $presentation=$candidate;$candidate=$null;break
+            }
+        } finally { Release-Com $candidate }
+    }
+    for($attempt=1;$attempt -le 3 -and $null -eq $presentation;$attempt++) {
+        try { $presentation=$presentations.Open($sourcePath,$true,$false,$false);$openedByUs=$true }
+        catch { if($attempt -eq 3) { throw }; Start-Sleep -Milliseconds 800 }
+    }
+    $pageSetup=$presentation.PageSetup
+    $slideWidth=[double]$pageSetup.SlideWidth
+    $slideHeight=[double]$pageSetup.SlideHeight
+    if($slideWidth -le 0 -or $slideHeight -le 0) { throw 'Invalid slide dimensions.' }
+    $imageWidth=1920
+    $imageHeight=[Math]::Max(1,[int][Math]::Round($imageWidth*$slideHeight/$slideWidth))
+    $slides=$presentation.Slides
+    $count=[int]$slides.Count
+    if($count -lt 1) { throw 'The presentation contains no slides.' }
+    for($index=1;$index -le $count;$index++) {
+        $slide=$null
+        try {
+            $slide=$slides.Item($index)
+            $file=Join-Path $outputDir ('slide_{0:D6}.png' -f $index)
+            for($attempt=1;$attempt -le 3;$attempt++) {
+                try { $slide.Export($file,'PNG',$imageWidth,$imageHeight); break }
+                catch { if($attempt -eq 3) { throw }; Start-Sleep -Milliseconds 500 }
+            }
+            if(!(Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -le 0) {
+                throw ('Slide export failed: '+$index)
+            }
+        } finally { Release-Com $slide }
+        [Console]::Out.WriteLine(('OPENBOARD_PROGRESS {0} {1}' -f $index,$count))
+        [Console]::Out.Flush()
+    }
+    Release-Com $slides; $slides=$null
+    Release-Com $pageSetup; $pageSetup=$null
+    if($openedByUs) { $presentation.Close() }
+    Release-Com $presentation; $presentation=$null
+    $powerPoint.AutomationSecurity=$oldSecurity
+    $powerPoint.DisplayAlerts=$oldAlerts
+    # Our source is closed (an already-open user document is left untouched)
+    # and every PNG is complete before acknowledging it.
+    # Office Quit/finalizer latency must not block importing those ready pages.
+    [Console]::Out.WriteLine(('OPENBOARD_DONE {0}' -f $count))
+    [Console]::Out.Flush()
+} catch { Write-Error $_; exit 1 }
+finally {
+    Release-Com $slides
+    Release-Com $pageSetup
+    if($null -ne $presentation) {
+        if($openedByUs) { try { $presentation.Close() } catch {} }
+        Release-Com $presentation
+    }
+    $quit=$false
+    if($null -ne $powerPoint) {
+        try {
+            if($null -ne $oldSecurity) { $powerPoint.AutomationSecurity=$oldSecurity }
+            if($null -ne $oldAlerts) { $powerPoint.DisplayAlerts=$oldAlerts }
+            $quit=($initialCount -eq 0 -and $initialVisible -eq 0 -and [int]$presentations.Count -eq 0 -and [int]$powerPoint.Visible -eq 0)
+        } catch {}
+    }
+    Release-Com $presentations
+    if($quit) { try { $powerPoint.Quit() } catch {} }
+    Release-Com $powerPoint
+}
+)powershell");
+    const QByteArray encodedScript(reinterpret_cast<const char*>(script.utf16()),
+                                   script.size()*static_cast<int>(sizeof(char16_t)));
+    auto process = std::make_unique<QProcess>();
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
     environment.insert(QStringLiteral("OPENBOARD_PPT_SOURCE"), sourcePath);
     environment.insert(QStringLiteral("OPENBOARD_PPT_IMAGE_DIR"), outputDirectory);
-    process.setProcessEnvironment(environment);
-    process.setProgram(executable);
-    process.setArguments({QStringLiteral("-NoLogo"),
-                          QStringLiteral("-NoProfile"),
-                          QStringLiteral("-NonInteractive"),
-                          QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
-                          QStringLiteral("-EncodedCommand"), QString::fromLatin1(encodedScript.toBase64())});
-    process.setProcessChannelMode(QProcess::MergedChannels);
-    process.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments* arguments) {
+    process->setProcessEnvironment(environment);
+    process->setProgram(executable);
+    process->setArguments({QStringLiteral("-NoLogo"), QStringLiteral("-NoProfile"),
+        QStringLiteral("-NonInteractive"), QStringLiteral("-Sta"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-EncodedCommand"), QString::fromLatin1(encodedScript.toBase64())});
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    process->setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments* arguments) {
         arguments->flags |= CREATE_NO_WINDOW;
     });
-    process.start();
-    if (!process.waitForStarted(5000))
-        return false;
+    process->start();
+    if (!process->waitForStarted(5000)) return false;
 
+    int expectedPages = 0;
+    QByteArray diagnostics;
+    const auto readProgress = [&] {
+        while (process->canReadLine()) {
+            const QByteArray line = process->readLine().trimmed();
+            const auto fields = line.split(' ');
+            if (fields.size() == 3 && fields[0] == "OPENBOARD_PROGRESS") {
+                bool currentOk = false, countOk = false;
+                const int current = fields[1].toInt(&currentOk), count = fields[2].toInt(&countOk);
+                if (currentOk && countOk && current > 0 && current <= count)
+                    UBApplication::showMessage(tr("Importing slide %1 of %2...").arg(current).arg(count), true);
+            } else if (fields.size() == 2 && fields[0] == "OPENBOARD_DONE") {
+                bool ok = false;
+                const int count = fields[1].toInt(&ok);
+                if (ok && count > 0) expectedPages = count;
+            } else {
+                diagnostics.append(line + '\n');
+                if (diagnostics.size() > 32768) diagnostics = diagnostics.right(32768);
+            }
+        }
+    };
     QElapsedTimer timer;
     timer.start();
-    while (process.state() != QProcess::NotRunning && timer.elapsed() < 600000)
-    {
-        process.waitForFinished(100);
+    while (expectedPages == 0 && process->state() != QProcess::NotRunning && timer.elapsed() < 600000) {
+        process->waitForReadyRead(50);
+        readProgress();
         QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     }
-
-    if (process.state() != QProcess::NotRunning)
-    {
-        process.kill();
-        process.waitForFinished(3000);
+    readProgress();
+    if (expectedPages == 0) {
+        if (process->state() != QProcess::NotRunning) {
+            process->kill();
+            process->waitForFinished(1000);
+        }
+        qWarning() << "PowerPoint image conversion failed:" << diagnostics.right(4096);
         return false;
     }
-
-    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
-        return false;
-
-    const QStringList fileNames = outputDir.entryList(
-        {QStringLiteral("slide_*.png")}, QDir::Files | QDir::Readable, QDir::Name);
-    for (const QString& fileName : fileNames)
-    {
-        const QString path = outputDir.absoluteFilePath(fileName);
+    // Check the acknowledged count and exact numeric order, not just whatever
+    // files happen to exist after a partial export or process failure.
+    for (int index=1; index<=expectedPages; ++index) {
+        const QString path = outputDir.filePath(QStringLiteral("slide_%1.png").arg(index,6,10,QLatin1Char('0')));
         QImageReader reader(path);
-        if (!reader.canRead())
-        {
+        if (!reader.canRead() || !reader.size().isValid()) {
+            if (process->state() != QProcess::NotRunning) {
+                process->kill();
+                process->waitForFinished(1000);
+            }
             imagePaths.clear();
             return false;
         }
         imagePaths.append(path);
     }
-
-    return !imagePaths.isEmpty();
+    qInfo() << "PowerPoint slides ready:" << expectedPages << "in" << timer.elapsed() << "ms";
+    finishPowerPointInBackground(process);
+    return true;
 }
 
 bool UBImportPowerPoint::convertWithPowerPoint(const QString& sourcePath, const QString& pdfPath)
 {
     QFile::remove(pdfPath);
+    // Office SaveAs rejects some otherwise valid Qt paths with '/' separators.
+    const QString nativeSource = QDir::toNativeSeparators(QFileInfo(sourcePath).absoluteFilePath());
+    const QString nativePdf = QDir::toNativeSeparators(QFileInfo(pdfPath).absoluteFilePath());
 
     const HRESULT initializeStatus = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     const bool uninitializeWhenDone = SUCCEEDED(initializeStatus);
@@ -398,6 +519,10 @@ bool UBImportPowerPoint::convertWithPowerPoint(const QString& sourcePath, const 
     IDispatch* presentations = nullptr;
     IDispatch* presentation = nullptr;
     bool exported = false;
+    bool mayQuit = false;
+    VARIANT previousSecurity;
+    VariantInit(&previousSecurity);
+    bool securityChanged = false;
 
     if (SUCCEEDED(CLSIDFromProgID(L"PowerPoint.Application", &powerPointClass))
         && SUCCEEDED(CoCreateInstance(powerPointClass,
@@ -406,9 +531,17 @@ bool UBImportPowerPoint::convertWithPowerPoint(const QString& sourcePath, const 
                                       IID_IDispatch,
                                       reinterpret_cast<void**>(&powerPoint))))
     {
+        VARIANT disabledMacros;
+        VariantInit(&disabledMacros);
+        disabledMacros.vt = VT_I4;
+        disabledMacros.lVal = 3; // msoAutomationSecurityForceDisable
+        securityChanged = SUCCEEDED(invokeAutomation(powerPoint, L"AutomationSecurity", DISPATCH_PROPERTYGET,
+                                                     nullptr, 0, &previousSecurity))
+            && SUCCEEDED(invokeAutomation(powerPoint, L"AutomationSecurity", DISPATCH_PROPERTYPUT,
+                                          &disabledMacros, 1, nullptr));
         VARIANT presentationsResult;
         VariantInit(&presentationsResult);
-        if (SUCCEEDED(invokeAutomation(powerPoint,
+        if (securityChanged && SUCCEEDED(invokeAutomation(powerPoint,
                                        L"Presentations",
                                        DISPATCH_PROPERTYGET,
                                        nullptr,
@@ -418,6 +551,17 @@ bool UBImportPowerPoint::convertWithPowerPoint(const QString& sourcePath, const 
         {
             presentations = presentationsResult.pdispVal;
             presentationsResult.vt = VT_EMPTY;
+            VARIANT count;
+            VariantInit(&count);
+            mayQuit = SUCCEEDED(invokeAutomation(presentations, L"Count", DISPATCH_PROPERTYGET, nullptr, 0, &count))
+                && count.vt == VT_I4 && count.lVal == 0;
+            VariantClear(&count);
+            VARIANT visible;
+            VariantInit(&visible);
+            mayQuit = mayQuit && SUCCEEDED(invokeAutomation(powerPoint, L"Visible", DISPATCH_PROPERTYGET, nullptr, 0, &visible))
+                && ((visible.vt == VT_I4 && visible.lVal == 0)
+                    || (visible.vt == VT_BOOL && visible.boolVal == VARIANT_FALSE));
+            VariantClear(&visible);
 
             VARIANT openArguments[4];
             for (VARIANT& argument : openArguments)
@@ -430,16 +574,18 @@ bool UBImportPowerPoint::convertWithPowerPoint(const QString& sourcePath, const 
             openArguments[2].vt = VT_BOOL;
             openArguments[2].boolVal = VARIANT_TRUE;
             openArguments[3].vt = VT_BSTR;
-            openArguments[3].bstrVal = SysAllocString(reinterpret_cast<const OLECHAR*>(sourcePath.utf16()));
+            openArguments[3].bstrVal = SysAllocString(reinterpret_cast<const OLECHAR*>(nativeSource.utf16()));
 
             VARIANT presentationResult;
             VariantInit(&presentationResult);
-            const HRESULT openStatus = invokeAutomation(presentations,
+            // Shared-user sessions are handled by the isolated worker below;
+            // never reopen/SaveAs/Close a user's existing presentation here.
+            const HRESULT openStatus = mayQuit ? invokeAutomation(presentations,
                                                         L"Open",
                                                         DISPATCH_METHOD,
                                                         openArguments,
                                                         4,
-                                                        &presentationResult);
+                                                        &presentationResult) : E_ACCESSDENIED;
             for (VARIANT& argument : openArguments)
                 VariantClear(&argument);
 
@@ -456,7 +602,7 @@ bool UBImportPowerPoint::convertWithPowerPoint(const QString& sourcePath, const 
                 saveAsArguments[0].vt = VT_I4;
                 saveAsArguments[0].lVal = 32; // ppSaveAsPDF
                 saveAsArguments[1].vt = VT_BSTR;
-                saveAsArguments[1].bstrVal = SysAllocString(reinterpret_cast<const OLECHAR*>(pdfPath.utf16()));
+                saveAsArguments[1].bstrVal = SysAllocString(reinterpret_cast<const OLECHAR*>(nativePdf.utf16()));
                 exported = automationMethod(presentation, L"SaveAs", saveAsArguments, 2);
                 for (VARIANT& argument : saveAsArguments)
                     VariantClear(&argument);
@@ -468,10 +614,10 @@ bool UBImportPowerPoint::convertWithPowerPoint(const QString& sourcePath, const 
                     for (VARIANT& argument : exportArguments)
                         VariantInit(&argument);
                     exportArguments[0].vt = VT_I4;
-                    exportArguments[0].lVal = 2; // ppFixedFormatTypePDF
+                    exportArguments[0].lVal = 32; // ppSaveAsPDF
                     exportArguments[1].vt = VT_BSTR;
-                    exportArguments[1].bstrVal = SysAllocString(reinterpret_cast<const OLECHAR*>(pdfPath.utf16()));
-                    exported = automationMethod(presentation, L"ExportAsFixedFormat", exportArguments, 2);
+                    exportArguments[1].bstrVal = SysAllocString(reinterpret_cast<const OLECHAR*>(nativePdf.utf16()));
+                    exported = automationMethod(presentation, L"SaveCopyAs", exportArguments, 2);
                     for (VARIANT& argument : exportArguments)
                         VariantClear(&argument);
                 }
@@ -486,13 +632,22 @@ bool UBImportPowerPoint::convertWithPowerPoint(const QString& sourcePath, const 
         automationMethod(presentation, L"Close");
         presentation->Release();
     }
-    if (presentations)
-        presentations->Release();
     if (powerPoint)
     {
-        automationMethod(powerPoint, L"Quit");
+        if (securityChanged)
+            invokeAutomation(powerPoint, L"AutomationSecurity", DISPATCH_PROPERTYPUT, &previousSecurity, 1, nullptr);
+        if (mayQuit && presentations) {
+            VARIANT count;
+            VariantInit(&count);
+            const bool noOpenDocuments = SUCCEEDED(invokeAutomation(presentations, L"Count", DISPATCH_PROPERTYGET, nullptr, 0, &count))
+                && count.vt == VT_I4 && count.lVal == 0;
+            VariantClear(&count);
+            if (noOpenDocuments) automationMethod(powerPoint, L"Quit");
+        }
         powerPoint->Release();
     }
+    if (presentations) presentations->Release();
+    VariantClear(&previousSecurity);
     if (uninitializeWhenDone)
         CoUninitialize();
 
@@ -516,24 +671,58 @@ bool UBImportPowerPoint::convertWithPowerShell(const QString& sourcePath, const 
 
     QFile::remove(pdfPath);
 
-    const QString script = QStringLiteral(
-        "$ErrorActionPreference='Stop';"
-        "$sourcePath=[Environment]::GetEnvironmentVariable('OPENBOARD_PPT_SOURCE');"
-        "$pdfPath=[Environment]::GetEnvironmentVariable('OPENBOARD_PPT_PDF');"
-        "$powerPoint=New-Object -ComObject PowerPoint.Application;"
-        "$presentation=$null;"
-        "try {"
-        " $presentation=$powerPoint.Presentations.Open($sourcePath,$true,$false,$false);"
-        " $presentation.SaveAs($pdfPath,32);"
-        "} finally {"
-        " if($null -ne $presentation){"
-        "  $presentation.Close();"
-        "  [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($presentation);"
-        " }"
-        " $powerPoint.Quit();"
-        " [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($powerPoint);"
-        "}");
+    const QString script = QStringLiteral(R"powershell(
+$ErrorActionPreference='Stop'
+$sourcePath=[IO.Path]::GetFullPath([Environment]::GetEnvironmentVariable('OPENBOARD_PPT_SOURCE'))
+$pdfPath=[IO.Path]::GetFullPath([Environment]::GetEnvironmentVariable('OPENBOARD_PPT_PDF'))
+$powerPoint=$null;$presentations=$null;$presentation=$null
+$initialCount=-1;$initialVisible=$null;$oldSecurity=$null;$openedByUs=$false
+function Release-Com($value) {
+    if($null -ne $value) { try { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($value) } catch {} }
+}
+try {
+    $powerPoint=New-Object -ComObject PowerPoint.Application
+    $presentations=$powerPoint.Presentations
+    $initialCount=[int]$presentations.Count
+    $initialVisible=[int]$powerPoint.Visible
+    $oldSecurity=$powerPoint.AutomationSecurity
+    $powerPoint.AutomationSecurity=3
+    $normalizedSource=[IO.Path]::GetFullPath($sourcePath)
+    for($existing=1;$existing -le $initialCount;$existing++) {
+        $candidate=$presentations.Item($existing)
+        try {
+            if([String]::Equals([string]$candidate.FullName,$normalizedSource,[StringComparison]::OrdinalIgnoreCase)) {
+                $presentation=$candidate;$candidate=$null;break
+            }
+        } finally { Release-Com $candidate }
+    }
+    if($null -eq $presentation) {
+        $presentation=$presentations.Open($sourcePath,$true,$false,$false);$openedByUs=$true
+        $presentation.SaveAs($pdfPath,32)
+    } else {
+        # Export a copy without renaming or changing the user's open document.
+        $presentation.SaveCopyAs($pdfPath,32)
+    }
+} finally {
+    if($null -ne $presentation) {
+        if($openedByUs) { try { $presentation.Close() } catch {} }
+        Release-Com $presentation
+    }
+    $quit=$false
+    if($null -ne $powerPoint) {
+        try {
+            if($null -ne $oldSecurity) { $powerPoint.AutomationSecurity=$oldSecurity }
+            $quit=($initialCount -eq 0 -and $initialVisible -eq 0 -and [int]$presentations.Count -eq 0 -and [int]$powerPoint.Visible -eq 0)
+        } catch {}
+    }
+    Release-Com $presentations
+    if($quit) { try { $powerPoint.Quit() } catch {} }
+    Release-Com $powerPoint
+}
+)powershell");
 
+    const QByteArray encodedScript(reinterpret_cast<const char*>(script.utf16()),
+                                   script.size()*static_cast<int>(sizeof(char16_t)));
     QProcess process;
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
     environment.insert(QStringLiteral("OPENBOARD_PPT_SOURCE"), sourcePath);
@@ -543,8 +732,9 @@ bool UBImportPowerPoint::convertWithPowerShell(const QString& sourcePath, const 
     process.setArguments({QStringLiteral("-NoLogo"),
                           QStringLiteral("-NoProfile"),
                           QStringLiteral("-NonInteractive"),
+                          QStringLiteral("-Sta"),
                           QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
-                          QStringLiteral("-Command"), script});
+                          QStringLiteral("-EncodedCommand"), QString::fromLatin1(encodedScript.toBase64())});
     process.setProcessChannelMode(QProcess::MergedChannels);
     process.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments* arguments) {
         arguments->flags |= CREATE_NO_WINDOW;
@@ -568,9 +758,11 @@ bool UBImportPowerPoint::convertWithPowerShell(const QString& sourcePath, const 
         return false;
     }
 
-    return process.exitStatus() == QProcess::NormalExit
-        && process.exitCode() == 0
-        && isUsablePdf(pdfPath);
+    const bool success = process.exitStatus() == QProcess::NormalExit
+        && process.exitCode() == 0 && isUsablePdf(pdfPath);
+    if (!success)
+        qWarning() << "PowerPoint PDF conversion failed:" << process.readAll().right(4096);
+    return success;
 }
 #endif
 
@@ -633,9 +825,12 @@ bool UBImportPowerPoint::appendPdfPages(std::shared_ptr<UBDocumentProxy> documen
     {
         UBApplication::showMessage(
             tr("Importing slide %1 of %2...").arg(pageIndex - firstPage + 1).arg(pages.size()), true);
-        std::shared_ptr<UBGraphicsScene> scene = openBoardDocument->createPage(pageIndex);
+        auto scene = std::make_shared<UBGraphicsScene>(document, false);
+        scene->setNominalSize(document->defaultDocumentSize());
+        scene->setBackground(UBSettings::settings()->isDarkBackground(), UBSettings::settings()->pageBackground());
+        scene->setBackgroundGridSize(UBSettings::settings()->crossSize);
         pdfImporter.placeImportedItemToScene(scene, page);
-        openBoardDocument->persistPage(scene, pageIndex);
+        openBoardDocument->appendImportedPage(scene);
         ++pageIndex;
     }
 

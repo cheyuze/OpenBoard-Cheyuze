@@ -86,26 +86,38 @@ public:
     void dropEvent(QDropEvent*) override;
 };
 
+namespace UBStylusTool { enum { Selector = 3, Play = 4, Pointer = 8 }; }
 struct UBDrawingController
 {
+    int tool = 7;
     static UBDrawingController* drawingController() { static UBDrawingController c; return &c; }
-    int stylusTool() const { return 7; }
+    int stylusTool() const { return tool; }
 };
 struct FakePanController
 {
     int panCalls = 0;
     void handScroll(double, double) { ++panCalls; }
 };
-class UBBoardView
+class UBBoardView : public QGraphicsView
 {
 public:
+    bool bIsControl = true;
+    bool bIsDesktop = false;
+    bool mMouseButtonIsPressed = false;
+    bool mTabletStylusIsPressed = false;
     bool mMiddleButtonPanActive = true;
     QPointF mPreviousPoint;
     int lastCursor = -1;
     FakePanController controller;
     FakePanController* mController = &controller;
     void setToolCursor(int tool) { lastCursor = tool; }
+    // Laser rendering is covered by the native laser suite. These adapters
+    // keep the input/cursor suite focused on the unchanged extracted handlers.
+    bool updateLaserPointer(const QPointF&, bool = false) { return false; }
+    void hideLaserPointer() {}
+    void refreshLaserPointer() {}
     void mouseMoveEvent(QMouseEvent*);
+    bool viewportEvent(QEvent*) override;
 };
 
 #include "production_handlers.inc"
@@ -195,6 +207,51 @@ int main(int argc, char** argv)
         board.mouseMoveEvent(&event);
         ok = check(board.mMiddleButtonPanActive && board.controller.panCalls == 1 && board.lastCursor == -1,
                 "held middle button still pans");
+    }
+    else if (test == "cursor_enter")
+    {
+        UBBoardView board;
+        board.mMiddleButtonPanActive = false;
+        QEnterEvent event(QPointF(20,20), QPointF(20,20), QPointF(20,20));
+        board.viewportEvent(&event);
+        ok = check(board.lastCursor == 7, "canvas entry restores current tool cursor without a click");
+    }
+    else if (test == "cursor_pan")
+    {
+        UBBoardView board;
+        QEnterEvent event(QPointF(20,20), QPointF(20,20), QPointF(20,20));
+        board.viewportEvent(&event);
+        ok = check(board.lastCursor == -1, "entry does not replace an active middle-pan cursor");
+    }
+    else if (test == "cursor_pressed")
+    {
+        UBBoardView board;
+        board.mMiddleButtonPanActive = false;
+        board.mMouseButtonIsPressed = true;
+        QEnterEvent event(QPointF(20,20), QPointF(20,20), QPointF(20,20));
+        board.viewportEvent(&event);
+        ok = check(board.lastCursor == -1, "entry does not replace a live drag/drawing cursor");
+    }
+    else if (test == "cursor_display")
+    {
+        UBBoardView board;
+        board.mMiddleButtonPanActive = false;
+        board.bIsControl = false;
+        QEnterEvent event(QPointF(20,20), QPointF(20,20), QPointF(20,20));
+        board.viewportEvent(&event);
+        ok = check(board.lastCursor == -1, "entry leaves a passive display view unchanged");
+    }
+    else if (test == "cursor_selection")
+    {
+        UBBoardView board;
+        board.mMiddleButtonPanActive = false;
+        auto* drawing = UBDrawingController::drawingController();
+        QEnterEvent event(QPointF(20,20), QPointF(20,20), QPointF(20,20));
+        drawing->tool = UBStylusTool::Selector;
+        board.viewportEvent(&event);
+        drawing->tool = UBStylusTool::Play;
+        board.viewportEvent(&event);
+        ok = check(board.lastCursor == -1, "selection and interaction item hover cursors remain untouched");
     }
     else return 2;
     return ok ? 0 : 1;

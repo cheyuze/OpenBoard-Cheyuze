@@ -186,6 +186,17 @@ std::shared_ptr<UBGraphicsScene> UBDocument::createPage(int index, bool useUndoR
     return scene;
 }
 
+void UBDocument::appendImportedPage(std::shared_ptr<UBGraphicsScene> scene)
+{
+    if (!scene) return;
+    const int index = mProxy->pageCount();
+    UBPersistenceManager::persistenceManager()->insertDocumentSceneAt(mProxy, scene, index);
+    insertPageName(index);
+    // Only constructing the imported background is excluded from undo.
+    // The cached page must record subsequent handwriting immediately.
+    scene->enableUndoRedoStack();
+}
+
 void UBDocument::persistPage(std::shared_ptr<UBGraphicsScene> scene, const int index, bool isAutomaticBackup,
                              bool forceImmediateSaving)
 {

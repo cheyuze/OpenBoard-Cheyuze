@@ -793,8 +793,8 @@ bool UBApplication::eventFilter(QObject *obj, QEvent *event)
     {
         // Proximity alone must not take control away from a physical mouse.
         // It is safe to initialise stylus ownership when no pointing device
-        // has been observed yet; after that, TabletPress is the authoritative
-        // hand-off from mouse to stylus.
+        // has been observed yet; later presses or actual canvas hover provide
+        // the hand-off from mouse to stylus (never a tool-mode change).
         if (boardController && boardController->controlView()
                 && boardController->controlView()->isVisible()
                 && mPointerInputDevice == PointerInputDevice::Unknown)
@@ -833,19 +833,53 @@ bool UBApplication::eventFilter(QObject *obj, QEvent *event)
             setTabletCursorOverride(true);
     }
 
-    else if (event->type() == QEvent::TabletMove
-            && mPointerInputDevice == PointerInputDevice::Stylus)
+    else if (event->type() == QEvent::TabletMove)
     {
-        updateTabletCursorOverride(
-                UBDrawingController::drawingController()->stylusTool());
+        if (!boardController || !boardController->controlView() || !mainWindow)
+            return result;
+
+        auto* tabletEvent = static_cast<QTabletEvent*>(event);
+        auto* target = qobject_cast<QWidget*>(obj);
+        auto* view = qobject_cast<UBBoardView*>(target);
+        if (!view && target)
+            view = qobject_cast<UBBoardView*>(target->parentWidget());
+        const int tool = UBDrawingController::drawingController()->stylusTool();
+        const bool toolOwnsCursor = UBDrawingController::drawingController()->isDrawingTool(tool)
+                || tool == UBStylusTool::Eraser || tool == UBStylusTool::Capture
+                || tool == UBStylusTool::Pointer;
+        const bool canvasHover = view && (target == view || target == view->viewport())
+                && view->isVisible() && view->isInteractive()
+                && tabletEvent->buttons() == Qt::NoButton
+                && QApplication::mouseButtons() == Qt::NoButton
+                && view->viewport()->cursor().shape() != Qt::ClosedHandCursor;
+        const QCursor* activeOverride = QApplication::overrideCursor();
+        const bool foreignOverride = activeOverride && (!mTabletCursorOverrideActive
+                || activeOverride->shape() == Qt::WaitCursor || activeOverride->shape() == Qt::BusyCursor);
+        if (!foreignOverride)
+        {
+            // Windows can label the enter event as a mouse even when the next
+            // input is a hovering pen. Real tablet motion over the canvas is
+            // sufficient to restore cursor ownership; no press/tool switch is
+            // needed. Controls and selection handles retain their own cursors.
+            if (canvasHover && toolOwnsCursor && !QApplication::activePopupWidget()
+                    && !QApplication::activeModalWidget())
+            {
+                view->setToolCursor(tool);
+                activateStylusInput();
+            }
+            else if (mPointerInputDevice == PointerInputDevice::Stylus)
+            {
+                updateTabletCursorOverride(tool);
+            }
+        }
     }
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
     else if (event->type() == QEvent::Enter)
     {
         // QEnterEvent has no MouseEventSource. Its pointing device is still
-        // sufficient for cursor ownership, but it is deliberately not used
-        // to change tools; a genuine QMouseEvent below performs that action.
+        // sufficient for cursor ownership. Neither entry nor pointer motion
+        // changes the manually selected tool.
         QEnterEvent *enterEvent = static_cast<QEnterEvent *>(event);
         const QInputDevice *device = enterEvent->pointingDevice();
         if (device && (device->type() == QInputDevice::DeviceType::Mouse

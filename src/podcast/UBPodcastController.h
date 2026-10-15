@@ -102,6 +102,7 @@ class UBPodcastController : public QObject
 
         void start();
         void stop();
+        void restart();
 
         void pause();
         void unpause();
@@ -181,6 +182,8 @@ class UBPodcastController : public QObject
         void reportRecordingFailure(const QString& message);
 
         void captureFrameUnavailable();
+        void completeRecordingRestart(const QString &workingFilePath);
+        void updateRecordingAreaIndicator();
 
         static UBPodcastController* sInstance;
 
@@ -220,11 +223,14 @@ class UBPodcastController : public QObject
 
         UBPodcastRecordingPalette *mRecordingPalette;
         UBCameraPreviewWindow *mCameraPreview;
+        QWidget *mRecordingAreaIndicator;
         UBCleanScreenRecording *mCleanScreenRecording;
 
         RecordingState mRecordingState;
 
         bool mApplicationIsClosing;
+        bool mRestartRequested = false;
+        bool mRestartConfirmationOpen = false;
 
         QAction *mDefaultAudioInputDeviceAction;
         QAction *mNoAudioInputDeviceAction;

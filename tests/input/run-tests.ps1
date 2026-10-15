@@ -23,6 +23,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Cannot query Qt plugin directory' }
 $buildRoot = Join-Path (Join-Path $PSScriptRoot 'build') $BuildTag
 $inputBuild = Join-Path $buildRoot 'input-state'
 $polygonBuild = Join-Path $buildRoot 'polygon-zoom'
+$eraserBuild = Join-Path $buildRoot 'eraser-preview'
 $parameters = @{
     SourceRoot = $sourcePath
     QMake = $qmakePath
@@ -35,6 +36,7 @@ if ($BaselineRef) { Write-Host "Git baseline: $BaselineRef" }
 Write-Host "Generated output: $buildRoot"
 & (Join-Path $PSScriptRoot 'build-input-state.ps1') @parameters -BuildDir $inputBuild
 & (Join-Path $PSScriptRoot 'build-polygon-zoom.ps1') @parameters -BuildDir $polygonBuild
+& (Join-Path $PSScriptRoot 'build-eraser-preview.ps1') @parameters -BuildDir $eraserBuild
 
 $oldPath = $env:PATH
 $oldPlatform = $env:QT_QPA_PLATFORM
@@ -47,7 +49,8 @@ try {
     $inputExecutable = Join-Path $inputBuild 'input_state_regression.exe'
     $cases = @(
         'null_resize', 'null_callbacks', 'document_reset', 'external_drop',
-        'external_enter', 'valid_resize', 'lost_middle_release', 'held_middle'
+        'external_enter', 'valid_resize', 'lost_middle_release', 'held_middle',
+        'cursor_enter', 'cursor_pan', 'cursor_pressed', 'cursor_display', 'cursor_selection'
     )
     # Run each input case in its own process: a regressed null dereference must
     # not prevent the remaining cases from being exercised.
@@ -61,6 +64,10 @@ try {
     if ($LASTEXITCODE -ne 0) {
         $failures += "polygon-zoom suite (exit $LASTEXITCODE)"
     }
+    & (Join-Path $eraserBuild 'eraser_preview_regression.exe')
+    if ($LASTEXITCODE -ne 0) {
+        $failures += "eraser-preview suite (exit $LASTEXITCODE)"
+    }
 } finally {
     $env:PATH = $oldPath
     $env:QT_QPA_PLATFORM = $oldPlatform
@@ -70,4 +77,4 @@ try {
 if ($failures.Count) {
     throw ('Input regression failure(s): ' + ($failures -join ', '))
 }
-Write-Host 'PASS: input-state 8/8 and polygon-zoom 13/13 (21 cases).'
+Write-Host 'PASS: input-state 13/13, polygon-zoom 13/13 and eraser-preview 13/13 (39 cases).'

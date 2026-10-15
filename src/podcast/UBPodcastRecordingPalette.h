@@ -59,11 +59,14 @@ class UBPodcastRecordingPalette : public UBActionPalette
 
     signals:
         void cameraToggled(bool enabled);
+        void restartRequested();
+        void visibilityChanged(bool visible);
 
     protected:
         void paintEvent(QPaintEvent *event) override;
         void moveEvent(QMoveEvent *event) override;
         void showEvent(QShowEvent *event) override;
+        void hideEvent(QHideEvent *event) override;
         int radius() override;
 
     private:
@@ -75,6 +78,7 @@ class UBPodcastRecordingPalette : public UBActionPalette
         QLabel *mTimerLabel;
         UBVuMeter *mLevelMeter;
         QAction *mCameraAction;
+        QAction *mRestartAction;
         QAction *mCameraEnabledAction;
         QMenu *mAudioSourceMenu;
         QMenu *mMicrophoneMenu;

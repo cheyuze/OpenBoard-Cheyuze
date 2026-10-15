@@ -434,6 +434,8 @@ void UBGraphicsPixmapItemDelegate::createMenu()
     if (mMenu) return;
     createActions();
     mMenu = new QMenu(UBApplication::boardController->controlView());
+    // The view can be destroyed before the cached scene/delegate at exit.
+    connect(mMenu, &QObject::destroyed, this, [this] { mMenu = nullptr; });
     mMenu->setObjectName(QStringLiteral("imageOperationsMenu"));
     mMenu->setStyleSheet(QStringLiteral(
         "QMenu {background:#ffffff; color:#202936; border:1px solid #dbe2eb; border-radius:9px; padding:6px;}"

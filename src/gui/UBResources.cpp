@@ -79,7 +79,9 @@ QCursor UBResources::cursorForTool(int tool) const
     case UBStylusTool::Marker:
         return markerCursor;
     case UBStylusTool::Pointer:
-        return pointerCursor;
+        // The scene owns the live laser and fading trail, including recording.
+        // An additional OS cursor would draw a second laser over the effect.
+        return QCursor(Qt::BlankCursor);
     case UBStylusTool::Hand:
         return handCursor;
     case UBStylusTool::ZoomIn:

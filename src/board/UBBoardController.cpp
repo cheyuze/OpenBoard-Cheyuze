@@ -3043,6 +3043,7 @@ std::shared_ptr<UBGraphicsScene> UBBoardController::setActiveDocumentScene(std::
             UBApplication::undoStack->clear();
         }
 
+        if (mActiveScene) mActiveScene->hideLaserPointer();
         mActiveScene = targetScene;
         mActiveSceneIndex = index;
 

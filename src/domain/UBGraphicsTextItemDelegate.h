@@ -30,163 +30,66 @@
 #ifndef UBGRAPHICSTEXTITEMDELEGATE_H_
 #define UBGRAPHICSTEXTITEMDELEGATE_H_
 
-#include <QtGui>
-
-#include <QtSvg>
-
-#include "core/UB.h"
 #include "UBGraphicsItemDelegate.h"
+#include <QPointer>
 
+class QDoubleSpinBox;
+class QGraphicsProxyWidget;
+class QToolButton;
 class UBGraphicsTextItem;
-
-class AlignTextButton : public DelegateButton
-{
-    Q_OBJECT
-
-public:
-    static const int MAX_KIND = 3;
-    enum kind_t{
-        k_left = 0
-        , k_center
-        , k_right
-        , k_mixed
-    };
-
-    AlignTextButton(const QString & fileName, QGraphicsItem* pDelegated, QGraphicsItem * parent = 0, Qt::WindowFrameSection section = Qt::TopLeftSection);
-    virtual ~AlignTextButton();
-
-    void setKind(int pKind);
-    int kind() {return mKind;}
-
-    void setNextKind();
-    int nextKind() const;
-
-    void setMixedButtonVisible(bool v = true) {mHideMixed = !v;}
-    bool isMixedButtonVisible() {return !mHideMixed;}
-
-private:
-
-    QSvgRenderer *rndFromKind(int pknd)
-    {
-        switch (pknd) {
-        case k_left:
-            return lft;
-            break;
-        case k_center:
-            return cntr;
-            break;
-        case k_right:
-            return rght;
-            break;
-        case k_mixed:
-            return mxd;
-            break;
-        }
-
-        return 0;
-    }
-
-    QSvgRenderer *curRnd() {return rndFromKind(mKind);}
-
-    QPointer<QSvgRenderer> lft;
-    QPointer<QSvgRenderer> cntr;
-    QPointer<QSvgRenderer> rght;
-    QPointer<QSvgRenderer> mxd;
-
-    int mKind;
-    bool mHideMixed;
-};
 
 class UBGraphicsTextItemDelegate : public UBGraphicsItemDelegate
 {
     Q_OBJECT
+public:
+    UBGraphicsTextItemDelegate(UBGraphicsTextItem* item, QObject* parent = nullptr);
+    ~UBGraphicsTextItemDelegate() override;
+    bool isEditable();
+    void scaleTextSize(qreal multiplier);
+    void recolor();
+    QVariant itemChange(QGraphicsItem::GraphicsItemChange change, const QVariant& value) override;
+    void createControls() override;
+    void freeControls() override;
+    bool controlsExist() const override;
+    void positionHandles() override;
+    qreal titleBarWidth();
+    void openMenu(const QPoint& globalPosition);
+    void setInteractionActive(bool active);
 
-    enum textChangeMode
-    {
-        changeSize = 0,
-        scaleSize
-    };
+public slots:
+    void contentsChanged();
+    virtual void setEditable(bool editable);
+    void remove(bool canUndo = true) override;
 
-    public:
-        UBGraphicsTextItemDelegate(UBGraphicsTextItem* pDelegated, QObject * parent = 0);
-        virtual ~UBGraphicsTextItemDelegate();
-        bool isEditable();
-        void scaleTextSize(qreal multiplyer);
-        void recolor();
-        virtual QVariant itemChange(QGraphicsItem::GraphicsItemChange change, const QVariant &value);
-        virtual void createControls();
-        qreal titleBarWidth();
-
-    public slots:
-        void contentsChanged();
-        virtual void setEditable(bool);
-        virtual void remove(bool canUndo);
-
-    protected:
-        virtual void decorateMenu(QMenu *menu);
-        virtual void updateMenuActionState();
-
-        virtual void freeButtons();
-
-        virtual bool mousePressEvent(QGraphicsSceneMouseEvent *event);
-        virtual bool mouseMoveEvent(QGraphicsSceneMouseEvent *event);
-        virtual bool mouseReleaseEvent(QGraphicsSceneMouseEvent *event);
-
-        virtual bool keyPressEvent(QKeyEvent *event);
-        virtual bool keyReleaseEvent(QKeyEvent *event);
-
-    private:
-        UBGraphicsTextItem* delegated();
-
-        DelegateButton* mFontButton;
-        DelegateButton* mColorButton;
-        DelegateButton* mDecreaseSizeButton;
-        DelegateButton* mIncreaseSizeButton;
-        DelegateButton* mAlignButton;
-
-        int mLastFontPixelSize;
-
-        static const int sMinPixelSize;
-        static const int sMinPointSize;
-
-    private:
-        void customize(QFontDialog &fontDialog);
-        void changeTextSize(qreal factor, textChangeMode changeMode);
-        void updateAlignButtonState();
-        bool oneBlockSelection();
-        void saveTextCursorFormats();
-        void restoreTextCursorFormats();
-
-
-        QAction *mEditableAction;
-        struct selectionData_t {
-            selectionData_t()
-                : mButtonIsPressed(false)
-            {}
-            bool mButtonIsPressed;
-            int position;
-            int anchor;
-            QString html;
-            QTextDocumentFragment selection;
-            QList<QTextBlockFormat> fmts;
-
-        } mSelectionData;
-
-    private slots:
-
-        void pickFont();
-        void pickColor();
-
-        void decreaseSize();
-        void increaseSize();
-
-        void alignButtonProcess();
-        void onCursorPositionChanged(const QTextCursor& cursor);
-        void onModificationChanged(bool ch);
-        void onContentChanged();
+protected:
+    void decorateMenu(QMenu* menu) override;
+    void updateMenuActionState() override;
+    bool mousePressEvent(QGraphicsSceneMouseEvent* event) override;
+    bool mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
+    bool mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
+    bool keyPressEvent(QKeyEvent* event) override;
+    bool keyReleaseEvent(QKeyEvent* event) override;
 
 private:
-      const int delta;
-};
+    enum textChangeMode { changeSize, scaleSize };
+    UBGraphicsTextItem* delegated();
+    void customize(QFontDialog& dialog);
+    void changeTextSize(qreal factor, textChangeMode mode);
+    void updateFormattingControls();
+    void applyFormat(const QTextCharFormat& format);
+    void applyAlignment(Qt::Alignment alignment);
+    void saveTextCursorFormats();
+    QPointer<QGraphicsProxyWidget> mTextToolbar;
+    QPointer<QToolButton> mFontControl, mColorControl, mBoldControl, mItalicControl, mUnderlineControl, mAlignControl;
+    QPointer<QDoubleSpinBox> mSizeControl;
+    QAction* mEditableAction = nullptr;
+    bool mInteracting = false;
+    const int delta = 5;
 
-#endif /* UBGRAPHICSTEXTITEMDELEGATE_H_ */
+private slots:
+    void pickFont();
+    void pickColor();
+    void decreaseSize();
+    void increaseSize();
+};
+#endif

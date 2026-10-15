@@ -70,6 +70,7 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
      , mTimerLabel(nullptr)
      , mLevelMeter(nullptr)
      , mCameraAction(nullptr)
+     , mRestartAction(nullptr)
      , mCameraEnabledAction(nullptr)
      , mAudioSourceMenu(nullptr)
      , mMicrophoneMenu(nullptr)
@@ -102,6 +103,14 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
 
     addAction(recordAction);
     addAction(pauseAction);
+
+    mRestartAction = new QAction(UBUiTheme::icon(QStringLiteral("rotate")),
+            QStringLiteral("重录"), this);
+    mRestartAction->setObjectName(QStringLiteral("actionPodcastRestart"));
+    mRestartAction->setToolTip(QStringLiteral("重新录制（确认后丢弃本次未保存的视频）"));
+    mRestartAction->setEnabled(false);
+    connect(mRestartAction, &QAction::triggered, this, &UBPodcastRecordingPalette::restartRequested);
+    addAction(mRestartAction);
 
     mTimerLabel = new QLabel(this);
     mTimerLabel->setAlignment(Qt::AlignCenter);
@@ -140,7 +149,7 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
         "QToolButton::menu-indicator { image: none; }"
     );
 
-    for (QAction *action : {recordAction, pauseAction,
+    for (QAction *action : {recordAction, pauseAction, mRestartAction,
                             mCameraAction, configAction})
     {
         if (QToolButton *button = getButtonFromAction(action))
@@ -148,10 +157,15 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
             button->setFixedSize(40, 40);
             button->setIconSize(QSize(24, 24));
             button->setStyleSheet(buttonStyle);
+            button->setCursor(Qt::ArrowCursor);
+            button->setAccessibleName(action->text());
         }
     }
 
-    mAudioSourceMenu = new QMenu(QStringLiteral("音频来源"), this);
+    mAudioSourceMenu = new QMenu(QStringLiteral("声音来源"), this);
+    mAudioSourceMenu->setObjectName(QStringLiteral("recordingAudioSourceMenu"));
+    mAudioSourceMenu->setIcon(recordingDeviceIcon(RecordingDeviceIcon::Microphone));
+    mAudioSourceMenu->setToolTipsVisible(true);
     auto *sourceGroup = new QActionGroup(mAudioSourceMenu);
     sourceGroup->setExclusive(true);
     const QList<QPair<QString, UBPodcastController::AudioSourceMode>> sources {
@@ -165,6 +179,8 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
         action->setCheckable(true);
         action->setData(static_cast<int>(source.second));
         sourceGroup->addAction(action);
+        if (source.second == UBPodcastController::MicrophoneAndSystem)
+            action->setToolTip(QStringLiteral("同时录制两种声音时，建议使用耳机以避免回声"));
 #ifndef Q_OS_WIN
         if (source.second != UBPodcastController::MicrophoneOnly) action->setEnabled(false);
 #endif
@@ -186,11 +202,13 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
     });
 
     mMicrophoneMenu = new QMenu(QStringLiteral("麦克风设备"), this);
+    mMicrophoneMenu->setObjectName(QStringLiteral("recordingMicrophoneMenu"));
     mMicrophoneMenu->setIcon(recordingDeviceIcon(RecordingDeviceIcon::Microphone));
     connect(mMicrophoneMenu, &QMenu::aboutToShow,
             this, &UBPodcastRecordingPalette::populateMicrophoneMenu);
 
     mSpeakerMenu = new QMenu(QStringLiteral("电脑声音设备（扬声器 / 耳机）"), this);
+    mSpeakerMenu->setObjectName(QStringLiteral("recordingSpeakerMenu"));
 #ifndef Q_OS_WIN
     mSpeakerMenu->setEnabled(false);
 #endif
@@ -199,6 +217,7 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
             this, &UBPodcastRecordingPalette::populateSpeakerMenu);
 
     mCameraMenu = new QMenu(QStringLiteral("摄像头"), this);
+    mCameraMenu->setObjectName(QStringLiteral("recordingCameraMenu"));
     mCameraMenu->setIcon(recordingDeviceIcon(RecordingDeviceIcon::Camera));
     connect(mCameraMenu, &QMenu::aboutToShow,
             this, &UBPodcastRecordingPalette::populateCameraMenu);
@@ -217,23 +236,24 @@ UBPodcastRecordingPalette::UBPodcastRecordingPalette(QWidget *parent)
             tb->setObjectName("ubButtonMenu");
             tb->setPopupMode(QToolButton::InstantPopup);
             QMenu* menu = new QMenu(this);
+            menu->setObjectName(QStringLiteral("recordingSettingsMenu"));
+            QMenu *qualityMenu = menu->addMenu(UBUiTheme::icon(QStringLiteral("monitor")),
+                    QStringLiteral("画质"));
+            qualityMenu->setObjectName(QStringLiteral("recordingQualityMenu"));
 
             foreach(QAction* videoSizeAction, UBPodcastController::instance()->videoSizeActions())
             {
-                menu->addAction(videoSizeAction);
+                qualityMenu->addAction(videoSizeAction);
             }
 
+            // Keep every choice within two menu levels: devices are siblings
+            // of the sound-source selector, never nested underneath it.
             menu->addSeparator();
             menu->addMenu(mAudioSourceMenu);
             menu->addMenu(mMicrophoneMenu);
             menu->addMenu(mSpeakerMenu);
+            menu->addSeparator();
             menu->addMenu(mCameraMenu);
-            menu->addSeparator();
-            menu->addAction(QStringLiteral("合录电脑声音与麦克风时，建议使用耳机"))->setEnabled(false);
-            menu->addSeparator();
-            menu->addAction(QStringLiteral("全屏录制：控件保持显示，不会出现在成品中"))->setEnabled(false);
-            menu->addAction(QStringLiteral("全屏录制：Ctrl+Shift+F9 暂停 / 继续"))->setEnabled(false);
-            menu->addAction(QStringLiteral("全屏录制：Ctrl+Shift+F10 结束并保存"))->setEnabled(false);
 
             tb->setMenu(menu);
         }
@@ -254,6 +274,12 @@ void UBPodcastRecordingPalette::recordingStateChanged(UBPodcastController::Recor
 {
     QAction *recordAction = UBApplication::mainWindow->actionPodcastRecord;
     QAction *pauseAction = UBApplication::mainWindow->actionPodcastPause;
+    // Present controller state without feeding QAction::toggled back into
+    // pauseToggled(). Programmatic pause (hotkeys/restart) must stay paused.
+    const QSignalBlocker recordBlocker(recordAction);
+    const QSignalBlocker pauseBlocker(pauseAction);
+    mRestartAction->setEnabled(state == UBPodcastController::Recording
+            || state == UBPodcastController::Paused);
 
     if (state == UBPodcastController::Recording)
     {
@@ -301,8 +327,8 @@ void UBPodcastRecordingPalette::recordingStateChanged(UBPodcastController::Recor
         pauseAction->setChecked(true);
         pauseAction->setEnabled(true);
         pauseAction->setIcon(UBUiTheme::icon(QStringLiteral("play")));
-        pauseAction->setText(QStringLiteral("播放"));
-        pauseAction->setToolTip(QStringLiteral("播放"));
+        pauseAction->setText(QStringLiteral("继续"));
+        pauseAction->setToolTip(QStringLiteral("继续录制"));
 
         //UBApplication::mainWindow->actionPodcastMic->setEnabled(false);
         UBApplication::mainWindow->actionPodcastConfig->setEnabled(false);
@@ -526,6 +552,13 @@ void UBPodcastRecordingPalette::showEvent(QShowEvent *event)
 {
     UBActionPalette::showEvent(event);
     ensureSystemTopMost();
+    emit visibilityChanged(true);
+}
+
+void UBPodcastRecordingPalette::hideEvent(QHideEvent *event)
+{
+    UBActionPalette::hideEvent(event);
+    emit visibilityChanged(false);
 }
 
 void UBPodcastRecordingPalette::setNativeOwner(QWidget *owner)

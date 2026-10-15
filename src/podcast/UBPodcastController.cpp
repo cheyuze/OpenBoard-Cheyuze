@@ -43,8 +43,10 @@
 #include "board/UBBoardController.h"
 #include "board/UBBoardView.h"
 #include "board/UBBoardPaletteManager.h"
+#include "board/UBDrawingController.h"
 
 #include "gui/UBMainWindow.h"
+#include "gui/UBUiTheme.h"
 
 #include "web/UBWebController.h"
 #include "web/simplebrowser/webview.h"
@@ -58,6 +60,7 @@
 #include "UBCleanScreenRecording.h"
 
 #include <QFileDialog>
+#include <QAbstractButton>
 #include <QAudioDevice>
 #include <QCameraDevice>
 #include <QInputDialog>
@@ -89,6 +92,68 @@
 
 namespace
 {
+    // A click-through ring outside the captured rectangle. Its center has no
+    // native window pixels at all, so the hint never gets baked into an area
+    // recording, including on systems without capture-exclusion support.
+    class RecordingAreaIndicator final : public QWidget
+    {
+    public:
+        RecordingAreaIndicator()
+            : QWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint
+                    | Qt::WindowStaysOnTopHint | Qt::WindowTransparentForInput
+                    | Qt::WindowDoesNotAcceptFocus)
+        {
+            setObjectName(QStringLiteral("recordingAreaIndicator"));
+            setWindowTitle(QStringLiteral("选区录制范围"));
+            setAttribute(Qt::WA_TranslucentBackground);
+            setAttribute(Qt::WA_TransparentForMouseEvents);
+            setAttribute(Qt::WA_ShowWithoutActivating);
+            setFocusPolicy(Qt::NoFocus);
+        }
+
+        void setCaptureRect(const QRect &area)
+        {
+            mAreaSize = area.size();
+            setGeometry(area.adjusted(-margin, -margin, margin, margin));
+            const QRegion ring = QRegion(rect()).subtracted(
+                    QRegion(QRect(QPoint(margin, margin), mAreaSize)));
+            setMask(ring);
+            update();
+        }
+
+    protected:
+        void showEvent(QShowEvent *event) override
+        {
+            QWidget::showEvent(event);
+#ifdef Q_OS_WIN
+            // Defense in depth; the outside-only mask is also used when this
+            // optional OS exclusion is unavailable. Never change capture state.
+            if (QGuiApplication::platformName() == QStringLiteral("windows"))
+                SetWindowDisplayAffinity(reinterpret_cast<HWND>(winId()), 0x11);
+#endif
+        }
+
+        void paintEvent(QPaintEvent *) override
+        {
+            QPainter painter(this);
+            painter.setClipRegion(mask());
+            painter.setRenderHint(QPainter::Antialiasing);
+            const QRectF outline(margin - 1.5, margin - 1.5,
+                    mAreaSize.width() + 3.0, mAreaSize.height() + 3.0);
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(Qt::white, 3.0));
+            painter.drawRect(outline);
+            QPen dash(UBUiTheme::blue(), 1.5, Qt::DashLine);
+            dash.setDashPattern({5.0, 4.0});
+            painter.setPen(dash);
+            painter.drawRect(outline);
+        }
+
+    private:
+        static constexpr int margin = 4;
+        QSize mAreaSize;
+    };
+
     QString recordingWorkingDirectory()
     {
         QString temporaryRoot = QStandardPaths::writableLocation(
@@ -137,6 +202,25 @@ namespace
         });
 
         return dialog->exec();
+    }
+
+    void restoreDesktopPointerAfterRecording(bool desktopMode)
+    {
+        if (!desktopMode || !UBApplication::mainWindow)
+            return;
+
+        auto *drawingController = UBDrawingController::drawingController();
+        if (!drawingController->isInDesktopMode())
+            return;
+
+        // Use the actual selector tool, not just an arrow-shaped cursor. This
+        // also makes the desktop drawing background transparent to input and
+        // closes the pen/eraser property palettes without clearing any ink.
+        QAction *selector = UBApplication::mainWindow->actionSelector;
+        if (selector && selector->isEnabled())
+            selector->trigger();
+        else
+            drawingController->setStylusTool(UBStylusTool::Selector);
     }
 
 #ifdef Q_OS_WIN
@@ -341,6 +425,7 @@ UBPodcastController::UBPodcastController(QObject* pParent)
     , mRecordingProgressTimerEventID(0)
     , mRecordingPalette(0)
     , mCameraPreview(0)
+    , mRecordingAreaIndicator(0)
     , mCleanScreenRecording(new UBCleanScreenRecording(this))
     , mRecordingState(Stopped)
     , mApplicationIsClosing(false)
@@ -373,10 +458,13 @@ UBPodcastController::UBPodcastController(QObject* pParent)
             this, SLOT(applicationAboutToQuit()));
 
     connect(mCleanScreenRecording, &UBCleanScreenRecording::pauseRequested, this, [this] {
+        if (mRestartConfirmationOpen) return;
         if (mRecordingState == Recording) pause();
         else if (mRecordingState == Paused) unpause();
     });
-    connect(mCleanScreenRecording, &UBCleanScreenRecording::stopRequested, this, &UBPodcastController::stop);
+    connect(mCleanScreenRecording, &UBCleanScreenRecording::stopRequested, this, [this] {
+        if (!mRestartConfirmationOpen) stop();
+    });
     connect(mCleanScreenRecording, &UBCleanScreenRecording::exclusionFailed, this,
             [this](const QString &reason) {
         if (mRecordingState == Recording && mCleanScreenRecording->prepared()
@@ -391,7 +479,10 @@ UBPodcastController::UBPodcastController(QObject* pParent)
 
 UBPodcastController::~UBPodcastController()
 {
+    mApplicationIsClosing = true;
     delete mCleanScreenRecording;
+    delete mRecordingAreaIndicator;
+    mRecordingAreaIndicator = nullptr;
     delete mCameraPreview;
     mCameraPreview = 0;
     delete mRecordingPalette;
@@ -665,6 +756,10 @@ void UBPodcastController::start()
         else
         {
             applicationMainModeChanged(UBApplication::applicationController->displayMode());
+            // stop() detached the scene. On a same-widget restart the source
+            // setter is intentionally a no-op, so reattach the board explicitly.
+            if (!mSourceScene && qobject_cast<UBBoardView *>(mSourceWidget))
+                activeSceneChanged();
         }
 
         // setSourceWidget() is intentionally a no-op when the source pointer
@@ -851,10 +946,84 @@ void UBPodcastController::stop()
 
         setRecordingState(Stopping);
 
+        // The final video frame has already been submitted. Hand the desktop
+        // back to normal mouse interaction before finalization can open a
+        // native Save As dialog. Restart intentionally preserves the tool.
+        if (!mRestartRequested && !mApplicationIsClosing)
+            restoreDesktopPointerAfterRecording(mIsDesktopMode);
+
         mVideoEncoder->stop();
     }
 
+    if (mSourceScene)
+        disconnect(mSourceScene.get(), SIGNAL(changed(const QList<QRectF>&)),
+                this, SLOT(sceneChanged(const QList<QRectF> &)));
     mSourceScene = nullptr;
+}
+
+void UBPodcastController::restart()
+{
+    if (mApplicationIsClosing || mRestartConfirmationOpen || mRestartRequested
+            || !mVideoEncoder || (mRecordingState != Recording && mRecordingState != Paused))
+        return;
+
+    const QPointer<UBAbstractVideoEncoder> previousEncoder = mVideoEncoder;
+    const bool wasRecording = mRecordingState == Recording;
+    // Do not include the confirmation dialog or time spent deciding in the clip.
+    if (wasRecording) pause();
+    if (previousEncoder != mVideoEncoder || mRecordingState != Paused)
+        return;
+
+    mRestartConfirmationOpen = true;
+    QMessageBox confirmation(QMessageBox::Question, QStringLiteral("重新录制"),
+            QStringLiteral("重新录制会丢弃本次尚未保存的视频，并从 00:00 自动重新开始。\n\n录制范围、声音、画质和当前笔迹保持不变。"),
+            QMessageBox::Yes | QMessageBox::Cancel, mRecordingPalette);
+    confirmation.setObjectName(QStringLiteral("restartRecordingConfirmation"));
+    confirmation.setTextFormat(Qt::PlainText);
+    confirmation.setWindowModality(Qt::ApplicationModal);
+    confirmation.setDefaultButton(QMessageBox::Cancel);
+    confirmation.button(QMessageBox::Yes)->setText(QStringLiteral("丢弃并重录"));
+    confirmation.button(QMessageBox::Cancel)->setText(QStringLiteral("取消"));
+    const bool confirmed = execCenteredDialog(&confirmation) == QMessageBox::Yes;
+    mRestartConfirmationOpen = false;
+
+    // An encoder failure or application shutdown can finish this session while
+    // a modal dialog is open. Never act on a replacement/stale encoder.
+    if (mApplicationIsClosing || previousEncoder != mVideoEncoder || !mVideoEncoder
+            || (mRecordingState != Recording && mRecordingState != Paused))
+        return;
+
+    if (!confirmed)
+    {
+        if (wasRecording && mRecordingState == Paused) unpause();
+        return;
+    }
+
+    mRestartRequested = true;
+    UBApplication::showMessage(QStringLiteral("正在准备重新录制…"), true);
+    stop();
+}
+
+void UBPodcastController::completeRecordingRestart(const QString &workingFilePath)
+{
+    // The previous encoder and all its children have now been destroyed. Only
+    // this session's owned temporary file is discarded; saved videos are never touched.
+    if (QFileInfo::exists(workingFilePath) && !QFile::remove(workingFilePath))
+    {
+        setRecordingState(Stopped);
+        if (!mApplicationIsClosing)
+            UBApplication::showMessage(QStringLiteral("无法清理上一段临时录制，未开始重录。文件已保留：%1")
+                    .arg(QDir::toNativeSeparators(workingFilePath)), false);
+        return;
+    }
+
+    setRecordingState(Stopped);
+    if (!mApplicationIsClosing)
+    {
+        start();
+        if (mRecordingState == Recording)
+            UBApplication::showMessage(QStringLiteral("已重新开始录制，上一段未保存的视频已丢弃。"), false);
+    }
 }
 
 
@@ -1045,6 +1214,7 @@ void UBPodcastController::applicationMainModeChanged(UBApplicationController::Ma
     if (mCleanScreenRecording->prepared())
         mCleanScreenRecording->finish();
     mIsDesktopMode = false;
+    updateRecordingAreaIndicator();
 
     if (pMode == UBApplicationController::Internet)
     {
@@ -1089,6 +1259,7 @@ void UBPodcastController::applicationDesktopMode(bool displayed)
     if (mCameraPreview && mCameraPreview->isVisible())
         positionCameraPreview();
     updateCleanScreenRecording();
+    updateRecordingAreaIndicator();
 }
 
 
@@ -1148,6 +1319,26 @@ void UBPodcastController::encodingFinished(bool ok)
     if (mMonotonicTimer.isValid())
         mRecordingClock.stop(mMonotonicTimer.elapsed());
     setRecordingState(Stopping);
+
+    const bool restartRequested = mRestartRequested;
+    mRestartRequested = false;
+    if (restartRequested && ok && mEncodingError.isEmpty())
+    {
+        // Deletion is deferred above. Start only on a later event-loop turn
+        // after destruction, so old microphone/encoder resources cannot overlap.
+        connect(finishedEncoder, &QObject::destroyed, this, [this, workingFilePath] {
+            QTimer::singleShot(0, this, [this, workingFilePath] {
+                completeRecordingRestart(workingFilePath);
+            });
+        });
+        return;
+    }
+
+    // Automatic encoder failure/completion may bypass stop(). Ensure both
+    // save and error dialogs remain usable, but never alter a successful
+    // restart or tool state while the application is shutting down.
+    if (!mApplicationIsClosing)
+        restoreDesktopPointerAfterRecording(mIsDesktopMode);
 
     if (ok && mEncodingError.isEmpty())
     {
@@ -1217,45 +1408,39 @@ QString UBPodcastController::saveRecordingAs(const QString& temporaryFilePath)
                                      temporaryInfo.suffix())), " ");
     }
 
-    // The recording palette is normally docked near the lower-right corner.
-    // Using it as the owner makes Windows place both the native Save As dialog
-    // and the discard confirmation beside the palette.  Own all recording
-    // dialogs from the main window so they are centred on the application (and
-    // therefore on the current screen) regardless of palette position.
+    // The desktop annotation window is always on top. In desktop mode the
+    // native picker must be owned by that visible window, not by the hidden
+    // main window; otherwise existing ink can still sit above the picker and
+    // intercept clicks even after the tool has switched back to the selector.
+    // Elsewhere keep the main window as owner rather than the small palette.
     QWidget* dialogParent = UBApplication::mainWindow;
+    if (mIsDesktopMode && !mApplicationIsClosing
+            && UBApplication::applicationController)
+    {
+        auto *desktopController = UBApplication::applicationController->uninotesController();
+        if (desktopController && desktopController->drawingView()
+                && desktopController->drawingView()->isVisible())
+            dialogParent = desktopController->drawingView();
+    }
     QString destination;
     if (!mApplicationIsClosing)
     {
         while (destination.isEmpty())
         {
             QFileDialog saveDialog(dialogParent);
-            saveDialog.setOption(QFileDialog::DontUseNativeDialog, true);
+            // Prefer the Windows/system dialog. Do not force the app's light
+            // widget layout, labels or geometry onto the native file picker.
+            saveDialog.setOption(QFileDialog::DontUseNativeDialog, false);
+            saveDialog.setObjectName(QStringLiteral("recordingSaveDialog"));
             saveDialog.setWindowTitle(tr("保存录制视频"));
             saveDialog.setAcceptMode(QFileDialog::AcceptSave);
             saveDialog.setFileMode(QFileDialog::AnyFile);
             saveDialog.setNameFilter(tr("MP4 视频 (*.mp4)"));
             saveDialog.setDefaultSuffix(QStringLiteral("mp4"));
-            // The Windows file-system model can expose English type names
-            // (for example "File Folder") even when the dialog itself is
-            // translated.  The list view keeps this recording workflow
-            // compact and avoids mixing those system-provided labels into the
-            // otherwise fully Chinese interface.
-            saveDialog.setViewMode(QFileDialog::List);
-            saveDialog.setLabelText(QFileDialog::LookIn,
-                    QStringLiteral("保存位置："));
-            saveDialog.setLabelText(QFileDialog::FileName,
-                    QStringLiteral("文件名："));
-            saveDialog.setLabelText(QFileDialog::FileType,
-                    QStringLiteral("文件类型："));
-            saveDialog.setLabelText(QFileDialog::Accept,
-                    QStringLiteral("保存"));
-            saveDialog.setLabelText(QFileDialog::Reject,
-                    QStringLiteral("取消"));
             saveDialog.setDirectory(QFileInfo(suggestedPath).absolutePath());
             saveDialog.selectFile(QFileInfo(suggestedPath).fileName());
-            saveDialog.resize(900, 560);
 
-            if (execCenteredDialog(&saveDialog) == QDialog::Accepted)
+            if (saveDialog.exec() == QDialog::Accepted)
                 destination = saveDialog.selectedFiles().value(0);
 
             if (!destination.isEmpty())
@@ -1663,8 +1848,11 @@ void UBPodcastController::toggleRecordingPalette(bool visible)
         // still alive, and clear the pointer before this controller is later
         // destroyed by the static-memory cleaner.
         connect(UBApplication::mainWindow, &QObject::destroyed, this, [this]() {
+            mApplicationIsClosing = true;
             delete mCameraPreview;
             mCameraPreview = 0;
+            delete mRecordingAreaIndicator;
+            mRecordingAreaIndicator = 0;
             delete mRecordingPalette;
             mRecordingPalette = 0;
         });
@@ -1685,11 +1873,35 @@ void UBPodcastController::toggleRecordingPalette(bool visible)
                 , mRecordingPalette, SLOT(recordingProgressChanged(qint64)));
         connect(mRecordingPalette, &UBPodcastRecordingPalette::cameraToggled,
                 this, &UBPodcastController::cameraToggled);
+        connect(mRecordingPalette, &UBPodcastRecordingPalette::restartRequested,
+                this, &UBPodcastController::restart);
+        connect(mRecordingPalette, &UBPodcastRecordingPalette::visibilityChanged,
+                this, [this] { updateRecordingAreaIndicator(); });
     }
 
     mRecordingPalette->setVisible(visible);
     if (visible)
         mRecordingPalette->raise();
+    updateRecordingAreaIndicator();
+}
+
+void UBPodcastController::updateRecordingAreaIndicator()
+{
+    const bool active = mRecordingState == Recording || mRecordingState == Paused
+            || mRecordingState == Stopping;
+    const bool visible = !mApplicationIsClosing && mIsDesktopMode && mDesktopCaptureMode == AreaCapture
+            && (mDesktopCapturePrepared || active) && mDesktopCaptureRect.isValid()
+            && (active || (mRecordingPalette && mRecordingPalette->isVisible()));
+    if (!visible)
+    {
+        if (mRecordingAreaIndicator) mRecordingAreaIndicator->hide();
+        return;
+    }
+    if (!mRecordingAreaIndicator)
+        mRecordingAreaIndicator = new RecordingAreaIndicator;
+    static_cast<RecordingAreaIndicator *>(mRecordingAreaIndicator)->setCaptureRect(mDesktopCaptureRect);
+    mRecordingAreaIndicator->show();
+    mRecordingAreaIndicator->raise();
 }
 
 void UBPodcastController::positionRecordingPalette(bool desktopMode)
@@ -1726,6 +1938,7 @@ void UBPodcastController::setRecordingState(RecordingState pRecordingState)
         mRecordingState = pRecordingState;
         emit recordingStateChanged(mRecordingState);
         updateCleanScreenRecording();
+        updateRecordingAreaIndicator();
     }
 }
 
@@ -2017,6 +2230,8 @@ void UBPodcastController::setDesktopCaptureMode(DesktopCaptureMode mode)
     mDesktopCaptureMode = mode;
     mDesktopCapturePrepared = false;
 
+    updateRecordingAreaIndicator();
+
     foreach (QAction *captureAction, desktopCaptureModeActions())
     {
         const bool selected = captureAction->data().toInt()
@@ -2032,6 +2247,7 @@ void UBPodcastController::setDesktopCaptureMode(DesktopCaptureMode mode)
 bool UBPodcastController::prepareDesktopCapture()
 {
     mDesktopCapturePrepared = false;
+    updateRecordingAreaIndicator();
     mDesktopCaptureWindowId = 0;
     mDesktopCaptureWindowTitle.clear();
 
@@ -2047,6 +2263,7 @@ bool UBPodcastController::prepareDesktopCapture()
     {
         mDesktopCaptureRect = desktopScreen->geometry();
         mDesktopCapturePrepared = true;
+        updateRecordingAreaIndicator();
         return true;
     }
 
@@ -2071,6 +2288,7 @@ bool UBPodcastController::prepareDesktopCapture()
         mDesktopCaptureRect = QRect(desktopScreen->geometry().topLeft()
                 + selectedRect.topLeft(), selectedRect.size());
         mDesktopCapturePrepared = true;
+        updateRecordingAreaIndicator();
         return true;
     }
 

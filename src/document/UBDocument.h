@@ -62,6 +62,11 @@ public:
     void insertPage(std::shared_ptr<UBGraphicsScene> scene, int index, bool persist = true, bool deleting = false,
                     const QString& name = QString());
     std::shared_ptr<UBGraphicsScene> createPage(int index, bool useUndoRedoStack = true);
+    // Import a fully prepared page once, without a blank save/thumbnail or
+    // per-page loader restart. The importer starts createThumbnails() once
+    // after appending its batch. Returns the page to normal editable/undo mode.
+    // Existing interactive insert/create paths stay unchanged.
+    void appendImportedPage(std::shared_ptr<UBGraphicsScene> scene);
     void persistPage(std::shared_ptr<UBGraphicsScene> scene, const int index, bool isAutomaticBackup = false,
                      bool forceImmediateSaving = false);
     QString pageName(int index) const;

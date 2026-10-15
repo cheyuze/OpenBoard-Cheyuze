@@ -855,6 +855,8 @@ void UBGraphicsItemDelegate::showMenu()
     if (!mMenu)
     {
         mMenu = new QMenu(UBApplication::boardController->controlView());
+        // Menus belong to the view, which may outlive or precede this delegate.
+        connect(mMenu, &QObject::destroyed, this, [this] { mMenu = nullptr; });
         decorateMenu(mMenu);
     }
 

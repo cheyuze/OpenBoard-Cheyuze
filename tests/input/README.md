@@ -1,6 +1,6 @@
-# Input, polygon and zoom regression tests
+# Input, polygon, zoom and eraser-preview regression tests
 
-Two small Windows/Qt regression suites compile selected **current production
+Three small Windows/Qt regression suites compile selected **current production
 method bodies** against real Qt widgets, graphics scenes and events. No installed
 OpenBoard binary is launched and no user document is opened or changed.
 
@@ -29,7 +29,7 @@ directory. To test a separate checkout, pass an explicit source root:
 Output lives only under `tests/input/build/<BuildTag>/`, ignored by the included
 `.gitignore`. `-BuildTag current` is the default; choose another simple name for
 side-by-side results. Do not commit this directory or generated `.inc`, qmake,
-object, executable or debug files. Only the nine source/control files in this
+object, executable or debug files. Only the source/control files in this
 directory (including this README) belong in the repository.
 
 For a historical comparison, use `-BaselineRef d27a372 -BuildTag baseline`. That
@@ -39,13 +39,16 @@ checkout containing the specified revision when this option is used.
 
 ## Coverage
 
-`input_state_regression.cpp` — 8 separate-process cases:
+`input_state_regression.cpp` — 13 separate-process cases:
 
 - Empty sidebar resize and absent-document callbacks do not dereference null.
 - Document replacement retires pending long press and drag state.
 - External drag/drop cannot activate internal page-reorder state.
 - Valid document resize still arranges thumbnails.
 - Lost middle-button release does not leave pan latched; held middle still pans.
+- Canvas entry restores the selected tool cursor without requiring a click.
+  Active pans/drags, passive display views and selection/interaction-mode
+  graphics-item hover cursors are not overwritten.
 
 `polygon_zoom_regression.cpp` — 13 cases:
 
@@ -62,18 +65,44 @@ checkout containing the specified revision when this option is used.
   undo/redo adapters validate the resulting scene state.
 - The polygon predicate does not filter another geometry's fill preview.
 
-Current audited production code: **21/21 pass**. Historical `d27a372`: input
+`eraser_preview_regression.cpp` — 13 cases:
+
+- Suppress Qt's inferred scene updates (`NoViewportUpdate`) to deterministically
+  expose missing explicit viewport damage. This is fault injection, not a claim
+  to reproduce the exact intermittent Windows/tablet event sequence.
+- Compare actual backing-store pixels without calling `grab()` (which would
+  repaint and conceal residual pixels). Moving, hiding, shrinking, moving off
+  canvas and queued rapid input must clean the old preview.
+- Repeat mapped damage checks at 50%, 67%, 125% and 250% board zoom.
+- Require local rather than full-screen damage and no synchronous painting
+  during 10,000 queued input events. Disabled previews and detached views are safe.
+- The production methods and optional explicit-invalidation helper are extracted
+  unchanged; only settings/controller access is adapted. No erase/undo or
+  recording implementation is substituted into this preview test.
+
+The eraser suite can be compared with its pre-fix Git baseline using
+`-BaselineRef 18df905 -BuildTag eraser-baseline`; stale-region cases must fail.
+For high-DPI coverage, run the generated eraser executable with
+`$env:QT_SCALE_FACTOR = '1.5'` in the same matching Qt environment (restore the
+previous value afterwards).
+
+Current audited production code: **39/39 pass**. Prior historical `d27a372`: input
 suite 2/8 pass (including two null-dereference crashes), polygon/zoom suite 6/13
-pass; the remaining cases expose the audited regressions.
+pass; those earlier comparisons concern the original 21 input/polygon cases.
 
 ## Boundaries and maintenance
 
 - The input suite extracts sidebar handlers plus only the middle-pan portion of
-  `UBBoardView::mouseMoveEvent`. The full board view and later stylus branches are
-  not compiled into this unit test.
+  `UBBoardView::mouseMoveEvent` and the viewport-entry handler. The cursor setter
+  is a call-recording adapter; the full native integration fixture separately
+  checks actual cursor pixels, tablet hover ownership and physical-mouse controls.
+  The full board view and later stylus branches are not compiled into this unit test.
 - The polygon suite extracts clear/cancel, preview ownership/update, commit,
   drawItems/rootItem, zoom setters, and preset/double-click callback bodies.
   `rebuildPolygonPreview` is a call-count adapter, not a geometry implementation.
+- The eraser suite does not assert that all Windows compositor/graphics driver
+  or tablet timing issues are reproduced. It verifies cleanup independent of
+  the implicit scene-damage mechanism and does not replace hardware testing.
 - Document/controller/delegate/group metadata and undo classes are adapters.
   The tests check actual handler behavior, Qt rendering and undo command data;
   they do not validate the complete production undo implementation.

@@ -96,6 +96,8 @@ protected:
     void handleItemMouseMove(QMouseEvent *event);
 
     virtual bool event (QEvent * e);
+    bool viewportEvent(QEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
     virtual void keyPressEvent(QKeyEvent *event);
     virtual void tabletEvent(QTabletEvent * event);
@@ -127,6 +129,10 @@ protected:
 private:
 
     void init();
+
+    bool updateLaserPointer(const QPointF& viewportPosition, bool resetTrail = false);
+    void hideLaserPointer();
+    void refreshLaserPointer();
 
     inline bool shouldDisplayItem(QGraphicsItem *item)
     {

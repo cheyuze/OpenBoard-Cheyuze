@@ -42,6 +42,13 @@ $panMethod = Get-Method $board 'void UBBoardView::mouseMoveEvent ('
 $panEnd = $panMethod.IndexOf('    if(!mIsDragInProgress', [StringComparison]::Ordinal)
 if ($panEnd -lt 0) { throw 'Missing pan branch boundary' }
 $handlers += $panMethod.Substring(0, $panEnd) + "`n}"
+$entrySignature = 'bool UBBoardView::viewportEvent(QEvent* event)'
+if ($board.Contains($entrySignature)) {
+    $handlers += Get-Method $board $entrySignature
+} else {
+    # Before the fix the view inherited this behavior unchanged.
+    $handlers += $entrySignature + "`n{ return QGraphicsView::viewportEvent(event); }"
+}
 [IO.File]::WriteAllText((Join-Path $buildDir 'production_handlers.inc'), ($handlers -join "`n`n"))
 Push-Location $buildDir
 try {

@@ -64,6 +64,11 @@ UBDesktopPalette::UBDesktopPalette(QWidget *parent, UBRightPalette* _rightPalett
     actions << UBApplication::mainWindow->actionPen;
     actions << UBApplication::mainWindow->actionMarker;
     actions << UBApplication::mainWindow->actionEraser;
+    QAction *clearInk = UBApplication::mainWindow->actionEraseDesktopAnnotations;
+    clearInk->setText(QStringLiteral("清屏"));
+    clearInk->setToolTip(QStringLiteral("清除屏幕上的当前笔迹（不影响白板页面）"));
+    clearInk->setIcon(UBUiTheme::icon(QStringLiteral("clear")));
+    actions << clearInk;
     actions << UBApplication::mainWindow->actionSelector;
     actions << UBApplication::mainWindow->actionPointer;
 
@@ -193,6 +198,7 @@ void UBDesktopPalette::maximizeMe()
     actions << UBApplication::mainWindow->actionPen;
     actions << UBApplication::mainWindow->actionMarker;
     actions << UBApplication::mainWindow->actionEraser;
+    actions << UBApplication::mainWindow->actionEraseDesktopAnnotations;
     actions << UBApplication::mainWindow->actionSelector;
     actions << UBApplication::mainWindow->actionPointer;
     if (UBPlatformUtils::hasVirtualKeyboard())
@@ -217,6 +223,8 @@ void UBDesktopPalette::maximizeMe()
 void UBDesktopPalette::showEvent(QShowEvent *event)
 {
     Q_UNUSED(event);
+    styleButtons();
+    adjustSize();
     QIcon eraserIcon;
     UBApplication::mainWindow->actionPen->setIcon(
             UBResources::resources()->coloredPenIcon(true));
@@ -232,9 +240,16 @@ void UBDesktopPalette::styleButtons()
 {
     layout()->setContentsMargins(9, 18, 9, 10);
     layout()->setSpacing(4);
+    int visibleCount = 0;
+    for (auto* button : mButtons)
+        if (button->defaultAction()->isVisible()) ++visibleCount;
+    const int availableHeight = parentWidget() ? parentWidget()->height() - 40 : 800;
+    const int buttonHeight = visibleCount > 0
+            ? qBound(32, (availableHeight - 28 - (visibleCount - 1) * 4) / visibleCount, 44)
+            : 44;
     for (auto* button : mButtons)
     {
-        button->setFixedSize(44, 44);
+        button->setFixedSize(44, buttonHeight);
         button->setIconSize(QSize(24, 24));
         button->setCursor(Qt::ArrowCursor);
         button->setAccessibleName(button->defaultAction()->text());
@@ -290,6 +305,8 @@ int UBDesktopPalette::getParentRightOffset()
 
 void UBDesktopPalette::parentResized()
 {
+    styleButtons();
+    adjustSize();
     QPoint p = pos();
     if (minimizedLocation() == eMinimizedLocation_Right)
     {

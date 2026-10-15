@@ -352,6 +352,8 @@ public slots:
         void updateSelectionFrameWrapper(int);
         void initStroke();
         void hideTool();
+        void showLaserPointer(const QPointF& point, bool resetTrail = false);
+        void hideLaserPointer();
 
         void setBackground(bool pIsDark, UBPageBackground pBackground);
         void setBackgroundZoomFactor(qreal zoom);
@@ -451,7 +453,7 @@ signals:
         void simplifyCurrentStroke();
 
         QGraphicsEllipseItem* mEraser;
-        QGraphicsEllipseItem* mPointer; // "laser" pointer
+        QGraphicsItem* mPointer; // transient laser head and fading trail
         QGraphicsEllipseItem* mMarkerCircle; // dotted circle around marker
         QGraphicsEllipseItem* mPenCircle; // dotted circle around pen
 

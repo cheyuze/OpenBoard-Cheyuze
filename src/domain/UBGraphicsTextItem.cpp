@@ -46,6 +46,7 @@ QColor UBGraphicsTextItem::lastUsedTextColor = QColor(Qt::black);
 UBGraphicsTextItem::UBGraphicsTextItem(QGraphicsItem * parent)
     : QGraphicsTextItem(parent)
     , UBGraphicsItem()
+    , mTextHeight(0)
     , mTypeTextHereLabel(tr("<Type Text Here>"))
     , mMultiClickState(0)
     , mLastMousePressTime(QTime::currentTime())
@@ -199,7 +200,7 @@ void UBGraphicsTextItem::mousePressEvent(QGraphicsSceneMouseEvent *event)
         }
     }
 
-    if (!data(UBGraphicsItemData::ItemEditable).toBool()) {
+    if (!data(UBGraphicsItemData::ItemEditable).toBool() || Delegate()->isLocked()) {
         setTextInteractionFlags(Qt::NoTextInteraction);
         return;
     }
@@ -279,6 +280,20 @@ void UBGraphicsTextItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
     else
     {
         event->accept();
+    }
+}
+
+void UBGraphicsTextItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event)
+{
+    if (scene()) {
+        if (!isSelected()) {
+            scene()->deselectAllItemsExcept(this);
+            setSelected(true);
+        }
+        static_cast<UBGraphicsTextItemDelegate*>(Delegate())->openMenu(event->screenPos());
+        event->accept();
+    } else {
+        event->ignore();
     }
 }
 

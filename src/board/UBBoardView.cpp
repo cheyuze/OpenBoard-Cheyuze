@@ -33,6 +33,7 @@
 #include <QtGui>
 #include <QtXml>
 #include <QListView>
+#include <QTimer>
 
 #include "UBDrawingController.h"
 
@@ -141,6 +142,9 @@ UBBoardView::UBBoardView (UBBoardController* pController, int pStartLayer, int p
 
 UBBoardView::~UBBoardView ()
 {
+    if (qApp)
+        qApp->removeEventFilter(this);
+
     if (suspendedMousePressEvent){
         delete suspendedMousePressEvent;
         suspendedMousePressEvent = NULL;
@@ -194,12 +198,121 @@ void UBBoardView::init ()
 
     setMovingItem(NULL);
     mWidgetMoved = false;
+
+    if (bIsControl || bIsDesktop)
+    {
+        // Only the two interactive canvases observe application events. This
+        // removes the transient laser when a palette or native dialog takes
+        // over, without changing the user's selected tool or global cursor.
+        qApp->installEventFilter(this);
+        connect(UBDrawingController::drawingController(),
+                &UBDrawingController::stylusToolChanged, this,
+                [this](int tool) {
+            setToolCursor(tool);
+            if (tool == UBStylusTool::Pointer)
+            {
+                // Initialise after all scene/tool listeners have hidden their
+                // previews. A tablet hover also refreshes the cursor, so this
+                // must run on a tool change, not on every setToolCursor call.
+                QTimer::singleShot(0, this, &UBBoardView::refreshLaserPointer);
+            }
+        });
+    }
 }
 
 std::shared_ptr<UBGraphicsScene> UBBoardView::scene ()
 {
     auto currentScene = dynamic_cast<UBGraphicsScene*>(QGraphicsView::scene());
     return currentScene ? currentScene->shared_from_this() : nullptr;
+}
+
+void UBBoardView::hideLaserPointer()
+{
+    if (auto currentScene = scene())
+        currentScene->hideLaserPointer();
+
+    const QCursor* overrideCursor = QApplication::overrideCursor();
+    if (UBApplication::app()
+            && UBDrawingController::drawingController()->stylusTool() == UBStylusTool::Pointer
+            && overrideCursor && overrideCursor->shape() == Qt::BlankCursor)
+    {
+        // A hovering pen can own an application-wide cursor override. The
+        // laser is already drawn by the canvas, so release only its blank
+        // override over controls; never disturb a foreign wait/busy cursor.
+        UBApplication::app()->setTabletCursorOverride(false);
+    }
+}
+
+bool UBBoardView::updateLaserPointer(const QPointF& viewportPosition, bool resetTrail)
+{
+    if (!(bIsControl || bIsDesktop)
+            || UBDrawingController::drawingController()->stylusTool() != UBStylusTool::Pointer)
+        return false;
+
+    const QPoint position = viewportPosition.toPoint();
+    QWidget* hitWidget = QApplication::widgetAt(viewport()->mapToGlobal(position));
+    if (!isVisible() || !isInteractive() || mMiddleButtonPanActive
+            || !viewport()->rect().contains(position)
+            || (hitWidget != viewport() && hitWidget != this)
+            || QApplication::activePopupWidget() || QApplication::activeModalWidget())
+    {
+        hideLaserPointer();
+        return true;
+    }
+
+    if (auto currentScene = scene())
+    {
+        viewport()->setCursor(Qt::BlankCursor);
+        currentScene->showLaserPointer(viewportTransform().inverted().map(viewportPosition), resetTrail);
+    }
+    return true;
+}
+
+void UBBoardView::refreshLaserPointer()
+{
+    if ((bIsControl || bIsDesktop)
+            && UBDrawingController::drawingController()->stylusTool() == UBStylusTool::Pointer)
+        updateLaserPointer(viewport()->mapFromGlobal(QCursor::pos()), true);
+}
+
+bool UBBoardView::eventFilter(QObject* watched, QEvent* event)
+{
+    if (UBDrawingController::drawingController()->stylusTool() != UBStylusTool::Pointer)
+        return QGraphicsView::eventFilter(watched, event);
+
+    const bool canvasEvent = watched == this || watched == viewport();
+    switch (event->type())
+    {
+    case QEvent::MouseMove:
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseButtonRelease:
+    case QEvent::TabletMove:
+    case QEvent::TabletPress:
+    case QEvent::TabletRelease:
+    case QEvent::Enter:
+        if (!canvasEvent && qobject_cast<QWidget*>(watched))
+            hideLaserPointer();
+        break;
+    case QEvent::Show:
+        if (auto widget = qobject_cast<QWidget*>(watched))
+        {
+            if (widget != this && widget != window() && widget->isWindow())
+                hideLaserPointer();
+        }
+        break;
+    case QEvent::Hide:
+    case QEvent::WindowDeactivate:
+        if (canvasEvent || watched == window())
+            hideLaserPointer();
+        break;
+    case QEvent::ApplicationDeactivate:
+    case QEvent::TabletLeaveProximity:
+        hideLaserPointer();
+        break;
+    default:
+        break;
+    }
+    return QGraphicsView::eventFilter(watched, event);
 }
 
 
@@ -308,6 +421,10 @@ void UBBoardView::keyPressEvent (QKeyEvent *event)
 
 bool UBBoardView::event (QEvent * e)
 {
+    if ((bIsControl || bIsDesktop)
+            && (e->type() == QEvent::Hide || e->type() == QEvent::WindowDeactivate))
+        hideLaserPointer();
+
     if (e->type () == QEvent::Gesture)
     {
         QGestureEvent *gestureEvent = dynamic_cast<QGestureEvent *> (e);
@@ -334,11 +451,38 @@ bool UBBoardView::event (QEvent * e)
     return QGraphicsView::event (e);
 }
 
+bool UBBoardView::viewportEvent(QEvent* event)
+{
+    const bool handled = QGraphicsView::viewportEvent(event);
+    if (event->type() == QEvent::Enter && (bIsControl || bIsDesktop)
+            && !mMiddleButtonPanActive && !mMouseButtonIsPressed && !mTabletStylusIsPressed)
+    {
+        // Native window transitions and item hover can leave a stale viewport
+        // cursor. Restore it on entry, after the base class, not on first click.
+        // Keep graphics-item hover cursors in selection/interaction modes.
+        const int tool = UBDrawingController::drawingController()->stylusTool();
+        if (tool != UBStylusTool::Selector && tool != UBStylusTool::Play)
+            setToolCursor(tool);
+
+        if (tool == UBStylusTool::Pointer)
+        {
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+            updateLaserPointer(static_cast<QEnterEvent*>(event)->position(), true);
+#else
+            refreshLaserPointer();
+#endif
+        }
+    }
+    else if (event->type() == QEvent::Leave && (bIsControl || bIsDesktop))
+        hideLaserPointer();
+    return handled;
+}
+
 void UBBoardView::tabletEvent (QTabletEvent * event)
 {
     UBDrawingController *dc = UBDrawingController::drawingController ();
 
-    if (!mUseHighResTabletEvent) {
+    if (!mUseHighResTabletEvent && dc->stylusTool() != UBStylusTool::Pointer) {
         event->setAccepted (false);
         return;
     }
@@ -371,6 +515,29 @@ void UBBoardView::tabletEvent (QTabletEvent * event)
 
     qreal pressure = 1.0;
     currentTool = (UBStylusTool::Enum)dc->stylusTool();
+
+    if (currentTool == UBStylusTool::Pointer && (bIsControl || bIsDesktop))
+    {
+        // Laser hover is independent of pen pressure and contact. Accept the
+        // tablet event so Qt does not also synthesize a duplicate mouse move.
+        mMouseButtonIsPressed = false;
+        mPendingStylusReleaseEvent = false;
+        mTabletStylusIsPressed = false;
+        setMovingItem(nullptr);
+        mLongPressTimer.stop();
+        if (mMiddleButtonPanActive
+                && !event->buttons().testFlag(Qt::MiddleButton)
+                && !QApplication::mouseButtons().testFlag(Qt::MiddleButton))
+            mMiddleButtonPanActive = false;
+        if (event->type() == QEvent::TabletLeaveProximity)
+            hideLaserPointer();
+        else if (event->type() == QEvent::TabletMove
+                 || event->type() == QEvent::TabletPress
+                 || event->type() == QEvent::TabletRelease)
+            updateLaserPointer(tabletPos);
+        event->accept();
+        return;
+    }
 
     if (((currentTool == UBStylusTool::Pen || currentTool == UBStylusTool::Line) && mPenPressureSensitive) ||
             (currentTool == UBStylusTool::Marker && mMarkerPressureSensitive))
@@ -1121,7 +1288,25 @@ void UBBoardView::mousePressEvent (QMouseEvent *event)
         mPreviousPoint = event->localPos();
 #endif
         mMiddleButtonPanActive = true;
+        hideLaserPointer();
         viewport()->setCursor(QCursor(Qt::ClosedHandCursor));
+        event->accept();
+        return;
+    }
+
+    if (UBDrawingController::drawingController()->stylusTool() == UBStylusTool::Pointer
+            && isInteractive())
+    {
+        mMouseButtonIsPressed = false;
+        mPendingStylusReleaseEvent = false;
+        mTabletStylusIsPressed = false;
+        setMovingItem(nullptr);
+        mLongPressTimer.stop();
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+        updateLaserPointer(event->position());
+#else
+        updateLaserPointer(event->localPos());
+#endif
         event->accept();
         return;
     }
@@ -1322,6 +1507,24 @@ void UBBoardView::mouseMoveEvent (QMouseEvent *event)
         return;
     }
 
+    // Hover must run before the drag-distance gate: the laser is a transient
+    // presentation tool, not a stroke, selection or mouse-button gesture.
+    if (!(bIsControl || bIsDesktop)
+            && UBDrawingController::drawingController()->stylusTool() == UBStylusTool::Pointer)
+    {
+        event->ignore();
+        return;
+    }
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    if (updateLaserPointer(event->position()))
+#else
+    if (updateLaserPointer(event->localPos()))
+#endif
+    {
+        event->accept();
+        return;
+    }
+
     if(!mIsDragInProgress && ((mapToScene(event->pos()) - mLastPressedMousePos).manhattanLength() < QApplication::startDragDistance())) {
         return;
     }
@@ -1473,6 +1676,22 @@ void UBBoardView::mouseReleaseEvent (QMouseEvent *event)
     {
         mMiddleButtonPanActive = false;
         setToolCursor(currentTool);
+        event->accept();
+        return;
+    }
+
+    if (currentTool == UBStylusTool::Pointer && (bIsControl || bIsDesktop))
+    {
+        mMouseButtonIsPressed = false;
+        mPendingStylusReleaseEvent = false;
+        mTabletStylusIsPressed = false;
+        setMovingItem(nullptr);
+        mLongPressTimer.stop();
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+        updateLaserPointer(event->position());
+#else
+        updateLaserPointer(event->localPos());
+#endif
         event->accept();
         return;
     }
@@ -2102,11 +2321,18 @@ bool UBBoardView::isAbsurdPoint(QPoint point)
 void UBBoardView::focusOutEvent (QFocusEvent * event)
 {
     Q_UNUSED (event);
+    if (bIsControl || bIsDesktop)
+        hideLaserPointer();
 }
 
 void UBBoardView::setToolCursor (int tool)
 {
     viewport()->setCursor(UBResources::resources()->cursorForTool(tool));
+    if (bIsControl || bIsDesktop)
+    {
+        if (tool != UBStylusTool::Pointer)
+            hideLaserPointer();
+    }
 }
 
 

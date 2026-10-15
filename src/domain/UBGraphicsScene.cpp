@@ -33,6 +33,10 @@
 #include <QtSvg>
 #include <QGraphicsView>
 #include <QGraphicsVideoItem>
+#include <QGraphicsObject>
+#include <QElapsedTimer>
+#include <QTimer>
+#include <cmath>
 
 #include "frameworks/UBGeometryUtils.h"
 
@@ -87,6 +91,211 @@ qreal UBZLayerController::errorNumber = -20000001.0;
 
 namespace
 {
+// One transient tool item per scene, never a document stroke. Only the active
+// trail runs a timer; a stationary laser head does not continuously repaint.
+class LaserPointerItem final : public QGraphicsObject
+{
+public:
+    LaserPointerItem()
+    {
+        setObjectName(QStringLiteral("laserPointerEffect"));
+        setAcceptedMouseButtons(Qt::NoButton);
+        setAcceptHoverEvents(false);
+        mClock.start();
+        mFadeTimer.setParent(this);
+        mFadeTimer.setObjectName(QStringLiteral("laserFadeTimer"));
+        mFadeTimer.setInterval(16);
+        mFadeTimer.setTimerType(Qt::PreciseTimer);
+        QObject::connect(&mFadeTimer, &QTimer::timeout, this, [this] {
+            if (!isVisible() || mSamples.size() <= 1) {
+                mFadeTimer.stop();
+                return;
+            }
+            const QRectF previousBounds = mBounds;
+            prepareGeometryChange();
+            prune(mClock.elapsed());
+            updateBounds();
+            update();
+            invalidateViews(previousBounds);
+            if (mSamples.size() <= 1) mFadeTimer.stop();
+        });
+    }
+
+    QRectF boundingRect() const override { return mBounds; }
+
+    void showAt(const QPointF& point, qreal diameter)
+    {
+        const qint64 now = mClock.elapsed();
+        const QRectF previousBounds = mBounds;
+        prepareGeometryChange();
+        if (!isVisible() || !qFuzzyCompare(mRadius, diameter / 2)
+                || (!mSamples.isEmpty() && now - mSamples.last().time > 120))
+            mSamples.clear();
+        mRadius = diameter / 2;
+        prune(now);
+        if (mSamples.isEmpty()
+                || QLineF(mSamples.last().point, point).length() > diameter / 80) {
+            mSamples.append({point, now});
+            // Bound both memory and paint work, including high-rate tablets.
+            if (mSamples.size() > 96) mSamples.remove(0, mSamples.size() - 96);
+        }
+        mHead = point;
+        trimDistance();
+        updateBounds();
+        show();
+        update();
+        invalidateViews(previousBounds);
+        if (mSamples.size() > 1 && !mFadeTimer.isActive()) mFadeTimer.start();
+    }
+
+    void clear()
+    {
+        const QRectF previousBounds = mBounds;
+        mFadeTimer.stop();
+        hide();
+        prepareGeometryChange();
+        mSamples.clear();
+        mBounds = QRectF();
+        invalidateViews(previousBounds);
+    }
+
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) override
+    {
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        const qint64 now = mClock.elapsed();
+        if (mSamples.size() > 1) {
+            QVector<QPointF> left, right;
+            QPainterPath centerline(mSamples.first().point);
+            for (int i = 0; i < mSamples.size(); ++i) {
+                const QPointF before = mSamples[qMax(0, i - 1)].point;
+                const QPointF after = mSamples[qMin(i + 1, int(mSamples.size()) - 1)].point;
+                const QPointF tangent = after - before;
+                const qreal length = std::hypot(tangent.x(), tangent.y());
+                const QPointF normal = length > 0.001
+                        ? QPointF(-tangent.y() / length, tangent.x() / length) : QPointF(0, 1);
+                const qreal fade = qBound(0.0,
+                        1.0 - qreal(now - mSamples[i].time) / trailLifetime, 1.0);
+                const qreal width = mRadius * 0.13 * fade;
+                left.append(mSamples[i].point + normal * width);
+                right.append(mSamples[i].point - normal * width);
+                if (i > 0 && i < mSamples.size() - 1)
+                    centerline.quadTo(mSamples[i].point,
+                            (mSamples[i].point + mSamples[i + 1].point) / 2);
+            }
+            centerline.lineTo(mSamples.last().point);
+            QPainterPath ribbon(left.first());
+            for (int i = 1; i < left.size() - 1; ++i)
+                ribbon.quadTo(left[i], (left[i] + left[i + 1]) / 2);
+            ribbon.lineTo(left.last());
+            ribbon.lineTo(right.last());
+            for (int i = right.size() - 2; i > 0; --i)
+                ribbon.quadTo(right[i], (right[i] + right[i - 1]) / 2);
+            ribbon.lineTo(right.first());
+            ribbon.closeSubpath();
+            const qreal opacity = qBound(0.0,
+                    1.0 - qreal(now - mSamples.last().time) / trailLifetime, 1.0);
+            QLinearGradient tail(mSamples.first().point, mSamples.last().point);
+            tail.setColorAt(0, QColor(255, 40, 58, 0));
+            tail.setColorAt(0.5, QColor(255, 40, 58, qRound(70 * opacity)));
+            tail.setColorAt(1, QColor(255, 40, 58, qRound(170 * opacity)));
+            // Paint a single continuous ribbon, not overlapping round-capped
+            // segments: joins cannot accumulate into a chain of bright dots.
+            painter->setPen(QPen(QColor(255, 48, 64, qRound(22 * opacity)),
+                    mRadius * 0.38, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawPath(centerline);
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(tail);
+            painter->drawPath(ribbon);
+        }
+        QRadialGradient glow(mHead, mRadius);
+        glow.setColorAt(0.0, QColor(255, 230, 232, 255));
+        glow.setColorAt(0.18, QColor(255, 72, 84, 250));
+        glow.setColorAt(0.40, QColor(255, 30, 48, 180));
+        glow.setColorAt(1.0, QColor(255, 20, 40, 0));
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(glow);
+        painter->drawEllipse(mHead, mRadius, mRadius);
+        painter->setBrush(QColor(255, 240, 242));
+        painter->drawEllipse(mHead, mRadius * 0.10, mRadius * 0.10);
+        painter->restore();
+    }
+
+private:
+    struct Sample { QPointF point; qint64 time; };
+    void invalidateViews(const QRectF& previousBounds)
+    {
+        if (!scene()) return;
+        for (QGraphicsView* view : scene()->views()) {
+            QRegion dirty;
+            for (const QRectF& bounds : {previousBounds, mBounds}) {
+                if (!bounds.isEmpty()) dirty += view->mapFromScene(bounds)
+                        .boundingRect().adjusted(-3, -3, 3, 3)
+                        .intersected(view->viewport()->rect());
+            }
+            if (!dirty.isEmpty()) view->viewport()->update(dirty);
+        }
+    }
+    void prune(qint64 now)
+    {
+        while (mSamples.size() > 1 && now - mSamples.first().time >= trailLifetime)
+            mSamples.removeFirst();
+    }
+    void trimDistance()
+    {
+        const qreal maximumLength = mRadius * 2.5; // about 50 logical pixels
+        qreal length = 0;
+        for (int i = mSamples.size() - 1; i > 0; --i) {
+            const qreal segmentLength = QLineF(mSamples[i - 1].point, mSamples[i].point).length();
+            if (length + segmentLength > maximumLength && segmentLength > 0) {
+                const qreal ratio = (maximumLength - length) / segmentLength;
+                const Sample clipped {mSamples[i].point + (mSamples[i - 1].point - mSamples[i].point) * ratio,
+                        mSamples[i].time + qRound64((mSamples[i - 1].time - mSamples[i].time) * ratio)};
+                mSamples.remove(0, i - 1);
+                mSamples[0] = clipped;
+                break;
+            }
+            length += segmentLength;
+        }
+    }
+    void updateBounds()
+    {
+        QRectF bounds(mHead - QPointF(mRadius, mRadius), QSizeF(2 * mRadius, 2 * mRadius));
+        for (const Sample& sample : mSamples)
+            bounds |= QRectF(sample.point - QPointF(mRadius, mRadius), QSizeF(2 * mRadius, 2 * mRadius));
+        mBounds = bounds;
+    }
+    static constexpr qint64 trailLifetime = 140;
+    QElapsedTimer mClock;
+    QTimer mFadeTimer;
+    QVector<Sample> mSamples;
+    QPointF mHead;
+    qreal mRadius = 0;
+    QRectF mBounds;
+};
+
+void updateEraserPreview(UBBoardView* view, const QRectF& previousRect, const QRectF& currentRect = QRectF())
+{
+    if (!view || !view->viewport()) return;
+
+    QRegion dirtyRegion;
+    const QRect viewportRect = view->viewport()->rect();
+    for (const QRectF& rect : {previousRect, currentRect})
+    {
+        if (rect.isEmpty()) continue;
+        // Include the antialiased outline in viewport (logical pixel) space,
+        // independent of the board zoom and the screen's device pixel ratio.
+        dirtyRegion += view->mapFromScene(rect).boundingRect()
+                .adjusted(-4, -4, 4, 4).intersected(viewportRect);
+    }
+    // Invalidate both locations explicitly: relying only on the scene's
+    // inferred dirty rectangles can leave pieces of the translucent circle
+    // behind. Queued, local updates coalesce without repainting the full board
+    // or re-entering painting from a high-frequency tablet/mouse event.
+    if (!dirtyRegion.isEmpty()) view->viewport()->update(dirtyRegion);
+}
+
 bool containsImage(QGraphicsItem* item)
 {
     if (item->type() == UBGraphicsPixmapItem::Type || item->type() == UBGraphicsSvgItem::Type) return true;
@@ -456,6 +665,11 @@ bool UBGraphicsScene::inputDevicePress(const QPointF& scenePos, const qreal& pre
     bool accepted = false;
 
     UBDrawingController* drawingController = UBDrawingController::drawingController();
+    if (drawingController->stylusTool() == UBStylusTool::Pointer)
+    {
+        showLaserPointer(scenePos);
+        return true;
+    }
     if (drawingController->stylusTool() == UBStylusTool::Line
             && drawingController->lineGeometryMode()
                == UBDrawingController::PolygonGeometry)
@@ -551,10 +765,6 @@ bool UBGraphicsScene::inputDevicePress(const QPointF& scenePos, const qreal& pre
 
             accepted = true;
         }
-        else if (currentTool == UBStylusTool::Pointer) {
-            drawPointer(scenePos, true);
-            accepted = true;
-        }
     }
 
     if (mCurrentStroke && mCurrentStroke->polygons().empty()){
@@ -581,6 +791,12 @@ bool UBGraphicsScene::inputDeviceMove(const QPointF& scenePos, const qreal& pres
 
     QPointF position = QPointF(scenePos);
     mCurrentPoint = position;
+
+    if (currentTool == UBStylusTool::Pointer)
+    {
+        showLaserPointer(position);
+        return true;
+    }
 
     if (currentTool == UBStylusTool::Eraser)
     {
@@ -763,11 +979,6 @@ bool UBGraphicsScene::inputDeviceMove(const QPointF& scenePos, const qreal& pres
 
             eraseLineTo(position, eraserWidth);
         }
-        else if (currentTool == UBStylusTool::Pointer)
-        {
-            drawPointer(position);
-        }
-
         accepted = true;
     }
 
@@ -778,12 +989,6 @@ bool UBGraphicsScene::inputDeviceRelease(int tool, Qt::KeyboardModifiers modifie
 {
     bool accepted = false;
 
-    if (mPointer)
-    {
-        mPointer->hide();
-        accepted = true;
-    }
-
     if (tool < 0)
     {
         tool = UBDrawingController::drawingController()->stylusTool();
@@ -791,6 +996,15 @@ bool UBGraphicsScene::inputDeviceRelease(int tool, Qt::KeyboardModifiers modifie
 
     UBStylusTool::Enum currentTool = (UBStylusTool::Enum)tool;
     UBDrawingController *dc = UBDrawingController::drawingController();
+
+    // Hover laser is not a document edit and releasing a button must not hide
+    // it or update the document timestamp / undo history.
+    if (currentTool == UBStylusTool::Pointer)
+    {
+        mInputDeviceIsPressed = false;
+        mTemporaryStraightLine = false;
+        return true;
+    }
 
     if (dc->isDrawingTool(tool) || mDrawWithCompass)
     {
@@ -908,6 +1122,7 @@ bool UBGraphicsScene::inputDeviceRelease(int tool, Qt::KeyboardModifiers modifie
 void UBGraphicsScene::drawEraser(const QPointF &pPoint, bool pressed)
 {
     if (mEraser) {
+        const QRectF previousRect = mEraser->isVisible() ? mEraser->sceneBoundingRect() : QRectF();
         qreal eraserWidth = UBSettings::settings()->currentEraserWidth();
         eraserWidth /= UBApplication::boardController->systemScaleFactor();
         eraserWidth /= UBApplication::boardController->currentZoom();
@@ -917,6 +1132,7 @@ void UBGraphicsScene::drawEraser(const QPointF &pPoint, bool pressed)
     // TODO UB 4.x optimize - no need to do that every time we move it
         mEraser->setRect(QRectF(pPoint.x() - eraserRadius, pPoint.y() - eraserRadius, eraserWidth, eraserWidth));
         redrawEraser(pressed);
+        updateEraserPreview(controlView(), previousRect, mEraser->sceneBoundingRect());
     }
 }
 
@@ -937,26 +1153,38 @@ void UBGraphicsScene::redrawEraser(bool pressed)
 
 void UBGraphicsScene::hideEraser()
 {
-    if (mEraser)
-        mEraser->hide();
+    if (!mEraser || !mEraser->isVisible()) return;
+
+    const QRectF previousRect = mEraser->sceneBoundingRect();
+    mEraser->hide();
+    updateEraserPreview(controlView(), previousRect);
 }
 
 void UBGraphicsScene::drawPointer(const QPointF &pPoint, bool isFirstDraw)
 {
-    qreal pointerDiameter = UBSettings::pointerDiameter / UBApplication::boardController->currentZoom();
-    pointerDiameter /= UBApplication::boardController->systemScaleFactor();
-    qreal pointerRadius = pointerDiameter / 2;
-
-    // TODO UB 4.x optimize - no need to do that every time we move it
-    if (mPointer) {
-        mPointer->setRect(QRectF(pPoint.x() - pointerRadius,
-                                 pPoint.y() - pointerRadius,
-                                 pointerDiameter,
-                                 pointerDiameter));
-        if(isFirstDraw) {
-            mPointer->show();
-        }
+    Q_UNUSED(isFirstDraw);
+    if (!mPointer) return;
+    qreal viewScale = 1;
+    QGraphicsView* view = controlView();
+    if (!view && !views().isEmpty()) view = views().first();
+    if (view) {
+        const QTransform transform = view->viewportTransform();
+        viewScale = qMax(0.01, std::hypot(transform.m11(), transform.m12()));
     }
+    const qreal diameter = qMax(4, UBSettings::pointerDiameter) / viewScale;
+    static_cast<LaserPointerItem*>(mPointer)->showAt(pPoint, diameter);
+}
+
+void UBGraphicsScene::showLaserPointer(const QPointF& point, bool resetTrail)
+{
+    if (resetTrail) hideLaserPointer();
+    mCurrentPoint = point;
+    drawPointer(point);
+}
+
+void UBGraphicsScene::hideLaserPointer()
+{
+    if (mPointer) static_cast<LaserPointerItem*>(mPointer)->clear();
 }
 
 void UBGraphicsScene::drawMarkerCircle(const QPointF &pPoint)
@@ -2280,6 +2508,7 @@ UBGraphicsPolygonItem* UBGraphicsScene::polygonToPolygonItem(const QPolygonF pPo
 
 void UBGraphicsScene::hideTool()
 {
+    hideLaserPointer();
     hideEraser();
     hideMarkerCircle();
     hidePenCircle();
@@ -3345,9 +3574,9 @@ void UBGraphicsScene::stylusToolChanged(int tool, int previousTool)
             // tool was changed while input device is pressed
             // simulate release and press to terminate previous strokes
             inputDeviceRelease(previousTool);
-            inputDevicePress(mCurrentPoint);
+            if (tool != UBStylusTool::Pointer) inputDevicePress(mCurrentPoint);
         }
-        else if (previousTool >= 0)
+        else if (previousTool >= 0 && tool != UBStylusTool::Pointer)
         {
             inputDeviceMove(mCurrentPoint);
         }
@@ -4138,12 +4367,8 @@ void UBGraphicsScene::createEraiser()
 
 void UBGraphicsScene::createPointer()
 {
-    mPointer = new QGraphicsEllipseItem();  // mem : owned and destroyed by the scene
-    mPointer->setRect(QRect(0, 0, 20, 20));
+    mPointer = new LaserPointerItem(); // owned and destroyed by the scene
     mPointer->setVisible(false);
-
-    mPointer->setPen(Qt::NoPen);
-    mPointer->setBrush(QBrush(QColor(255, 0, 0, 186)));
 
     mPointer->setData(UBGraphicsItemData::ItemLayerType, QVariant(UBItemLayerType::Tool));
     mPointer->setData(UBGraphicsItemData::itemLayerType, QVariant(itemLayerType::Pointer)); //Necessary to set if we want z value to be assigned correctly

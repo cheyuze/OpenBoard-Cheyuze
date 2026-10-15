@@ -1,6 +1,6 @@
 # OpenBoard 车厘子定制版
 
-Version 1.9.5 is based on OpenBoard 1.7.7, with Windows-focused changes for
+Version 1.9.6 is based on OpenBoard 1.7.7, with Windows-focused changes for
 classroom screen recording and whiteboard stability:
 
 1. Board mode opens in a normal resizable window on Windows.
@@ -28,7 +28,24 @@ classroom screen recording and whiteboard stability:
 8. A teaching-workbench link uses the default browser. Release notes appear once
    for each application version even when recurring startup hints are disabled;
    the user's checkbox preference is retained. Recording timing, capture,
-   encoding and audio core are unchanged by this interface release.
+   encoding and audio core were unchanged by the 1.9.5 interface release.
+9. Version 1.9.6 makes the laser follow pointer movement without holding a
+   button, with a continuous tapered short trail (about 140 ms and 50 logical
+   pixels). Transient laser marks clear at tool, page and control boundaries,
+   are not persisted as document content, and remain visible in recordings.
+10. Recording controls add confirmed restart, keeping the capture area, audio,
+    quality and current annotations while discarding only the current unsaved
+    take. Settings expose five parallel categories with at most two menu levels.
+    Desktop tools add annotation clearing; area recording keeps a dashed guide.
+11. Video saving uses the Windows native file dialog. Normal desktop recording
+    completion restores mouse interaction before saving; restarting retains the
+    selected tool. These are recording-control changes, not a rewrite of the
+    existing timing, capture, encoding or audio core.
+12. Text controls and the page entry are modernized. Eraser repaint artifacts,
+    handwriting undo and cursor restoration on window entry are addressed.
+    PPT / PDF imports avoid redundant work while retaining slide layout.
+    Tests use isolated documents, virtual input and real FFmpeg components;
+    they do not replace short trial recordings with the user's physical devices.
 
 OpenBoard remains licensed under GPLv3 with its OpenSSL linking exception; see
 `LICENSE` and `COPYRIGHT`. FFmpeg is distributed separately under its own

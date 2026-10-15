@@ -217,8 +217,11 @@ std::shared_ptr<UBDocumentProxy> UBDocumentManager::importFile(const QFile& pFil
                     }
 
                     QList<UBGraphicsItem*> pages = importAdaptor->import(uuid, filepath);
-                    int pageIndex = 0;
-
+                    if (pages.isEmpty()) {
+                        UBPersistenceManager::persistenceManager()->deleteDocument(document);
+                        UBApplication::setDisabled(false);
+                        return nullptr;
+                    }
                     UBApplication::showMessage(tr("Creating %1 pages. Please wait...").arg(pages.size()), true);
                     foreach(UBGraphicsItem* page, pages)
                     {
@@ -226,10 +229,12 @@ std::shared_ptr<UBDocumentProxy> UBDocumentManager::importFile(const QFile& pFil
                         //Workaround for issue 912
                         QApplication::processEvents();
     #endif
-                        std::shared_ptr<UBGraphicsScene> scene = doc->createPage(pageIndex);
+                        auto scene = std::make_shared<UBGraphicsScene>(document, false);
+                        scene->setNominalSize(document->defaultDocumentSize());
+                        scene->setBackground(UBSettings::settings()->isDarkBackground(), UBSettings::settings()->pageBackground());
+                        scene->setBackgroundGridSize(UBSettings::settings()->crossSize);
                         importAdaptor->placeImportedItemToScene(scene, page);
-                        doc->persistPage(scene, pageIndex);
-                        pageIndex++;
+                        doc->appendImportedPage(scene);
                     }
 
                     UBPersistenceManager::persistenceManager()->persistDocumentMetadata(document);
@@ -294,14 +299,17 @@ int UBDocumentManager::addFilesToDocument(std::shared_ptr<UBDocumentProxy> docum
                     }
 
                     QList<UBGraphicsItem*> pages = importAdaptor->import(uuid, filepath);
+                    if (pages.isEmpty()) break;
                     int nPage = 0;
                     foreach(UBGraphicsItem* page, pages)
                     {
                         UBApplication::showMessage(tr("Inserting page %1 of %2").arg(++nPage).arg(pages.size()), true);
-                        int pageIndex = document->pageCount();
-                        std::shared_ptr<UBGraphicsScene> scene = doc->createPage(pageIndex);
+                        auto scene = std::make_shared<UBGraphicsScene>(document, false);
+                        scene->setNominalSize(document->defaultDocumentSize());
+                        scene->setBackground(UBSettings::settings()->isDarkBackground(), UBSettings::settings()->pageBackground());
+                        scene->setBackgroundGridSize(UBSettings::settings()->crossSize);
                         importAdaptor->placeImportedItemToScene(scene, page);
-                        doc->persistPage(scene, pageIndex);
+                        doc->appendImportedPage(scene);
                     }
 
                     UBPersistenceManager::persistenceManager()->persistDocumentMetadata(document);

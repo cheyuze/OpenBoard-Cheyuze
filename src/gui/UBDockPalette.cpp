@@ -849,7 +849,16 @@ void UBTabDockPalette::paintEvent(QPaintEvent *)
             painter.setBrush(QBrush(color));
         }
 
-        painter.drawPath(path);
+        if (isPageNavigator) {
+            // Keep the complete tab outline readable on a white canvas,
+            // both collapsed and expanded, without changing its hit area.
+            const bool expanded = dock->width() > dock->mCollapseWidth;
+            painter.setPen(QPen(QColor(expanded ? "#7b96c2" : "#7b91ae"), 1.25));
+            painter.setBrush(QColor(expanded ? "#eaf1ff" : "#f5f8fd"));
+            painter.drawRoundedRect(QRectF(0.75, yFrom + 0.75, width() - 1.5, currentTabHeight - 1.5), 8, 8);
+        } else {
+            painter.drawPath(path);
+        }
         if (isPageNavigator)
         {
             const QRect iconArea(3, yFrom + 4, width() - 6, 34);
