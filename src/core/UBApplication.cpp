@@ -649,13 +649,23 @@ void UBApplication::decorateActionMenu(QAction* action)
             QMenu* menu = new QMenu(mainWindow);
 
             QActionGroup* pageSizeGroup = new QActionGroup(mainWindow);
+            QAction* borderlessPage = mainWindow->findChild<QAction*>("actionBorderlessPageSize");
+            if (!borderlessPage)
+            {
+                borderlessPage = new QAction(QStringLiteral("无边全屏白布"), mainWindow);
+                borderlessPage->setObjectName("actionBorderlessPageSize");
+                borderlessPage->setCheckable(true);
+                connect(borderlessPage, &QAction::triggered, boardController, &UBBoardController::setBorderlessPageSize);
+            }
             pageSizeGroup->addAction(mainWindow->actionWidePageSize);
             pageSizeGroup->addAction(mainWindow->actionRegularPageSize);
             pageSizeGroup->addAction(mainWindow->actionCustomPageSize);
+            pageSizeGroup->addAction(borderlessPage);
 
             QMenu* documentSizeMenu = menu->addMenu(QIcon(":/images/toolbar/pageSize.png"),tr("Page Size"));
             documentSizeMenu->addAction(mainWindow->actionWidePageSize);
             documentSizeMenu->addAction(mainWindow->actionRegularPageSize);
+            documentSizeMenu->addAction(borderlessPage);
             documentSizeMenu->addAction(mainWindow->actionCustomPageSize);
             menu->addAction(mainWindow->actionCut);
             menu->addAction(mainWindow->actionCopy);

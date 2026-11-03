@@ -1,6 +1,6 @@
 # OpenBoard 车厘子定制版
 
-Version 1.9.6 is based on OpenBoard 1.7.7, with Windows-focused changes for
+Version 1.9.7 is based on OpenBoard 1.7.7, with Windows-focused changes for
 classroom screen recording and whiteboard stability:
 
 1. Board mode opens in a normal resizable window on Windows.
@@ -46,6 +46,16 @@ classroom screen recording and whiteboard stability:
     PPT / PDF imports avoid redundant work while retaining slide layout.
     Tests use isolated documents, virtual input and real FFmpeg components;
     they do not replace short trial recordings with the user's physical devices.
+13. Version 1.9.7 explicitly synchronizes visible board viewports after completed
+    user undo/redo actions, including keyboard shortcuts and toolbar buttons.
+    New stroke pushes keep their existing local-paint path. Fault-injected
+    missed scene damage, rapid history operations and real client shortcut /
+    synthetic tablet routing are covered; physical driver timing is not exhaustive.
+14. The borderless white-canvas page mode complements 16:9 and 4:3, persists in
+    SVG and page copies, and supports page-size undo/redo. Recording startup
+    resolves disappeared saved audio devices to Default without enabling
+    disabled audio sources; initialization failure is shown explicitly instead
+    of looking like an unresponsive Record button. Capture/encoding core is unchanged.
 
 OpenBoard remains licensed under GPLv3 with its OpenSSL linking exception; see
 `LICENSE` and `COPYRIGHT`. FFmpeg is distributed separately under its own

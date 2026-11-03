@@ -8,20 +8,20 @@
         * { box-sizing: border-box; }
         html, body { width: 100%; min-height: 100%; margin: 0; }
         body { color: #22324a; background: #f3f6fb; font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; padding: 22px; }
-        .hero { color: white; background: linear-gradient(135deg, #265fa8, #4b8ee4); border-radius: 17px; padding: 22px 25px; box-shadow: 0 12px 30px rgba(34, 96, 174, .22); }
-        .version { display: inline-block; margin-bottom: 9px; padding: 4px 10px; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.28); border-radius: 20px; font-size: 12px; font-weight: 700; }
+        .hero { color: white; background: linear-gradient(135deg, #245b9e, #2f6bb5); border-radius: 17px; padding: 22px 25px; box-shadow: 0 12px 30px rgba(34, 96, 174, .22); }
+        .version { display: inline-block; margin-bottom: 9px; padding: 4px 10px; background: rgba(0,30,70,.25); border: 1px solid rgba(255,255,255,.28); border-radius: 20px; font-size: 12px; font-weight: 700; }
         h1 { margin: 0 0 7px; font-size: 27px; }
         .hero p { margin: 0; color: #edf5ff; font-size: 14px; line-height: 1.65; }
         .section-title { margin: 18px 2px 10px; color: #174d91; font-size: 17px; font-weight: 700; }
         .updates { display: grid; grid-template-columns: repeat(2, 1fr); gap: 11px; }
         .item { min-height: 88px; background: white; border: 1px solid #dce6f2; border-radius: 12px; padding: 14px 15px 13px 48px; position: relative; box-shadow: 0 4px 12px rgba(46, 83, 124, .05); }
-        .icon { position: absolute; left: 14px; top: 14px; width: 25px; height: 25px; border-radius: 8px; color: white; background: #377ed5; line-height: 25px; text-align: center; font-size: 14px; }
+        .icon { position: absolute; left: 14px; top: 14px; width: 25px; height: 25px; border-radius: 8px; color: white; background: #2b69bb; line-height: 25px; text-align: center; font-size: 14px; }
         .icon svg { width: 17px; height: 17px; margin: 4px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
         .item h2 { margin: 0 0 5px; color: #253b59; font-size: 15px; }
         .item p { margin: 0; color: #526174; font-size: 13px; line-height: 1.65; }
         .contact { display: flex; align-items: center; gap: 14px; margin-top: 16px; padding: 14px 17px; color: inherit; text-decoration: none; background: linear-gradient(135deg, #ffffff, #edf5ff); border: 1px solid #cfe0f5; border-radius: 14px; transition: transform .15s ease, box-shadow .15s ease; }
         .contact:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(37, 103, 183, .16); }
-        .avatar { flex: 0 0 46px; width: 46px; height: 46px; color: white; background: linear-gradient(135deg, #286bc0, #55a0ec); border-radius: 13px; text-align: center; line-height: 46px; font-size: 22px; font-weight: 700; }
+        .avatar { flex: 0 0 46px; width: 46px; height: 46px; color: white; background: linear-gradient(135deg, #245b9e, #2f6bb5); border-radius: 13px; text-align: center; line-height: 46px; font-size: 22px; font-weight: 700; }
         .contact-main { flex: 1; }
         .contact-name { display: block; color: #1d4f91; font-size: 16px; font-weight: 700; }
         .contact-meta { display: block; margin-top: 3px; color: #526174; font-size: 12px; line-height: 1.6; }
@@ -47,9 +47,9 @@
         </defs>
     </svg>
     <section class="hero">
-        <span class="version">车厘子定制版 · 1.9.6</span>
-        <h1>指示更流畅，录题更顺手</h1>
-        <p>免按键激光搭配柔和平滑短尾，录制支持确认重录与更直接的设置。同步优化文本、导入和书写交互，保留现有白板、图片与多渠道更新功能。</p>
+        <span class="version">车厘子定制版 · 1.9.7</span>
+        <h1>对已知BUG的修复</h1>
+        <p>修复撤销与重做后的画面更新延迟，统一按钮和快捷键的刷新处理。同步补齐此前未发布的页面模式及声音设备缺失处理，保留现有白板与录制功能。</p>
     </section>
 
     <a class="contact" href="yach://yach.zhiyinlou.com/session/p2p?sessionid=285108440437788672" title="通过知音楼联系车禹泽">
@@ -62,20 +62,20 @@
     </a>
 
     <h2 class="section-title">本版主要更新</h2>
-    <section class="updates" aria-label="1.9.6 更新内容">
-        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#layout"/></svg></span><h2>免按键激光与平滑短尾</h2><p>选中激光后移动即可指示，无需按住左键。连续渐细短尾快速消退，不保存到文档，录制仍可看到。</p></article>
-        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#image"/></svg></span><h2>确认后一键重录</h2><p>仅丢弃本次未保存片段，自动从 00:00 重开；保留范围、声音、画质、笔迹与当前工具。</p></article>
-        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#layers"/></svg></span><h2>录制设置最多两级</h2><p>画质、声音来源、麦克风、电脑声音、摄像头五类并列；移除过时说明，设备选择不再层层展开。</p></article>
-        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#desktop"/></svg></span><h2>桌面录制操作更顺畅</h2><p>新增桌面清屏与选区虚线提示。视频用系统窗口保存，正常结束自动回鼠标，重录仍保留工具。</p></article>
-        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#workbench"/></svg></span><h2>文本与页面入口升级</h2><p>文本改用现代浮动工具和清晰边框；页面侧栏入口增加边框，更容易找到和操作。</p></article>
-        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#notes"/></svg></span><h2>导入更快，书写更稳</h2><p>减少 PPT / PDF 导入的重复处理，保留版式；修复擦除残影、书写后撤销及跨窗口光标恢复问题。</p></article>
+    <section class="updates" aria-label="1.9.7 更新内容">
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#layout"/></svg></span><h2>撤销与重做及时显示</h2><p>历史操作完成后主动刷新画布，避免旧笔迹滞留，不必再依赖下一次书写或重新聚焦。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#image"/></svg></span><h2>按钮与快捷键一致</h2><p>撤销按钮与 Ctrl+Z、重做与 Ctrl+Y 共用完成路径，保持原有历史步数和文档内容规则。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#layers"/></svg></span><h2>正常书写保留局部刷新</h2><p>整屏同步仅用于有效撤销和重做，不增加每次下笔的整屏刷新；当前画布与可见投屏一起更新。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#desktop"/></svg></span><h2>无边全屏白布</h2><p>页面大小新增无边白布，保留 16:9 和 4:3。模式随页面保存与复制，也可撤销或重做切换。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#workbench"/></svg></span><h2>声音设备缺失自动回退</h2><p>录制前发现已选设备不可用时切到系统默认设备并提示，保持原有声音来源模式，不擅自开启音源。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#notes"/></svg></span><h2>录制失败有明确提示</h2><p>初始化失败会显示警告并恢复可重试状态，避免按钮看似无响应。既有采集、计时和编码核心保持不变。</p></article>
     </section>
 
     <a class="contact" href="https://xiwang.cheyuze.top" title="在默认浏览器打开教学培训工作台">
         <span class="contact-main"><span class="contact-name">教学培训工作台</span><span class="contact-meta">常用教学工具与培训资源 · xiwang.cheyuze.top</span></span>
         <span class="contact-action">打开工作台 ›</span>
     </a>
-    <p class="notice">每个新版本首次启动仍会展示本页一次，同一版本后续尊重“下次显示”设置。继续保留网站与 GitHub 自动更新、百度网盘手动下载及三种声音录制方式；网盘由维护者手动同步，请核对版本。本次调整录制控制层，既有计时、采集、编解码与音频核心未改动。重要授课前仍请使用实际设备短片试录。</p>
+    <p class="notice">每个新版本首次启动展示本页一次，随后尊重“下次显示”设置。网站与 GitHub 提供同一安装包；百度网盘由维护者手动同步，请核对版本。已进行隔离回归与完整客户端输入验证，仍需实际手写板复测偶发时序。设备回退仅在录制开始前处理，重要授课前请使用实际设备短片试录。</p>
 
     <footer>
         本软件为基于 OpenBoard 开源项目的非官方定制版本；OpenBoard 原版权及 GNU GPL v3 开源许可证声明继续保留。

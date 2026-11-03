@@ -538,6 +538,7 @@ void UBSvgSubsetAdaptor::UBSvgSubsetReader::processElement()
             mScene->setBackground(darkBackground, bg);
 
             auto pageNominalSize = mXmlReader.attributes().value(mNamespaceUri, "nominal-size");
+            mScene->setProperty("borderlessPage", mXmlReader.attributes().value(mNamespaceUri, "borderless-page").toString() == "true");
             if (!pageNominalSize.isNull())
             {
                 QStringList ts = pageNominalSize.toString().split(QLatin1Char('x'), UB::SplitBehavior::SkipEmptyParts);
@@ -1211,6 +1212,7 @@ void UBSvgSubsetAdaptor::UBSvgSubsetWriter::writeSvgElement(std::shared_ptr<UBDo
     normalized.setHeight(normalized.height() + (margin * 2));
     mXmlWriter.writeAttribute("viewBox", QString("%1 %2 %3 %4").arg(normalized.x()).arg(normalized.y()).arg(normalized.width()).arg(normalized.height()));
 
+    mXmlWriter.writeAttribute(UBSettings::uniboardDocumentNamespaceUri, "borderless-page", mScene->property("borderlessPage").toBool() ? xmlTrue : xmlFalse);
     QSize pageNominalSize = mScene->nominalSize();
     if (pageNominalSize.isValid())
     {

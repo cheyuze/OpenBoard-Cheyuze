@@ -17,7 +17,7 @@
 
 安装包见 [网站下载页](https://xiwang.cheyuze.top/openboard/) 或 [GitHub Releases](https://github.com/cheyuze/OpenBoard-Cheyuze/releases)。对应版本源码随 GitHub 标签公开。
 
-当前定制版为 **1.9.6**，新增免按键激光与平滑短尾、确认重录、桌面清屏及选区提示，录制设置最多两级；改用 Windows 原生视频保存窗口，正常结束桌面录制自动恢复鼠标。同步升级文本编辑与页面入口，优化 PPT / PDF 导入并修复擦除、撤销和光标交互问题。保留网站 / GitHub 更新、电脑声音录制与控件排除功能，详见 [1.9.6 发布说明](https://github.com/cheyuze/OpenBoard-Cheyuze/releases/tag/v1.9.6)。旧 1.8.5 / 原 1.8.6 如在下载接近完成时退出，请通过浏览器手动安装本版一次。百度网盘由维护者手动同步，尚未验证 1.9.6 已上传，请核对文件版本。
+当前定制版为 **1.9.7**，重点修复撤销 / 重做后画布更新不及时的问题：按钮和快捷键统一在操作完成后刷新当前画布与投屏视图，正常下笔不增加整屏刷新。同时发布无边全屏白布选项，以及录制前已选声音设备缺失时自动回退到系统默认设备的改进。保留既有白板、激光、图片、录制及更新功能，详见 [1.9.7 发布说明](https://github.com/cheyuze/OpenBoard-Cheyuze/releases/tag/v1.9.7)。旧 1.8.5 / 原 1.8.6 如在下载接近完成时退出，请通过浏览器手动安装本版一次。百度网盘由维护者手动同步，尚未验证 1.9.7 已上传，请核对文件版本。
 
 本项目继续按 GNU GPL v3 发布，详见 [LICENSE](LICENSE)。第三方组件说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 

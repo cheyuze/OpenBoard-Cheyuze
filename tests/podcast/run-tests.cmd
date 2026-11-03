@@ -6,6 +6,7 @@ if not defined OPENBOARD_ROOT set "OPENBOARD_ROOT=%~dp0..\.."
 if not defined FFMPEG_ROOT set "FFMPEG_ROOT=%OPENBOARD_ROOT%\thirdparty\ffmpeg\ffmpeg-9.0.1-full_build-shared"
 set "PATH=%FFMPEG_ROOT%\bin;%PATH%"
 build\recording-clock\bin\recording-clock-test.exe || exit /b 1
+build\device-selection\bin\device-selection-test.exe || exit /b 1
 build\microphone-buffer\bin\microphone-buffer-test.exe || exit /b 1
 rem Deterministic mixer/visibility checks require no connected microphone.
 build\windows-audio\bin\windows-audio-test.exe || exit /b 1

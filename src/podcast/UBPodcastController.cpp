@@ -58,6 +58,7 @@
 #include "UBPodcastRecordingPalette.h"
 #include "UBCameraPreviewWindow.h"
 #include "UBCleanScreenRecording.h"
+#include "UBRecordingDeviceSelection.h"
 
 #include <QFileDialog>
 #include <QAbstractButton>
@@ -793,6 +794,37 @@ void UBPodcastController::start()
                         , mRecordingPalette, SLOT(audioLevelChanged(quint8)));
             }
 
+            // A saved USB/Bluetooth device can disappear between sessions.
+            // Resolve it before opening the encoder, and persist Default so
+            // both the next recording and the device menu reflect the fallback.
+            // Do not change disabled sources or migrate a legacy mode after
+            // changing its device preference (the setters freeze it first).
+            const auto sourceMode = audioSourceMode();
+            const bool microphoneEnabled = sourceMode == MicrophoneOnly
+                    || sourceMode == MicrophoneAndSystem;
+            const bool systemEnabled = sourceMode == SystemOnly
+                    || sourceMode == MicrophoneAndSystem;
+            QStringList fallbackNotices;
+            const auto input = UBRecordingDeviceSelection::resolve(
+                    configuredAudioInputDevice(),
+                    microphoneEnabled ? audioRecordingDevices() : QStringList(),
+                    microphoneEnabled);
+            if (input.fellBack)
+            {
+                selectAudioInputDevice(input.name);
+                fallbackNotices << tr("原麦克风不可用，已切换到系统默认麦克风");
+            }
+#ifdef Q_OS_WIN
+            const auto output = UBRecordingDeviceSelection::resolve(
+                    configuredAudioOutputDevice(),
+                    systemEnabled ? audioOutputDevices() : QStringList(),
+                    systemEnabled);
+            if (output.fellBack)
+            {
+                selectAudioOutputDevice(output.name);
+                fallbackNotices << tr("原电脑声音设备不可用，已切换到系统默认播放设备");
+            }
+#endif
             const QString selectedInput = selectedAudioInputDevice();
             const QString selectedOutput = selectedAudioOutputDevice();
             mVideoEncoder->setRecordAudio(selectedInput != QStringLiteral("None") || selectedOutput != QStringLiteral("None"));
@@ -861,6 +893,8 @@ void UBPodcastController::start()
                 {
                     processScreenGrabingTimerEvent();
                 }
+                if (!fallbackNotices.isEmpty())
+                    UBApplication::showMessage(fallbackNotices.join(QStringLiteral("；")), false);
             }
             else
             {
@@ -872,10 +906,21 @@ void UBPodcastController::start()
                 failedEncoder->deleteLater();
                 stopRecordingTimers();
                 mMonotonicTimer.invalidate();
-                QSignalBlocker blocker(UBApplication::mainWindow->actionPodcastRecord);
-                UBApplication::mainWindow->actionPodcastRecord->setChecked(false);
+                {
+                    QSignalBlocker blocker(UBApplication::mainWindow->actionPodcastRecord);
+                    UBApplication::mainWindow->actionPodcastRecord->setChecked(false);
+                }
                 emit recordingStateChanged(Stopped);
                 UBApplication::showMessage(tr("Failed to start encoder (%1)").arg(error), false);
+                // A transient board message can be missed or obscured by the
+                // recording palette. A failed start must never look like an
+                // unresponsive Record button, or fall back to silent video.
+                QMessageBox errorDialog(QMessageBox::Warning, tr("无法开始录制"),
+                        error.isEmpty() ? tr("无法初始化录制设备，请检查录制设置中的声音设备。") : error,
+                        QMessageBox::Ok, mRecordingPalette
+                                ? static_cast<QWidget*>(mRecordingPalette) : UBApplication::mainWindow);
+                errorDialog.setTextFormat(Qt::PlainText);
+                execCenteredDialog(&errorDialog);
             }
         }
         else

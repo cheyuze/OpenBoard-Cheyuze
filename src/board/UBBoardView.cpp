@@ -2211,7 +2211,7 @@ void UBBoardView::drawBackground (QPainter *painter, const QRectF &rect)
         return;
     }
 
-    if (!mFilterZIndex && scene ())
+    if (!mFilterZIndex && scene () && !scene()->property("borderlessPage").toBool())
     {
         QSize pageNominalSize = scene ()->nominalSize ();
 
@@ -2241,6 +2241,8 @@ void UBBoardView::drawBackground (QPainter *painter, const QRectF &rect)
 
 void UBBoardView::drawForeground(QPainter* painter, const QRectF& rect)
 {
+    if (scene() && scene()->property("borderlessPage").toBool())
+        return;
     QTransform transform{viewportTransform()};
     QRect viewportRect(0, 0, viewport()->width(), viewport()->height());
     QRectF visible{mapToScene(viewportRect).boundingRect()};

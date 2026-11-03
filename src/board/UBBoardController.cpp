@@ -1717,8 +1717,8 @@ void UBBoardController::connectToolbar()
     connect(mMainWindow->actionEraseAnnotations, SIGNAL(triggered()), this, SLOT(clearSceneAnnotation()));
     connect(mMainWindow->actionEraseBackground,SIGNAL(triggered()),this,SLOT(clearSceneBackground()));
 
-    connect(mMainWindow->actionUndo, SIGNAL(triggered()), UBApplication::undoStack, SLOT(undo()));
-    connect(mMainWindow->actionRedo, SIGNAL(triggered()), UBApplication::undoStack, SLOT(redo()));
+    connect(mMainWindow->actionUndo, &QAction::triggered, this, &UBBoardController::undo);
+    connect(mMainWindow->actionRedo, &QAction::triggered, this, &UBBoardController::redo);
     connect(mMainWindow->actionRedo, SIGNAL(triggered()), this, SLOT(startScript()));
     connect(mMainWindow->actionBack, SIGNAL( triggered()), this, SLOT(previousScene()));
     connect(mMainWindow->actionForward, SIGNAL(triggered()), this, SLOT(nextScene()));
@@ -1726,6 +1726,48 @@ void UBBoardController::connectToolbar()
     connect(mMainWindow->actionSleep, SIGNAL(triggered()), this, SLOT(blackout()));
     connect(mMainWindow->actionVirtualKeyboard, SIGNAL(triggered(bool)), this, SLOT(showKeyboard(bool)));
     connect(mMainWindow->actionImportPage, SIGNAL(triggered()), this, SLOT(importPage()));
+}
+
+void UBBoardController::undo()
+{
+    if (!UBApplication::undoStack || !UBApplication::undoStack->canUndo())
+        return;
+
+    UBApplication::undoStack->undo();
+    refreshUndoRedoViews();
+}
+
+void UBBoardController::redo()
+{
+    if (!UBApplication::undoStack || !UBApplication::undoStack->canRedo())
+        return;
+
+    UBApplication::undoStack->redo();
+    refreshUndoRedoViews();
+}
+
+void UBBoardController::refreshUndoRedoViews()
+{
+    const auto scene = mActiveScene;
+    if (!scene)
+        return;
+
+    scene->updateSelectionFrame();
+    scene->update();
+    // Undo/redo is a discrete user action, not the high-frequency pen path.
+    // Scene damage alone may leave old backing-store pixels visible on
+    // Windows; later strokes only repaint their own small rectangles. Make
+    // the completed history state visible now, in both control and display
+    // views, without pumping events or adding any undo/history operation.
+    for (QGraphicsView* view : scene->views())
+    {
+        QWidget* viewport = view->viewport();
+        if (!viewport || !viewport->isVisible())
+            continue;
+
+        view->resetCachedContent();
+        viewport->repaint();
+    }
 }
 
 void UBBoardController::startScript()
@@ -3691,7 +3733,7 @@ void UBBoardController::setWidePageSize(bool checked)
     Q_UNUSED(checked);
     QSize newSize = UBSettings::settings()->documentSizes.value(DocumentSizeRatio::Ratio16_9);
 
-    if (mActiveScene->nominalSize() != newSize)
+    if (mActiveScene->nominalSize() != newSize || mActiveScene->property("borderlessPage").toBool())
     {
         UBPageSizeUndoCommand* uc = new UBPageSizeUndoCommand(mActiveScene, mActiveScene->nominalSize(), newSize);
         UBApplication::undoStack->push(uc);
@@ -3706,7 +3748,7 @@ void UBBoardController::setRegularPageSize(bool checked)
     Q_UNUSED(checked);
     QSize newSize = UBSettings::settings()->documentSizes.value(DocumentSizeRatio::Ratio4_3);
 
-    if (mActiveScene->nominalSize() != newSize)
+    if (mActiveScene->nominalSize() != newSize || mActiveScene->property("borderlessPage").toBool())
     {
         UBPageSizeUndoCommand* uc = new UBPageSizeUndoCommand(mActiveScene, mActiveScene->nominalSize(), newSize);
         UBApplication::undoStack->push(uc);
@@ -3716,21 +3758,43 @@ void UBBoardController::setRegularPageSize(bool checked)
 }
 
 
-void UBBoardController::setPageSize(QSize newSize)
+void UBBoardController::setBorderlessPageSize(bool checked)
 {
-    if (mActiveScene->nominalSize() != newSize)
+    Q_UNUSED(checked);
+    if (mActiveScene && !mActiveScene->property("borderlessPage").toBool())
     {
+        const QSize size = mActiveScene->nominalSize();
+        UBApplication::undoStack->push(new UBPageSizeUndoCommand(mActiveScene, size, size, true));
+        setPageSize(size, true);
+    }
+}
+
+void UBBoardController::setPageSize(QSize newSize, bool borderless)
+{
+    if (mActiveScene->nominalSize() != newSize || mActiveScene->property("borderlessPage").toBool() != borderless)
+    {
+        const bool dimensionsChanged = mActiveScene->nominalSize() != newSize;
         mActiveScene->setNominalSize(newSize);
+        mActiveScene->setProperty("borderlessPage", borderless);
+        mActiveScene->setModified(true);
 
         persistViewPositionOnCurrentScene();
 
-        updateSystemScaleFactor();
+        if (dimensionsChanged)
+            updateSystemScaleFactor();
         updatePageSizeState();
         adjustDisplayViews();
         QDateTime now = QDateTime::currentDateTime();
         selectedDocument()->setMetaData(UBSettings::documentUpdatedAt, UBStringUtils::toUtcIsoDateTime(now));
 
         UBSettings::settings()->pageSize->set(newSize);
+        mActiveScene->invalidate(mActiveScene->sceneRect(), QGraphicsScene::BackgroundLayer);
+        for (QGraphicsView* view : mActiveScene->views())
+        {
+            // The cached paper outline can lie outside sceneRect() when the page is mostly empty.
+            view->resetCachedContent();
+            view->viewport()->update();
+        }
     }
 }
 
@@ -3744,7 +3808,14 @@ void UBBoardController::notifyCache(bool visible)
 
 void UBBoardController::updatePageSizeState()
 {
-    if (mActiveScene->nominalSize() == UBSettings::settings()->documentSizes.value(DocumentSizeRatio::Ratio16_9))
+    const bool borderless = mActiveScene->property("borderlessPage").toBool();
+    selectedDocument()->setMetaData("borderlessPageDefault", borderless);
+    if (borderless)
+    {
+        if (QAction* action = mMainWindow->findChild<QAction*>("actionBorderlessPageSize"))
+            action->setChecked(true);
+    }
+    else if (mActiveScene->nominalSize() == UBSettings::settings()->documentSizes.value(DocumentSizeRatio::Ratio16_9))
     {
         mMainWindow->actionWidePageSize->setChecked(true);
     }

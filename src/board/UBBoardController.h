@@ -168,7 +168,7 @@ class UBBoardController : public UBDocumentContainer
         void setToolbarTexts();
         static QUrl expandWidgetToTempDir(const QByteArray& pZipedData, const QString& pExtension = QString("wgt"));
 
-        void setPageSize(QSize newSize);
+        void setPageSize(QSize newSize, bool borderless = false);
         UBBoardPaletteManager *paletteManager() const
         {
             return mPaletteManager;
@@ -209,6 +209,8 @@ class UBBoardController : public UBDocumentContainer
         void importPage();
         void clearScene();
         void clearAllScenes();
+        void undo();
+        void redo();
         void clearSceneItems();
         void clearSceneAnnotation();
         void clearSceneBackground();
@@ -239,6 +241,7 @@ class UBBoardController : public UBDocumentContainer
         void show();
         void setWidePageSize(bool checked);
         void setRegularPageSize(bool checked);
+        void setBorderlessPageSize(bool checked);
         void stylusToolChanged(int tool);
         void grabScene(const QRectF& pSceneRect);
         UBGraphicsMediaItem* addVideo(const QUrl& pUrl, bool startPlay, const QPointF& pos, bool bUseSource = false);
@@ -307,6 +310,7 @@ class UBBoardController : public UBDocumentContainer
 
     private:
         void initBackgroundGridSize();
+        void refreshUndoRedoViews();
         void updatePageSizeState();
         int autosaveTimeoutFromSettings() const;
 

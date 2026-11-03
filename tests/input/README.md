@@ -119,3 +119,29 @@ pass; those earlier comparisons concern the original 21 input/polygon cases.
 
 The production source root is read-only to these scripts. Test compilation and
 temporary generated handlers are confined to the ignored build directory.
+
+## Undo display synchronization regression
+
+`undo_display_regression.cpp` and `build-undo-display.ps1` add a separate
+17-scenario suite for completed undo/redo actions. In an x64 developer shell:
+
+```powershell
+& .\tests\input\build-undo-display.ps1 -SourceRoot . -BuildDir .\tests\input\build\undo-display -QMake C:\Qt\6.9.3\msvc2022_64\bin\qmake.exe -MakeTool nmake.exe
+$env:PATH = 'C:\Qt\6.9.3\msvc2022_64\bin;' + $env:PATH
+$env:QT_QPA_PLATFORM = 'offscreen'
+& .\tests\input\build\undo-display\undo_display_regression.exe
+```
+
+This suite extracts the unchanged production item-command undo/redo bodies,
+controller action connections, completed-action refresh helpers and live-stroke
+repaint method. Real Qt actions/buttons, undo history, item groups, two views and
+backing-store pixels are exercised at 50%, 100%, 125% and 200% zoom. It reads
+pixels immediately after the action, before processing another input event, and
+also checks repeated undo/redo, subsequent distant writing, safe empty history
+and no synchronous full-view history repaint when pushing a newly drawn stroke.
+
+`NoViewportUpdate` deliberately suppresses inferred scene damage. It is fault
+injection, not a reproduction of the exact physical tablet/Windows driver
+sequence. Only widget/layer/delegate metadata are inert adapters. A separate
+full-client fixture verifies actual Ctrl+Z/Ctrl+Y and synthetic tablet events in
+an isolated document profile. This suite does not record audio or video.

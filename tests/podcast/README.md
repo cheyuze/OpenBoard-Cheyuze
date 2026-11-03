@@ -44,6 +44,13 @@ make
 
 ## Suites
 
+- `device-selection.pro`: checks current production fallback policy for missing
+  USB/Bluetooth microphones and playback devices, valid and default selections,
+  disconnected devices with no default, repeated resolution, and disabled
+  sources. It opens no devices and never enables a muted source. Recording
+  startup resolves only enabled sources; if Default also fails, startup reports
+  the failure instead of silently creating a video without the requested audio.
+
 - `recording-clock.pro`: verifies the 64-bit monotonic recording clock at the
   former 11:55.8 overflow boundary, 13 minutes, and 40 days. Tests pause-to-stop,
   repeated pauses, resume, reset, and 10,000 transitions using injected elapsed

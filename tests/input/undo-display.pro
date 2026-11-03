@@ -1,0 +1,9 @@
+QT += widgets
+CONFIG += console c++20 release
+CONFIG -= app_bundle debug
+TEMPLATE = app
+TARGET = undo_display_regression
+SOURCES += $$PWD/undo_display_regression.cpp
+INCLUDEPATH += $$OUT_PWD
+DESTDIR = $$OUT_PWD
+QMAKE_CXXFLAGS += /utf-8

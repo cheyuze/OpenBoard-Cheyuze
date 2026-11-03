@@ -600,6 +600,7 @@ UBGraphicsScene::UBGraphicsScene(std::shared_ptr<UBDocumentProxy> document, bool
     , mGraphicsCache(nullptr)
 {
     UBCoreGraphicsScene::setObjectName("BoardScene");
+    setProperty("borderlessPage", document ? document->metaData("borderlessPageDefault").toBool() : false);
     setItemIndexMethod(BspTreeIndex);
 
     setUuid(QUuid::createUuid());
@@ -2527,6 +2528,7 @@ std::shared_ptr<UBGraphicsScene> UBGraphicsScene::sceneDeepCopy() const
     copy->setBackground(this->isDarkBackground(), mPageBackground);
     copy->setBackgroundGridSize(mBackgroundGridSize);
     copy->setSceneRect(this->sceneRect());
+    copy->setProperty("borderlessPage", property("borderlessPage"));
 
     if (this->mNominalSize.isValid())
         copy->setNominalSize(this->mNominalSize);

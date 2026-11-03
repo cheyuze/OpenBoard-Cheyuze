@@ -37,12 +37,14 @@
 
 #include "core/memcheck.h"
 
-UBPageSizeUndoCommand::UBPageSizeUndoCommand(std::shared_ptr<UBGraphicsScene> pScene, const QSize& previousSize, const QSize& newSize)
+UBPageSizeUndoCommand::UBPageSizeUndoCommand(std::shared_ptr<UBGraphicsScene> pScene, const QSize& previousSize, const QSize& newSize, bool borderless)
     : mScene(pScene)
         , mPreviousSize(previousSize)
         , mNewSize(newSize)
 {
     mFirstRedo = true;
+    mPreviousBorderless = pScene->property("borderlessPage").toBool();
+    mNewBorderless = borderless;
 }
 
 UBPageSizeUndoCommand::~UBPageSizeUndoCommand()
@@ -56,7 +58,7 @@ void UBPageSizeUndoCommand::undo()
         return;
     }
 
-    UBApplication::boardController->setPageSize(mPreviousSize);
+    UBApplication::boardController->setPageSize(mPreviousSize, mPreviousBorderless);
     // force refresh, QT is a bit lazy and take a lot of time (nb item ^2 ?) to trigger repaint
     mScene->update(mScene->sceneRect());
 
@@ -72,7 +74,7 @@ void UBPageSizeUndoCommand::redo()
             return;
         }
 
-        UBApplication::boardController->setPageSize(mNewSize);
+        UBApplication::boardController->setPageSize(mNewSize, mNewBorderless);
         // force refresh, QT is a bit lazy and take a lot of time (nb item ^2) to trigger repaint
         mScene->update(mScene->sceneRect());
     }
