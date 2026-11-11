@@ -145,3 +145,231 @@ injection, not a reproduction of the exact physical tablet/Windows driver
 sequence. Only widget/layer/delegate metadata are inert adapters. A separate
 full-client fixture verifies actual Ctrl+Z/Ctrl+Y and synthetic tablet events in
 an isolated document profile. This suite does not record audio or video.
+
+## Pointer-anchored image paste (full client)
+
+`paste_position_native.cpp` links the actual built client objects, replacing
+only its executable entry point. It does not substitute clipboard, scene,
+image, event-filter, controller or undo implementations. In an x64 MSVC shell,
+after building the current client and deploying its matching runtime:
+
+```powershell
+& .\tests\input\build-paste-position.ps1 -ClientMakefile .\Makefile.Release -RuntimeDirectory .\build\win32\release\product
+```
+
+Pass the actual generated **release** makefile and deployed runtime directory;
+the example paths are placeholders. The script uses the makefile's compiler
+flags, objects and libraries, with Unicode-safe MSVC response files. Rebuild
+the client first after source/header changes: stale objects invalidate this
+integration test. The script compiles and runs the fixture, returning nonzero
+on any assertion, build or profile-isolation failure.
+
+Each run creates a new profile below `tests/input/build/paste-position/`, uses
+the process-local offscreen clipboard and synthetic images/pen events, and
+refuses any other platform or data directory. No installed application, real
+clipboard, user document, microphone, camera or recording is used. Offscreen
+Windows fonts are loaded into the test process before layout; the fixture
+waits for the actual application event loop rather than running inside an
+initialization-time `processEvents` call.
+
+Coverage: 69 assertions, including all three page modes at 50%, 100%, 125% and
+200% view zoom with a distant pan; actual Ctrl+V and menu-action dispatch;
+canvas entry without a click; menu/control hover retaining the canvas anchor;
+synthetic subpixel pen hover; resize/clamping and post-hover pan; internal
+single/multiple image copy with the production rotation transform; unchanged
+Duplicate behavior; large file image fitting; SVG paste; image-under-ink and
+selection layering; explicit drag/drop position; and paste undo/redo location.
+These checks are also runnable with `QT_SCALE_FACTOR=1.5`. They do not claim
+physical tablet-driver, Windows compositor or network-download timing coverage.
+
+## Shared shape editor and direct regional shading
+
+`shape_fill_native.cpp` uses the same full-client runner:
+
+```powershell
+& .\tests\input\build-paste-position.ps1 -ClientMakefile .\Makefile.ShapeFill.Release -RuntimeDirectory .\build\win32\release\release197 -BuildDir .\tests\input\build\shape-fill -TestSource shape_fill_native.cpp -TestName shape-fill
+```
+
+These are example local build/runtime paths, not installed-app paths. Rebuild
+the client before running. The generic runner's default remains the paste
+suite; `-TestSource` and `-TestName` select another full-client entry point.
+
+The shape suite tests the real dashed/filled geometry drawing tool, shared
+picture-style frame and toolbar, corner resize, Shift rotation snapping,
+lock, copy/delete, keyboard nudge, undo/redo and narrow/wide window resizing.
+Vector shapes and stroke groups share controls without changing their stored
+geometry, fill or drawing algorithm; ordinary stroke selection also inherits
+the shared editor because legacy geometry and handwriting use the same group
+type. Text, video, widgets and group-container editors retain their delegates.
+
+Regional shading coverage includes closed boundaries, small gaps, refusal of
+large/unbounded openings, nested holes, seed validation and bounded maximum
+input; asynchronous view-coordinate detection and cancellation; mouse/pen
+lasso; transient feedback excluded from Podcast/NonScreen rendering; direct
+commit on mouse/pen release or completed bucket detection, with no confirmation
+panel; single-step undo/redo; below-ink placement; SVG save/reopen; and menu
+presets/default 25% opacity plus persisted setting restoration. Detection runs
+off the GUI thread after a capped 1024×1024 content render. No recorder code is
+replaced, no microphone/camera is opened and no real screen recording occurs.
+
+Screenshots are actual offscreen Qt client renders. Since that platform has no
+OS compositor, the full-client menu capture paints the actual popup widgets at
+their real global offsets over the actual main-window render. It is not an OS
+screenshot and is not evidence of every Windows theme/driver combination.
+
+## Continuous lasso shading interaction
+
+`lasso_interaction_native.cpp` uses the same full-client runner with
+`-TestSource lasso_interaction_native.cpp -TestName lasso-interaction` and a
+separate `-BuildDir`. Set `OPENBOARD_FILL_TEST_OUTPUT` to an existing directory
+for its full-client captures. Rebuild the production client objects first.
+
+The updated workflow defaults to lasso, names the current mode on the command,
+keeps it selected after each fill, and makes its QAction exclusive with the
+existing pen/shape tools. Esc or selecting another tool exits; ordinary undo,
+redo, colour controls and shading presets do not silently switch tools.
+Migration from the earlier prototype defaults to lasso once, then remembers
+explicit mode choices. Preset opacity, colour and gap values remain intact.
+
+Coverage includes actual menu mouse-release and split-label arrow paths,
+120-sample loops at 50/100/200% zoom with distant pan, consecutive loops,
+mouse-click undo and Ctrl+Z, exact previous-tool restoration (legacy QAction
+IDs are deliberately not treated as tool enums), synthetic pen release,
+transient dashed closure feedback, full creation labels and native overflow.
+Captures include 1440/1224/1024 logical widths and are exercised at 100% and
+150% display scales. Menus are actual Qt widgets composed at their declared
+viewport anchors because the offscreen platform lacks an OS compositor.
+This remains synthetic isolated testing, not physical tablet-driver coverage.
+
+### Native-window mouse-release regression
+
+`lasso_window_events_native.cpp` must also run via the full-client runner,
+with `-TestSource lasso_window_events_native.cpp -TestName lasso-window`.
+It delivers the full mouse stream to the real `QWidgetWindow` handle, allowing
+Qt to route it to the viewport. The older viewport-only fixture skipped this
+transport layer and therefore missed a confirmed release-discard bug.
+
+Before the fix this route shows a lasso preview but produces zero content and
+zero history entries on release. After the fix it verifies one SVG, one undo
+step, visibly shaded center pixels, no remaining preview, and one-step undo.
+Both 100% and 150% display scales are checked. This exercises actual Qt window
+dispatch with synthetic events on offscreen; it is not physical SendInput or
+a claim of Windows/tablet hardware coverage.
+
+### Point-by-point polygon shading
+
+`polygon_shade_native.cpp` uses the full-client runner with
+`-TestSource polygon_shade_native.cpp -TestName polygon-shade`, a separate
+`-BuildDir` and `OPENBOARD_FILL_TEST_OUTPUT`. Rebuild client objects first.
+The matrix in workspace `diagnostics/openboard-polygon-shade-20261110`
+runs at 100% and 150% display scales with isolated profiles.
+
+The 58 assertions per scale cover real QWidgetWindow mouse dispatch to the
+viewport, intermediate releases, fixed vertices versus hover feedback,
+start-point snapping at 50/100/200% zoom and distant pan, double-click,
+right-click and Enter completion, Backspace, pending Ctrl+Z and the actual
+Undo control, draft/idle Escape, degenerate geometry, one-object undo/redo,
+SVG save/reopen and explicit mode preference. Synthetic tablet taps must
+not leak handwriting. Transient vertices and edges must not appear in
+Podcast/NonScreen renders. Narrow 1224/1024 layouts and the three-mode menu
+are captured alongside draft, closure-cue and committed states at 1440.
+The existing lasso-window regression remains required: dispatching only to
+the viewport would miss the previously confirmed QWindow release bug.
+These are synthetic offscreen Qt checks, not physical mouse/tablet or
+long-recording verification. No microphone or camera is opened.
+
+### Desktop recording icon cue
+
+`desktop_record_icon_native.cpp` uses the full-client runner with
+`-TestSource desktop_record_icon_native.cpp -TestName desktop-record-icon`.
+Workspace `diagnostics/openboard-desktop-record-icon-20261110/run-matrix.cmd`
+checks 100% and 150% display scales in isolated offscreen profiles.
+
+The 58 assertions per scale verify red/muted recording-dot rendering at
+16/24/32/48 sizes, DPR 1/2, Normal/Active/Disabled and Off/On states; the actual
+Desktop QAction and visible toolbar button; unchanged generic monitor and
+main recording icons; and unchanged action label, tooltip, check/enabled
+state and document history when icons are refreshed. Full-client 1440/2325
+renders and actual button grabs are saved with a separately declared icon-state
+plate. These tests never trigger Desktop or start recording, microphone or
+camera. This is a static functionality cue, not a live recording indicator.
+
+### Vertical toolbar overflow
+
+`toolbar_overflow_native.cpp` uses the full-client runner with
+`-TestSource toolbar_overflow_native.cpp -TestName toolbar-overflow`.
+Workspace `diagnostics/openboard-overflow-list-20261110/run-matrix.cmd` checks
+100% and 150% scales. The real More extension opens a vertical menu without
+changing toolbar height or canvas geometry. Coverage includes real window
+mouse dispatch, Enter/Space/Down/Escape, narrow/wide resize, full labels,
+original ordering, visible/disabled/check state, single original-action
+invocation, existing submenus, compound button proxies and two-way slider
+forwarding. The original QWidgetAction widgets stay on the toolbar. Shortcut
+text is displayed without registering a duplicate shortcut.
+
+### Center-radius circles and straight-line endpoints
+
+`circle_line_native.cpp` uses the full-client runner with
+`-TestSource circle_line_native.cpp -TestName circle-line`.
+Workspace `diagnostics/openboard-circle-line-20261110/run-matrix.cmd` checks
+100% and 150% scales. Circle previews and commits keep the press point as the
+center and use pointer distance as radius, including horizontal/vertical
+drags. Ellipse remains a separate bounding-box geometry.
+
+Straight lines use two endpoint handles rather than an image-style rectangle.
+Coverage includes real window dragging, a fixed opposite end, preserved
+transverse width, one-step undo/redo, zoom/pan, transformed parent math,
+keyboard nudging, Shift snapping, Escape cancellation, no-op/coincident input,
+lock, numeric endpoint coordinates, copy and actual SVG save/reopen.
+Parent-transform checks use a selectable child of a plain transform holder;
+they do not claim editing an individual member while a whole group is selected.
+Legacy equal-width collinear nominal lines are recognized conservatively;
+non-collinear handwriting is not. Controls are excluded from Podcast/NonScreen
+renders. This does not start or validate an encoded recording.
+
+### Default borderless whiteboard
+
+`page_default_native.cpp` uses the full-client runner with
+`-TestSource page_default_native.cpp -TestName page-default`.
+Set `OPENBOARD_PAGE_DEFAULT_CASE` to `fresh`, `upgrade`, `remember-wide` or
+`remember-regular`; workspace `diagnostics/openboard-default-page-20261110/run-tests.cmd`
+runs all four with separate generated profiles. The fixture seeds settings
+only inside the runner's exact isolated profile, before creating the client.
+It verifies one-time migration, later explicit preferences, actual page-menu
+state, new documents/pages, page-mode undo/redo, per-page SVG restoration,
+legacy SVG without a mode attribute and the real PDF import adaptor with a
+synthetic one-page PDF. Existing documents are never batch-migrated. New blank
+pages default to borderless, while imported PDF/PPT paper formats remain fixed.
+
+### Shape hover and thin-geometry selection
+
+`shape_hover_native.cpp` uses the full-client runner with
+`-TestSource shape_hover_native.cpp -TestName shape-hover`.
+Workspace `diagnostics/openboard-shape-hover-20261110/run-matrix.cmd` checks
+100% and 150% display scaling with actual QWidgetWindow mouse dispatch.
+Selector hover and fallback clicking share a six-logical-pixel viewport probe;
+the stored shape and its precise scene silhouette remain unchanged.
+The suite checks lines, circles and hollow non-line outlines at 50/100/200%
+view zoom with distant pan, single-pixel movement, near-versus-far targets,
+selection and drag/undo/redo, lock, Ctrl selection, foreground-picture occlusion,
+canvas-to-toolbar cursor ownership and drawing-tool cursors. Endpoint cross
+cursors remain specific, while selected shape bodies use the pointing hand.
+Output renders are compared before/after hover to catch visible side effects.
+
+Widget grabs omit cursors. These QA PNGs explicitly composite the real Windows
+hand/cross cursor bitmap at the synthetic event position only after checking
+the actual Qt cursor enum. They are cursor-composited offscreen client renders,
+not OS screenshots or physical mouse/tablet evidence. No recording, microphone,
+camera, installed profile or real clipboard is used. The small entry-handler
+unit adapter leaves this full hit-test to the complete-client suite.
+
+### Release notes and feedback routing
+
+`release_hints_native.cpp` checks the actual rebuilt client version, the
+upgrade-only forced display with recurring hints disabled, persisted seen
+version, exact title/version/feedback URL and preserved Yach card. Generate
+`tests/input/build/release200-hints/release_hints_native.moc` with the matching
+Qt `moc` before selecting this fixture in the full-client runner. Its QObject
+receiver intercepts HTTPS/Yach desktop-service requests, so no browser or
+external form is opened. The custom-protocol card is clicked through real
+renderer input, because a script-only click lacks Chromium's user gesture.

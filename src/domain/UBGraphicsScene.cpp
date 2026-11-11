@@ -1012,6 +1012,9 @@ bool UBGraphicsScene::inputDeviceRelease(int tool, Qt::KeyboardModifiers modifie
         if(mArcPolygonItem){
 
             UBGraphicsStrokesGroup* pStrokes = new UBGraphicsStrokesGroup();
+            if (currentTool == UBStylusTool::Line
+                    && dc->lineGeometryMode() == UBDrawingController::StraightLineGeometry)
+                pStrokes->setEditableLine(mConfiguredStraightLine);
 
             // Add the arc
             mAddedItems.remove(mArcPolygonItem);
@@ -1485,7 +1488,14 @@ void UBGraphicsScene::drawConfiguredLineTo(const QPointF& endPoint, qreal width,
 
     if (geometry == UBDrawingController::StraightLineGeometry)
     {
+        mConfiguredStraightLine = QLineF(mPreviousPoint, endPoint);
         shapeSegments << QLineF(mPreviousPoint, endPoint);
+    }
+    else if (geometry == UBDrawingController::CircleGeometry)
+    {
+        const qreal radius = QLineF(mPreviousPoint, endPoint).length();
+        if (radius > 0.01)
+            closedPolygon = ellipsePolygon(mPreviousPoint, radius, radius, 96);
     }
     else if (geometry != UBDrawingController::PolygonGeometry)
     {
@@ -1514,7 +1524,7 @@ void UBGraphicsScene::drawConfiguredLineTo(const QPointF& endPoint, qreal width,
                 closedPolygon << normalized.topLeft() << normalized.topRight()
                               << normalized.bottomRight() << normalized.bottomLeft();
             }
-            else if (geometry == UBDrawingController::CircleGeometry)
+            else if (geometry == UBDrawingController::EllipseGeometry)
             {
                 const QPointF center = normalized.center();
                 const qreal radiusX = normalized.width() / 2.0;

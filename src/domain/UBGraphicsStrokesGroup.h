@@ -32,6 +32,7 @@
 
 #include <QGraphicsItemGroup>
 #include <QGraphicsSceneMouseEvent>
+#include <QLineF>
 
 #include "core/UB.h"
 #include "UBItem.h"
@@ -57,8 +58,14 @@ public:
     virtual void setUuid(const QUuid &pUuid);
     void setColor(const QColor &color, colorType pColorType = currentColor);
     QColor color(colorType pColorType = currentColor) const;
+    void setEditableLine(const QLineF& line);
+    bool hasEditableLine();
+    QLineF editableLine() const { return mEditableLine; }
 
 protected:
+
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
     virtual QPainterPath shape () const;
 
@@ -71,6 +78,7 @@ protected:
     // Graphical display of stroke Z-level
     bool debugTextEnabled;
     QGraphicsSimpleTextItem * mDebugText;
+    QLineF mEditableLine;
 };
 
 #endif // UBGRAPHICSSTROKESGROUP_H

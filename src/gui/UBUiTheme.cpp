@@ -6,6 +6,15 @@
 #include <QPainter>
 #include <QSvgRenderer>
 #include <QWidget>
+#include <QToolBar>
+#include <QToolButton>
+#include <QMenu>
+#include <QWidgetAction>
+#include <QPointer>
+#include <QKeyEvent>
+#include <QMouseEvent>
+#include <QHBoxLayout>
+#include "UBToolbarButtonGroup.h"
 
 namespace UBUiTheme
 {
@@ -17,6 +26,147 @@ QColor selected() { return QColor("#eaf1ff"); }
 
 namespace
 {
+// Replace only the toolbar disclosure's expansion path. Forward existing
+// actions/menus, and never move a toolbar QWidgetAction into the popup.
+class BoardOverflowMenu final : public QObject
+{
+public:
+    BoardOverflowMenu(QToolBar* toolbar,QToolButton* extension)
+        : QObject(toolbar),mToolbar(toolbar),mExtension(extension),mMenu(new QMenu(toolbar))
+    {
+        setObjectName(QStringLiteral("ubBoardOverflowController"));
+        mMenu->setObjectName(QStringLiteral("ubBoardOverflowMenu"));
+        mMenu->setStyleSheet(QStringLiteral(
+            "QMenu{background:white;color:#202936;border:1px solid #dbe2eb;border-radius:9px;padding:6px;"
+            "font-family:'Microsoft YaHei UI';font-size:13px;menu-scrollable:1;}"
+            "QMenu::item{padding:9px 24px 9px 12px;min-width:136px;border-radius:5px;}"
+            "QMenu::item:selected{background:#eaf1ff;color:#1d4ed8;}"
+            "QMenu::item:disabled{color:#94a3b8;}"
+            "QMenu::separator{height:1px;background:#dbe2eb;margin:5px 6px;}"));
+        // QMainWindow's native extension otherwise toggles a second toolbar
+        // row. Disconnect only signals to that layout, not the tool actions.
+        QObject::disconnect(extension,nullptr,toolbar->layout(),nullptr);
+        extension->setCheckable(false);
+        extension->setMenu(mMenu);
+        extension->setPopupMode(QToolButton::InstantPopup);
+        extension->setFocusPolicy(Qt::StrongFocus);
+        connect(extension,&QToolButton::clicked,this,[this]{show();});
+        connect(mMenu,&QMenu::aboutToShow,this,[this]{if(!mPrepared)populate();mPrepared=false;});
+        extension->installEventFilter(this);
+        toolbar->installEventFilter(this);
+    }
+private:
+    QString actionLabel(QAction* action) const
+    {
+        const QString text=action->text();
+        const QString full=action->property("ubToolbarFullText").toString();
+        return !full.isEmpty()&&(text.endsWith("...")||text.endsWith(QChar(0x2026)))?full:text;
+    }
+    void addAction(QAction* original)
+    {
+        auto* row=new QAction(mMenu);
+        row->setProperty("ubOverflowSourceAction",QVariant::fromValue(static_cast<QObject*>(original)));
+        const auto refresh=[this,original,row]{
+            QString text=actionLabel(original);
+            if(!original->shortcut().isEmpty())text+=QLatin1Char('\t')+original->shortcut().toString(QKeySequence::NativeText);
+            row->setText(text);row->setIcon(original->icon());row->setToolTip(original->toolTip());
+            row->setEnabled(original->isEnabled());row->setVisible(original->isVisible());
+            row->setCheckable(original->isCheckable());row->setChecked(original->isChecked());
+        };
+        refresh();connect(original,&QAction::changed,row,refresh);
+        connect(original,&QObject::destroyed,row,&QObject::deleteLater);
+        // Display shortcut text only: the original QAction continues to own
+        // the shortcut, avoiding duplicate/ambiguous window accelerators.
+        connect(row,&QAction::triggered,original,[original]{original->trigger();});
+        mMenu->addAction(row);
+    }
+    void addButton(QToolButton* button)
+    {
+        QString label=button->property("compactColorChoice").toBool()?button->toolTip():button->text();
+        if(auto* action=button->defaultAction())if(label.endsWith("...")||label.endsWith(QChar(0x2026)))label=actionLabel(action);
+        if(label.isEmpty())label=button->toolTip();
+        if(label.isEmpty())return;
+        auto* row=new QAction(button->icon(),label,mMenu);
+        row->setEnabled(button->isEnabled());row->setToolTip(button->toolTip());
+        row->setCheckable(button->isCheckable());row->setChecked(button->isChecked());
+        if(button->menu())row->setMenu(button->menu());
+        else connect(row,&QAction::triggered,button,[button]{button->click();});
+        mMenu->addAction(row);
+    }
+    void addWidget(QWidget* widget)
+    {
+        // Compound property widgets retain their real button/action wiring.
+        // A second view of a slider forwards to the original; it is never
+        // reparented or replaced, so returning to a wide toolbar stays safe.
+        for(auto* button:widget->findChildren<QToolButton*>())
+            if(!button->isHidden()&&(!button->defaultAction()||button->defaultAction()->isVisible()))addButton(button);
+        for(auto* original:widget->findChildren<QSlider*>()){
+            if(original->isHidden())continue;
+            auto* action=new QWidgetAction(mMenu);auto* row=new QWidget;
+            auto* layout=new QHBoxLayout(row);layout->setContentsMargins(12,8,12,8);
+            const auto* caption=widget->findChild<QLabel*>(QStringLiteral("ubToolbarGroupCaption"));
+            auto* label=new QLabel(caption?caption->text():original->toolTip(),row);
+            label->setStyleSheet(QStringLiteral("color:#202936;background:white;border:0;"));
+            auto* slider=new QSlider(Qt::Horizontal,row);
+            slider->setObjectName(QStringLiteral("ubOverflowSlider"));
+            slider->setRange(original->minimum(),original->maximum());
+            slider->setSingleStep(original->singleStep());slider->setPageStep(original->pageStep());
+            slider->setValue(original->value());slider->setMinimumWidth(100);slider->setStyleSheet(original->styleSheet());
+            slider->setEnabled(original->isEnabled());slider->setAccessibleName(label->text());
+            connect(slider,&QSlider::valueChanged,original,&QSlider::setValue);
+            connect(original,&QSlider::valueChanged,slider,&QSlider::setValue);
+            layout->addWidget(label);layout->addWidget(slider);row->setFocusProxy(slider);
+            action->setDefaultWidget(row);mMenu->addAction(action);
+        }
+    }
+    void populate()
+    {
+        mMenu->clear();bool separator=false;
+        for(auto* action:mToolbar->actions()){
+            if(!action->isVisible())continue;
+            if(action->isSeparator()){separator=!mMenu->isEmpty();continue;}
+            auto* widget=mToolbar->widgetForAction(action);
+            if(!widget||widget->isVisible()||widget->objectName()==QStringLiteral("ubBoardToolbarSpacer"))continue;
+            if(separator&&!mMenu->isEmpty()){mMenu->addSeparator();separator=false;}
+            if(auto* button=qobject_cast<QToolButton*>(widget)){
+                if(button->menu()||qobject_cast<QWidgetAction*>(action))addButton(button);else addAction(action);
+            }else addWidget(widget);
+        }
+        while(!mMenu->actions().isEmpty()&&mMenu->actions().last()->isSeparator()){
+            auto* separator=mMenu->actions().last();mMenu->removeAction(separator);delete separator;
+        }
+    }
+    void show()
+    {
+        if(!mToolbar||!mExtension||!mExtension->isVisible()||mMenu->isVisible())return;
+        populate();if(mMenu->isEmpty())return;
+        mPrepared=true;mExtension->setFocus(Qt::PopupFocusReason);
+        const auto size=mMenu->sizeHint();
+        mMenu->popup(mExtension->mapToGlobal(QPoint(mExtension->width()-size.width(),mExtension->height())));
+        for(auto* action:mMenu->actions())if(action->isEnabled()&&!action->isSeparator()){mMenu->setActiveAction(action);break;}
+    }
+    bool eventFilter(QObject* watched,QEvent* event) override
+    {
+        if(watched==mToolbar&&(event->type()==QEvent::Resize||event->type()==QEvent::Hide))mMenu->hide();
+        if(watched!=mExtension)return false;
+        if(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseButtonRelease||event->type()==QEvent::MouseButtonDblClick){
+            if(static_cast<QMouseEvent*>(event)->button()!=Qt::LeftButton)return false;
+            if(event->type()==QEvent::MouseButtonPress)show();event->accept();return true;
+        }
+        if(event->type()==QEvent::KeyPress||event->type()==QEvent::KeyRelease){
+            const int key=static_cast<QKeyEvent*>(event)->key();
+            if(key==Qt::Key_Space||key==Qt::Key_Return||key==Qt::Key_Enter||key==Qt::Key_Down){
+                if(event->type()==QEvent::KeyPress)show();event->accept();return true;
+            }
+        }
+        return false;
+    }
+    QPointer<QToolBar> mToolbar;
+    QPointer<QToolButton> mExtension;
+    QMenu* mMenu;
+    bool mPrepared=false;
+};
+
 QString drawing(const QString& name)
 {
     // The same 24px / 1.7px line family as the approved local preview.
@@ -36,6 +186,7 @@ QString drawing(const QString& name)
         {"aligncenter", R"(<path d="M3 4h18M6 9h12M3 14h18M6 19h12"/>)"},
         {"alignright", R"(<path d="M3 4h18M9 9h12M3 14h18M9 19h12"/>)"},
         {"shapes", R"(<path d="m7 3 5 8H2l5-8Z"/><rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17" cy="17" r="4"/>)"},
+        {"fill", R"(<path d="m4 10 7-7 9 9-7 7-9-9Zm0 0h16M8 2l5 5M20 15s-2 3-2 4a2 2 0 0 0 4 0c0-1-2-4-2-4Z"/><path d="M6 12h11l-4 4-7-4Z" fill="%2"/>)"},
         {"home", R"(<path d="m3 10 9-7 9 7M5 9v12h14V9M10 21v-7h4v7"/>)"},
         {"newdoc", R"(<path d="M13 2H5v20h14V8l-6-6Zm0 0v6h6M8 15h8M12 11v8"/>)"},
         {"page", R"(<rect x="3" y="4" width="17" height="14" rx="2"/><path d="M17 14v8M13 18h8"/>)"},
@@ -84,6 +235,9 @@ QString drawing(const QString& name)
         {"more", R"(<circle cx="4" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="20" cy="12" r="1"/>)"}
         ,{"workbench", R"(<path d="M13 3H3v18h18V11M3 9h10M9 9v12M15 3h6v6m0-6-7 7"/>)"}
     };
+    if (name == "monitor-record")
+        return drawings.value("monitor") + QStringLiteral(
+            "<circle cx=\"17\" cy=\"8\" r=\"2.75\" fill=\"%3\" stroke=\"none\"/>");
     return drawings.value(name);
 }
 }
@@ -115,6 +269,7 @@ QIcon icon(const QString& name, const QColor& accent)
                 "viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"%1\" "
                 "stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">")
                 .arg(stroke.name()) + QString(body).replace("%1", stroke.name()).replace("%2", tip.name())
+                    .replace("%3", (mode == QIcon::Disabled ? stroke : QColor("#dc3545")).name())
                 + QStringLiteral("</svg>");
             QSvgRenderer renderer(svg.toUtf8());
             for (int size : {24, 32, 48})
@@ -146,7 +301,8 @@ void applyActionIcons(QWidget* root)
         {"actionBack", "back"}, {"actionForward", "next"},
         {"actionErase", "clear"}, {"actionClearPage", "clear"},
         {"actionPodcast", "record"}, {"actionBoard", "pages"},
-        {"actionDesktop", "monitor"}, {"actionDocument", "folder"},
+        // Static desktop-recording affordance; not a live recording indicator.
+        {"actionDesktop", "monitor-record"}, {"actionDocument", "folder"},
         {"actionMenu", "settings"}, {"actionPreferences", "settings"},
         {"actionTeachingWorkbench", "workbench"},
         {"actionImport", "import"}, {"actionImportPage", "import"},
@@ -166,5 +322,60 @@ void applyActionIcons(QWidget* root)
         const auto match = actions.constFind(action->objectName());
         if (match != actions.constEnd()) action->setIcon(icon(match.value()));
     }
+}
+
+void normalizeBoardToolbar(QToolBar* toolbar, bool displayText)
+{
+    // Presentation only. Keep colour swatches and sliders as property controls,
+    // but align every command to one icon/text metric and one native hit area.
+    QFont font(QStringLiteral("Microsoft YaHei UI")); font.setPixelSize(11);
+    toolbar->setFont(font); toolbar->setIconSize(QSize(24,24));
+    const QFontMetrics metrics(font);
+    if(!toolbar->findChild<QObject*>(QStringLiteral("ubBoardOverflowController"),Qt::FindDirectChildrenOnly))
+        if(auto* extension=toolbar->findChild<QToolButton*>(QStringLiteral("qt_toolbar_ext_button")))new BoardOverflowMenu(toolbar,extension);
+    const QString style=QStringLiteral(
+        "QToolButton{font-family:'Microsoft YaHei UI';font-size:11px;font-weight:400;color:#526174;"
+        "background:transparent;border:1px solid transparent;border-radius:9px;padding:3px 4px;margin:0;}"
+        "QToolButton:hover{background:#f5f7fa;}"
+        "QToolButton:checked,QToolButton:pressed{color:#1d4ed8;background:#eaf1ff;border-color:#9cbbfb;}"
+        "QToolButton:disabled{color:#94a3b8;}QToolButton:focus{border-color:#2563eb;}"
+        "QToolButton::menu-indicator{image:url(:/images/down_arrow.png);width:8px;height:8px;"
+        "subcontrol-origin:padding;subcontrol-position:bottom right;right:1px;bottom:8px;}"
+        "QToolButton::menu-button{background:#ffffff;border:0;border-left:1px solid #dbe2eb;width:14px;}"
+        "QToolButton::menu-button:hover,QToolButton::menu-button:pressed{background:#eaf1ff;}"
+        "QToolButton::menu-arrow{image:url(:/images/down_arrow.png);width:8px;height:8px;}");
+    for(auto* button:toolbar->findChildren<QToolButton*>()) {
+        if(button->objectName()=="qt_toolbar_ext_button") {
+            // Keep the reserved native disclosure extent; its adapter opens
+            // a vertical action list instead of growing the toolbar.
+            button->setText(QStringLiteral("更\n多"));
+            button->setAccessibleName(QStringLiteral("更多工具"));
+            button->setToolTip(QStringLiteral("更多工具和设置"));
+            button->setIcon(QIcon()); button->setArrowType(Qt::NoArrow);
+            button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+            // Qt reserves its native 16px extension extent. Respect that
+            // allocation so a wider minimum cannot push the label offscreen.
+            button->setFont(font);button->setFixedSize(16,displayText?58:42);
+            button->setStyleSheet(QStringLiteral(
+                "QToolButton{font-family:'Microsoft YaHei UI';font-size:11px;color:#526174;"
+                "background:#f5f7fa;border:1px solid #dbe2eb;border-radius:5px;padding:0;margin:0;}"
+                "QToolButton:hover,QToolButton:pressed{background:#eaf1ff;color:#1d4ed8;}"
+                "QToolButton::menu-indicator{image:none;width:0;}"));
+            continue;
+        }
+        if(button->property("compactColorChoice").toBool())continue;
+        bool menuChild=false;
+        for(auto* parent=button->parentWidget();parent&&parent!=toolbar;parent=parent->parentWidget())
+            if(qobject_cast<QMenu*>(parent)){menuChild=true;break;}
+        if(menuChild)continue;
+        button->setProperty("boardToolbarCommand",true);
+        button->setStyleSheet(style);button->setFont(font);button->setIconSize(QSize(24,24));
+        button->setToolButtonStyle(displayText?Qt::ToolButtonTextUnderIcon:Qt::ToolButtonIconOnly);
+        const int labelWidth=displayText?qMax(metrics.horizontalAdvance(button->text().remove('&')),
+            metrics.horizontalAdvance(button->property("toolbarLabelReserve").toString()))+16:0;
+        const int menuWidth=button->menu()?(button->property("labelSplitMenu").toBool()?12:button->popupMode()==QToolButton::MenuButtonPopup?16:8):0;
+        button->setFixedSize(qMax(44,labelWidth)+menuWidth,displayText?58:42);
+    }
+    for(auto* group:toolbar->findChildren<UBToolbarButtonGroup*>())group->setToolbarMetrics(displayText);
 }
 }

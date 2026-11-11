@@ -1,6 +1,6 @@
 # OpenBoard 车厘子定制版
 
-Version 1.9.7 is based on OpenBoard 1.7.7, with Windows-focused changes for
+Version 2.0.0 is based on OpenBoard 1.7.7, with Windows-focused changes for
 classroom screen recording and whiteboard stability:
 
 1. Board mode opens in a normal resizable window on Windows.
@@ -56,6 +56,18 @@ classroom screen recording and whiteboard stability:
     resolves disappeared saved audio devices to Default without enabling
     disabled audio sources; initialization failure is shown explicitly instead
     of looking like an unresponsive Record button. Capture/encoding core is unchanged.
+
+15. Version 2.0.0 consolidates toolbar, shape and selection improvements:
+    vertical overflow, pointer-anchored image paste, preset lasso/click/polygon
+    shading, center-radius circles and precise two-endpoint line editing.
+    A view-only pick tolerance and native hand make thin geometry selectable
+    without changing its rendered width or eraser/export shape.
+16. New blank documents initialize to borderless once on upgrade; later explicit
+    16:9/4:3 choices and existing page formats are preserved. The release-notes
+    title is “体验优化”, retaining the Yach contact and adding the requested
+    teaching-training feedback form, opened in the default browser.
+    Stable release distribution uses GitHub and the existing website mirror;
+    publishing does not replace the installed application on this computer.
 
 OpenBoard remains licensed under GPLv3 with its OpenSSL linking exception; see
 `LICENSE` and `COPYRIGHT`. FFmpeg is distributed separately under its own

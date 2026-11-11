@@ -430,6 +430,7 @@ class UBSettings : public QObject
         UBSetting* communityCredentialsPersistence;
 
         UBSetting* pageSize;
+        UBSetting* pageBorderless;
 
         UBSetting* KeyboardLocale;
         UBSetting* swapControlAndDisplayScreens;

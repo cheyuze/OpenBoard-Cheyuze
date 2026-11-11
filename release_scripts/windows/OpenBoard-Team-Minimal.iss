@@ -1,7 +1,17 @@
 #ifndef ProductRoot
 #define ProductRoot "..\..\build\win32\release\product"
 #endif
-#define ApplicationVersion GetStringFileInfo(ProductRoot + "\OpenBoard.exe", "ProductVersion")
+; The client has fixed VERSIONINFO but no VarFileInfo language translation
+; table, so a default-language string lookup can return an empty version.
+; Read the mandatory numeric resource instead and refuse unversioned builds.
+#define ApplicationVersionMajor 0
+#define ApplicationVersionMinor 0
+#define ApplicationVersionPatch 0
+#define ApplicationVersionBuild 0
+#if GetVersionComponents(ProductRoot + "\OpenBoard.exe", ApplicationVersionMajor, ApplicationVersionMinor, ApplicationVersionPatch, ApplicationVersionBuild) == ""
+  #error Unable to read the OpenBoard executable version
+#endif
+#define ApplicationVersion Str(ApplicationVersionMajor) + "." + Str(ApplicationVersionMinor) + "." + Str(ApplicationVersionPatch)
 
 [Setup]
 AppId={{D8C4AB4A-75D6-4EF4-B9AC-99A7D46316D4}
@@ -16,7 +26,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DefaultDirName={autopf}\OpenBoard 车厘子定制版
 DefaultGroupName=OpenBoard 车厘子定制版
 OutputDir=..\..\install\win32
-OutputBaseFilename=OpenBoard-cheyuze-1.9.7-x64
+OutputBaseFilename=OpenBoard-cheyuze-{#ApplicationVersion}-x64
 SetupIconFile=..\..\resources\win\OpenBoard.ico
 Compression=lzma2/ultra64
 SolidCompression=yes

@@ -3,6 +3,8 @@
 #include "UBGraphicsDelegateFrame.h"
 #include "UBGraphicsScene.h"
 #include "UBImageTransform.h"
+#include "UBGraphicsStrokesGroup.h"
+#include "UBLineTransform.h"
 #include "board/UBBoardController.h"
 #include "board/UBBoardView.h"
 #include "board/UBDrawingController.h"
@@ -28,6 +30,130 @@
 
 namespace
 {
+QLineF localLine(QGraphicsItem* item)
+{return static_cast<UBGraphicsStrokesGroup*>(item)->editableLine();}
+
+QLineF sceneLine(QGraphicsItem* item)
+{
+    const QLineF line=localLine(item);
+    return QLineF(item->mapToScene(line.p1()),item->mapToScene(line.p2()));
+}
+
+QTransform lineTransform(QGraphicsItem* item,const QLineF& target)
+{
+    const QTransform parentInverse=item->parentItem()?item->parentItem()->sceneTransform().inverted():QTransform();
+    const QTransform mapping=item->sceneTransform()*parentInverse;
+    const QLineF line=localLine(item);
+    const QLineF from(mapping.map(line.p1()),mapping.map(line.p2()));
+    const QLineF to(parentInverse.map(target.p1()),parentInverse.map(target.p2()));
+    // Keep position, transform origin and any separate rotation/scale intact.
+    const QTransform tail=item->transform().inverted()*mapping;
+    return mapping*UBLineTransform::between(from,to)*tail.inverted();
+}
+
+class LineFrame final : public UBGraphicsDelegateFrame
+{
+public:
+    explicit LineFrame(UBGraphicsPixmapItemDelegate* delegate)
+        : UBGraphicsDelegateFrame(delegate,{},1),mLineDelegate(delegate)
+    {
+        setObjectName(QStringLiteral("lineEndpointFrame"));
+        for(auto* child:childItems())child->hide();
+        resetTransform();setFlag(ItemIsSelectable,false);setFlag(ItemIsFocusable,true);setAcceptHoverEvents(true);
+        setToolTip(QStringLiteral("拖动两端圆点改变直线长短和方向；拖动线身移动。选中端点后可用方向键微调，Shift 为 10 像素。"));
+    }
+    void setAntiScale(qreal scale) override {mUnit=scale;}
+    void positionHandles() override
+    {
+        mLine=sceneLine(mLineDelegate->contentItem());
+        setRect(QRectF(mLine.p1(),mLine.p2()).normalized().adjusted(-12*mUnit,-12*mUnit,12*mUnit,12*mUnit));
+        setZValue(1010000);update();
+    }
+    QPainterPath shape() const override
+    {
+        QPainterPath path;path.moveTo(mLine.p1());path.lineTo(mLine.p2());
+        QPainterPathStroker stroker;stroker.setWidth(10*mUnit);auto result=stroker.createStroke(path);
+        if(!mLineDelegate->isLocked())for(auto point:{mLine.p1(),mLine.p2()})result.addEllipse(point,10*mUnit,10*mUnit);
+        return result;
+    }
+    void paint(QPainter* painter,const QStyleOptionGraphicsItem*,QWidget*) override
+    {
+        painter->save();painter->setRenderHint(QPainter::Antialiasing);
+        painter->setPen(QPen(UBUiTheme::blue(),mUnit,Qt::DashLine));painter->drawLine(mLine);
+        if(!mLineDelegate->isLocked()){
+            painter->setPen(QPen(UBUiTheme::blue(),1.5*mUnit));
+            for(int i=0;i<2;++i){painter->setBrush(mSelected==i?UBUiTheme::blue():QColor(Qt::white));painter->drawEllipse(i?mLine.p2():mLine.p1(),5*mUnit,5*mUnit);}
+        }
+        painter->restore();
+    }
+    void hoverMoveEvent(QGraphicsSceneHoverEvent* event) override
+    {setCursor(mLineDelegate->isLocked()?Qt::ArrowCursor:handle(event->scenePos())>=0?Qt::CrossCursor:Qt::PointingHandCursor);event->accept();}
+    void mousePressEvent(QGraphicsSceneMouseEvent* event) override
+    {
+        if(event->button()!=Qt::LeftButton){event->ignore();return;}
+        if(mLineDelegate->isLocked()){event->accept();return;}
+        auto* item=mLineDelegate->contentItem();mHandle=handle(event->scenePos());mSelected=mHandle;setFocus();
+        mInitial=item->transform();mInitialPos=item->pos();mInitialLine=sceneLine(item);mPress=event->scenePos();
+        mParentInverse=item->parentItem()?item->parentItem()->sceneTransform().inverted():QTransform();
+        mInitialMapping=item->sceneTransform()*mParentInverse;
+        mTailInverse=(mInitial.inverted()*mInitialMapping).inverted();
+        mDragging=true;mLineDelegate->startUndoStep();mLineDelegate->setInteractionActive(true);update();event->accept();
+    }
+    void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override
+    {
+        if(!mDragging||mLineDelegate->isLocked()){event->accept();return;}
+        if(QLineF(mPress,event->scenePos()).length()<.0001){event->accept();return;}
+        auto* item=mLineDelegate->contentItem();
+        if(mHandle<0)item->setPos(mInitialPos+mParentInverse.map(event->scenePos())-mParentInverse.map(mPress));
+        else{
+            const QPointF fixed=mHandle?mInitialLine.p1():mInitialLine.p2();
+            QLineF radius(fixed,event->scenePos());
+            if(radius.length()<2*mUnit){event->accept();return;}
+            if(event->modifiers().testFlag(Qt::ShiftModifier))radius.setAngle(qRound(radius.angle()/15)*15);
+            const QLineF target=mHandle?QLineF(fixed,radius.p2()):QLineF(radius.p2(),fixed);
+            const QLineF from(mParentInverse.map(mInitialLine.p1()),mParentInverse.map(mInitialLine.p2()));
+            const QLineF to(mParentInverse.map(target.p1()),mParentInverse.map(target.p2()));
+            item->setTransform(mInitialMapping*UBLineTransform::between(from,to)*mTailInverse);
+        }
+        mLineDelegate->positionHandles();event->accept();
+    }
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override
+    {
+        if(mDragging){mDragging=false;mLineDelegate->commitUndoStep();mLineDelegate->setInteractionActive(false);}
+        event->accept();
+    }
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent* event) override
+    {mLineDelegate->openMenu(event->screenPos());event->accept();}
+    void keyPressEvent(QKeyEvent* event) override
+    {
+        auto* item=mLineDelegate->contentItem();
+        if(event->key()==Qt::Key_Escape&&mDragging){
+            item->setTransform(mInitial);item->setPos(mInitialPos);mDragging=false;
+            mLineDelegate->commitUndoStep();mLineDelegate->setInteractionActive(false);event->accept();return;
+        }
+        if(mSelected>=0&&!mDragging&&!mLineDelegate->isLocked()&&!(event->modifiers()&(Qt::ControlModifier|Qt::AltModifier))){
+            QPointF offset;const qreal step=(event->modifiers().testFlag(Qt::ShiftModifier)?10:1)*mUnit;
+            if(event->key()==Qt::Key_Left)offset.setX(-step);else if(event->key()==Qt::Key_Right)offset.setX(step);
+            else if(event->key()==Qt::Key_Up)offset.setY(-step);else if(event->key()==Qt::Key_Down)offset.setY(step);
+            if(!offset.isNull()){
+                auto target=sceneLine(item);if(mSelected)target.setP2(target.p2()+offset);else target.setP1(target.p1()+offset);
+                if(target.length()>=2*mUnit){mLineDelegate->startUndoStep();item->setTransform(lineTransform(item,target));mLineDelegate->commitUndoStep();mLineDelegate->positionHandles();}
+                event->accept();return;
+            }
+        }
+        if(!mLineDelegate->keyPressEvent(event))QGraphicsRectItem::keyPressEvent(event);
+    }
+private:
+    int handle(const QPointF& point) const
+    {
+        const qreal first=QLineF(point,mLine.p1()).length(),second=QLineF(point,mLine.p2()).length();
+        return qMin(first,second)>10*mUnit?-1:first<=second?0:1;
+    }
+    UBGraphicsPixmapItemDelegate* mLineDelegate;
+    qreal mUnit=1;QLineF mLine,mInitialLine;QTransform mInitial,mParentInverse,mInitialMapping,mTailInverse;
+    QPointF mPress,mInitialPos;int mHandle=-1,mSelected=-1;bool mDragging=false;
+};
+
 // Separate from the legacy frame so text, video, widgets and group editing
 // keep their established behavior. Everything here remains a Control layer.
 class ImageFrame final : public UBGraphicsDelegateFrame
@@ -40,7 +166,7 @@ public:
         resetTransform();
         setFlag(QGraphicsItem::ItemIsSelectable, false);
         setAcceptHoverEvents(true);
-        setToolTip(QStringLiteral("拖动图片移动；四角等比缩放；按住 Alt 自由缩放；Shift 旋转以 15° 吸附"));
+        setToolTip(QStringLiteral("拖动%1移动；四角等比缩放；按住 Alt 自由缩放；Shift 旋转以 15° 吸附").arg(delegate->objectLabel()));
     }
 
     void setAntiScale(qreal scale) override { mUnit = scale; }
@@ -109,7 +235,8 @@ public:
     {
         const int tool = toolAt(event->scenePos());
         if (tool == 8) setCursor(Qt::OpenHandCursor);
-        else if (tool < 0) setCursor(mImageDelegate->isLocked() ? Qt::ArrowCursor : Qt::SizeAllCursor);
+        else if (tool < 0) setCursor(mImageDelegate->isLocked() ? Qt::ArrowCursor
+            : dynamic_cast<UBGraphicsStrokesGroup*>(mImageDelegate->contentItem()) ? Qt::PointingHandCursor : Qt::SizeAllCursor);
         else {
             const auto* item = mImageDelegate->delegated();
             const QRectF r = item->boundingRect();
@@ -204,10 +331,19 @@ private:
 };
 }
 
-UBGraphicsPixmapItemDelegate::UBGraphicsPixmapItemDelegate(UBGraphicsPixmapItem* item)
+UBGraphicsPixmapItemDelegate::UBGraphicsPixmapItemDelegate(QGraphicsItem* item, bool isShape)
     : UBGraphicsItemDelegate(item, nullptr, GF_COMMON | GF_FLIPPABLE_ALL_AXIS | GF_REVOLVABLE | GF_RESPECT_RATIO)
+    , mIsShape(isShape)
 {
 }
+
+QString UBGraphicsPixmapItemDelegate::objectLabel() const
+{
+    return isLine()?QStringLiteral("直线"):mIsShape ? QStringLiteral("图形") : QStringLiteral("图片");
+}
+
+bool UBGraphicsPixmapItemDelegate::isLine() const
+{auto* group=dynamic_cast<UBGraphicsStrokesGroup*>(mDelegated);return group&&group->hasEditableLine();}
 
 UBGraphicsPixmapItemDelegate::~UBGraphicsPixmapItemDelegate()
 {
@@ -222,26 +358,26 @@ UBGraphicsPixmapItemDelegate::~UBGraphicsPixmapItemDelegate()
 void UBGraphicsPixmapItemDelegate::createActions()
 {
     if (mGeometryAction) return;
-    mGeometryAction = new QAction(UBUiTheme::icon("size"), QStringLiteral("大小与旋转…"), this);
+    mGeometryAction = new QAction(UBUiTheme::icon("size"), isLine()?QStringLiteral("端点位置…"):QStringLiteral("大小与旋转…"), this);
     connect(mGeometryAction, &QAction::triggered, this, [this] { editGeometry(); });
     mRotateAction = new QAction(UBUiTheme::icon("rotate"), QStringLiteral("向右旋转 90°"), this);
     connect(mRotateAction, &QAction::triggered, this, [this] { rotate(90); });
-    mCopyAction = new QAction(UBUiTheme::icon("copy"), QStringLiteral("复制图片"), this);
+    mCopyAction = new QAction(UBUiTheme::icon("copy"), QStringLiteral("复制%1").arg(objectLabel()), this);
     connect(mCopyAction, &QAction::triggered, this, [this] { duplicate(); });
 }
 
 void UBGraphicsPixmapItemDelegate::createControls()
 {
     if (!mFrame) {
-        mFrame = new ImageFrame(this);
+        mFrame = isLine()?static_cast<UBGraphicsDelegateFrame*>(new LineFrame(this)):new ImageFrame(this);
         mFrame->hide();
     }
     createActions();
     if (!mImageToolbar) {
         auto* panel = new QWidget;
-        panel->setObjectName(QStringLiteral("imageContextToolbar"));
+        panel->setObjectName(mIsShape ? QStringLiteral("shapeContextToolbar") : QStringLiteral("imageContextToolbar"));
         panel->setStyleSheet(QStringLiteral(
-            "QWidget#imageContextToolbar {background:#ffffff; color:#202936; border:1px solid #dbe2eb; border-radius:10px;}"
+            "QWidget#imageContextToolbar, QWidget#shapeContextToolbar {background:#ffffff; color:#202936; border:1px solid #dbe2eb; border-radius:10px;}"
             "QLabel {border:0; color:#526174; background:transparent;}"
             "QToolButton {color:#202936; background:transparent; border:1px solid transparent; border-radius:7px; padding:0 7px;}"
             "QToolButton:hover, QToolButton:pressed {background:#eaf1ff; border-color:#b9cff6; color:#1d4ed8;}"
@@ -251,7 +387,7 @@ void UBGraphicsPixmapItemDelegate::createControls()
         auto* row = new QHBoxLayout(panel);
         row->setContentsMargins(6, 4, 6, 4);
         row->setSpacing(4);
-        auto* title = new QLabel(QStringLiteral("图片"), panel);
+        auto* title = new QLabel(objectLabel(), panel);
         row->addWidget(title);
         const auto addButton = [&](QAction* action, bool text) {
             auto* button = new QToolButton(panel);
@@ -266,8 +402,8 @@ void UBGraphicsPixmapItemDelegate::createControls()
             return button;
         };
         auto* sizeButton = addButton(mGeometryAction, true);
-        sizeButton->setText(QStringLiteral("尺寸"));
-        addButton(mRotateAction, false);
+        sizeButton->setText(isLine()?QStringLiteral("端点"):QStringLiteral("尺寸"));
+        if(!isLine())addButton(mRotateAction, false);
         addButton(mCopyAction, false);
         auto* more = new QToolButton(panel);
         more->setText(QStringLiteral("更多"));
@@ -276,7 +412,7 @@ void UBGraphicsPixmapItemDelegate::createControls()
         more->setIconSize(QSize(20, 20));
         more->setFixedSize(74, 44);
         more->setCursor(Qt::ArrowCursor);
-        more->setAccessibleName(QStringLiteral("图片更多操作"));
+        more->setAccessibleName(QStringLiteral("%1更多操作").arg(objectLabel()));
         connect(more, &QToolButton::clicked, this, [this, more] { openMenu(more->mapToGlobal(QPoint(0, more->height()))); });
         row->addWidget(more);
         panel->adjustSize();
@@ -409,6 +545,19 @@ bool UBGraphicsPixmapItemDelegate::keyPressEvent(QKeyEvent* event)
     return true;
 }
 
+QVariant UBGraphicsPixmapItemDelegate::itemChange(QGraphicsItem::GraphicsItemChange change, const QVariant& value)
+{
+    if (mIsShape && change == QGraphicsItem::ItemSelectedHasChanged) {
+        // As with pictures, only the controls rise above the canvas. Selecting
+        // a shape must not lift its fill above neighboring handwriting.
+        if (mDelegated->data(UBGraphicsItemData::ItemIsHiddenOnDisplay).toBool())
+            showHide(!value.toBool());
+        if (!value.toBool()) freeControls();
+        return value;
+    }
+    return UBGraphicsItemDelegate::itemChange(change, value);
+}
+
 void UBGraphicsPixmapItemDelegate::remove(bool canUndo)
 {
     freeControls();
@@ -436,7 +585,7 @@ void UBGraphicsPixmapItemDelegate::createMenu()
     mMenu = new QMenu(UBApplication::boardController->controlView());
     // The view can be destroyed before the cached scene/delegate at exit.
     connect(mMenu, &QObject::destroyed, this, [this] { mMenu = nullptr; });
-    mMenu->setObjectName(QStringLiteral("imageOperationsMenu"));
+    mMenu->setObjectName(mIsShape ? QStringLiteral("shapeOperationsMenu") : QStringLiteral("imageOperationsMenu"));
     mMenu->setStyleSheet(QStringLiteral(
         "QMenu {background:#ffffff; color:#202936; border:1px solid #dbe2eb; border-radius:9px; padding:6px;}"
         "QMenu::item {background:transparent; color:#202936; padding:9px 30px 9px 28px; border-radius:6px;}"
@@ -444,6 +593,7 @@ void UBGraphicsPixmapItemDelegate::createMenu()
         "QMenu::item:disabled {color:#a1adbd;}"
         "QMenu::separator {height:1px; background:#e5eaf1; margin:4px 8px;}"));
     mMenu->addAction(mGeometryAction);
+    if(!isLine()){
     auto* rotation = mMenu->addMenu(UBUiTheme::icon("rotate"), QStringLiteral("旋转与翻转"));
     rotation->addAction(mRotateAction);
     rotation->addAction(QStringLiteral("向左旋转 90°"), this, [this] { rotate(-90); });
@@ -453,12 +603,15 @@ void UBGraphicsPixmapItemDelegate::createMenu()
     rotation->addAction(UBUiTheme::icon("flip"), QStringLiteral("垂直翻转"), this, [this] {
         applyTransform(UBImageTransform::flipped(mDelegated->boundingRect(), mDelegated->transform(), false)); });
     rotation->addAction(QStringLiteral("恢复水平角度"), this, [this] { rotate(-UBImageTransform::angle(mDelegated->transform())); });
+    }
     auto* arrange = mMenu->addMenu(UBUiTheme::icon("layers"), QStringLiteral("排列图层"));
-    arrange->addAction(QStringLiteral("放到笔迹下方"), this, [this] {
-        if (auto scene = castUBGraphicsScene()) scene->arrangeImage(mDelegated, UBImageLayerPolicy::BelowInk); });
-    arrange->addAction(QStringLiteral("覆盖已有笔迹"), this, [this] {
-        if (auto scene = castUBGraphicsScene()) scene->arrangeImage(mDelegated, UBImageLayerPolicy::AboveInk); });
-    arrange->addSeparator();
+    if (!mIsShape) {
+        arrange->addAction(QStringLiteral("放到笔迹下方"), this, [this] {
+            if (auto scene = castUBGraphicsScene()) scene->arrangeImage(mDelegated, UBImageLayerPolicy::BelowInk); });
+        arrange->addAction(QStringLiteral("覆盖已有笔迹"), this, [this] {
+            if (auto scene = castUBGraphicsScene()) scene->arrangeImage(mDelegated, UBImageLayerPolicy::AboveInk); });
+        arrange->addSeparator();
+    }
     arrange->addAction(QStringLiteral("上移一层"), this, [this] { increaseZLevelUp(); });
     arrange->addAction(QStringLiteral("下移一层"), this, [this] { increaseZLevelDown(); });
     arrange->addSeparator();
@@ -471,14 +624,14 @@ void UBGraphicsPixmapItemDelegate::createMenu()
     mShowOnDisplayAction->setIcon(UBUiTheme::icon("eye"));
     if (mSetAsBackgroundAction) mSetAsBackgroundAction->setIcon(UBUiTheme::icon("picture"));
     mMenu->addSeparator();
-    mMenu->addAction(UBUiTheme::icon("trash"), QStringLiteral("删除图片"), this, [this] { remove(); });
+    mMenu->addAction(UBUiTheme::icon("trash"), QStringLiteral("删除%1").arg(objectLabel()), this, [this] { remove(); });
 }
 
 void UBGraphicsPixmapItemDelegate::openMenu(const QPoint& globalPosition)
 {
     createMenu();
     updateMenuActionState();
-    mLockAction->setText(isLocked() ? QStringLiteral("解除锁定") : QStringLiteral("锁定图片"));
+    mLockAction->setText(isLocked() ? QStringLiteral("解除锁定") : QStringLiteral("锁定%1").arg(objectLabel()));
     mGeometryAction->setEnabled(!isLocked());
     mRotateAction->setEnabled(!isLocked());
     for (QAction* action : mMenu->actions())
@@ -489,6 +642,24 @@ void UBGraphicsPixmapItemDelegate::openMenu(const QPoint& globalPosition)
 void UBGraphicsPixmapItemDelegate::editGeometry()
 {
     if (isLocked()) return;
+    if(isLine()){
+        const QLineF current=sceneLine(mDelegated);
+        QDialog dialog(UBApplication::boardController->controlView());dialog.setWindowTitle(QStringLiteral("直线端点位置"));
+        dialog.setStyleSheet(QStringLiteral("QDialog,QLabel{background:white;color:#202936;}QDoubleSpinBox,QPushButton{background:white;color:#202936;min-height:30px;}"));
+        auto* layout=new QVBoxLayout(&dialog);auto* form=new QFormLayout;layout->addLayout(form);
+        QDoubleSpinBox* values[4];const qreal coordinates[]{current.x1(),current.y1(),current.x2(),current.y2()};
+        const QStringList labels{QStringLiteral("端点1 X"),QStringLiteral("端点1 Y"),QStringLiteral("端点2 X"),QStringLiteral("端点2 Y")};
+        for(int i=0;i<4;++i){values[i]=new QDoubleSpinBox(&dialog);values[i]->setRange(-100000000,100000000);values[i]->setDecimals(2);values[i]->setValue(coordinates[i]);values[i]->setAccessibleName(labels[i]);form->addRow(labels[i],values[i]);}
+        auto* buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel,&dialog);layout->addWidget(buttons);
+        buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("应用"));buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+        connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+        if(dialog.exec()==QDialog::Accepted){
+            const QLineF target(values[0]->value(),values[1]->value(),values[2]->value(),values[3]->value());
+            if(target.length()>.01)applyTransform(lineTransform(mDelegated,target));
+            else UBApplication::showMessage(QStringLiteral("两个端点不能重合，请重新设置。"));
+        }
+        return;
+    }
     const QRectF bounds = mDelegated->boundingRect();
     if (bounds.isEmpty()) return;
     const QTransform initial = mDelegated->transform();
@@ -496,7 +667,7 @@ void UBGraphicsPixmapItemDelegate::editGeometry()
     const qreal oldHeight = QLineF(initial.map(bounds.topLeft()), initial.map(bounds.bottomLeft())).length();
     if (oldWidth <= 0 || oldHeight <= 0) return;
     QDialog dialog(UBApplication::boardController->controlView());
-    dialog.setWindowTitle(QStringLiteral("图片大小与旋转"));
+    dialog.setWindowTitle(QStringLiteral("%1大小与旋转").arg(objectLabel()));
     dialog.setMinimumWidth(340);
     dialog.setStyleSheet(QStringLiteral(
         "QDialog {background:#ffffff; color:#202936;}"
@@ -521,9 +692,9 @@ void UBGraphicsPixmapItemDelegate::editGeometry()
     auto* angle = spin(0, QStringLiteral("°"));
     angle->setRange(-360, 360);
     angle->setValue(UBImageTransform::angle(initial));
-    width->setAccessibleName(QStringLiteral("图片宽度"));
-    height->setAccessibleName(QStringLiteral("图片高度"));
-    angle->setAccessibleName(QStringLiteral("图片旋转角度"));
+    width->setAccessibleName(QStringLiteral("%1宽度").arg(objectLabel()));
+    height->setAccessibleName(QStringLiteral("%1高度").arg(objectLabel()));
+    angle->setAccessibleName(QStringLiteral("%1旋转角度").arg(objectLabel()));
     form->addRow(QStringLiteral("宽度"), width);
     form->addRow(QStringLiteral("高度"), height);
     form->addRow(QStringLiteral("旋转角度"), angle);

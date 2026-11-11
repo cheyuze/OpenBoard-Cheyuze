@@ -60,6 +60,7 @@ class UBToolbarButtonGroup : public QWidget
         int currentIndex() const;
         void setLabel(const QString& label);
         void setPreviewType(PreviewType type);
+        void setToolbarMetrics(bool displayText);
 
     protected:
         void paintEvent(QPaintEvent *);

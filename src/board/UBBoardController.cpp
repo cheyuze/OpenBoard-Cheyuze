@@ -38,6 +38,7 @@
 
 #include "board/UBBoardPaletteManager.h"
 #include "board/UBBoardView.h"
+#include "board/UBRegionFillController.h"
 #include "board/UBDrawingController.h"
 #include "board/UBFeaturesController.h"
 
@@ -268,12 +269,13 @@ namespace
 
     QIcon lineOptionIcon(int option)
     {
-        QPixmap pixmap(24, 24);
+        QPixmap pixmap(48, 48);
+        pixmap.setDevicePixelRatio(2);
         pixmap.fill(Qt::transparent);
 
         QPainter painter(&pixmap);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        QPen pen(QColor(QStringLiteral("#1E293B")), 2.0,
+        QPen pen(UBUiTheme::muted(), 1.7,
                 option == 4 ? Qt::DashLine : Qt::SolidLine,
                 Qt::RoundCap, Qt::RoundJoin);
         painter.setPen(pen);
@@ -282,14 +284,17 @@ namespace
         switch (option)
         {
         case 1:
-            painter.drawRoundedRect(QRectF(4.5, 4.5, 15, 15), 1.5, 1.5);
+            painter.drawRoundedRect(QRectF(3.5, 3.5, 17, 17), 1.5, 1.5);
             break;
         case 2:
-            painter.drawEllipse(QRectF(4.5, 4.5, 15, 15));
+            painter.drawEllipse(QRectF(2.5, 6, 19, 12));
+            break;
+        case 24:
+            painter.drawEllipse(QRectF(3.5, 3.5, 17, 17));
             break;
         case 5:
             painter.drawPolygon(QPolygonF()
-                    << QPointF(12, 4) << QPointF(20, 20) << QPointF(4, 20));
+                    << QPointF(12, 3) << QPointF(21, 21) << QPointF(3, 21));
             break;
         case 6:
             painter.drawLine(QPointF(4, 12), QPointF(20, 12));
@@ -440,15 +445,16 @@ namespace
 
     QIcon fillOptionIcon(bool enabled, const QColor& color, int opacity)
     {
-        QPixmap pixmap(24, 24);
+        QPixmap pixmap(48, 48);
+        pixmap.setDevicePixelRatio(2);
         pixmap.fill(Qt::transparent);
         QPainter painter(&pixmap);
         painter.setRenderHint(QPainter::Antialiasing, true);
         QColor visibleColor = color;
         visibleColor.setAlpha(qRound(255.0 * qBound(0, opacity, 100) / 100.0));
-        painter.setPen(QPen(QColor(QStringLiteral("#64748B")), 1.6));
+        painter.setPen(QPen(UBUiTheme::muted(), 1.7));
         painter.setBrush(enabled ? QBrush(visibleColor) : Qt::NoBrush);
-        painter.drawRoundedRect(QRectF(4, 4, 16, 16), 3, 3);
+        painter.drawRoundedRect(QRectF(3.5, 3.5, 17, 17), 2, 2);
         if (!enabled)
         {
             painter.setPen(QPen(QColor(QStringLiteral("#EF4444")), 1.8));
@@ -1235,6 +1241,8 @@ void UBBoardController::setupToolbar()
         button->setCursor(Qt::PointingHandCursor);
         primaryToolsLayout->addWidget(button, 0, Qt::AlignVCenter);
     }
+    mRegionFill = new UBRegionFillController(this);
+    mRegionFill->addToToolbar(mMainWindow->boardToolBar, nullptr, primaryToolsLayout);
     mMainWindow->boardToolBar->insertWidget(mMainWindow->actionBackgrounds,
             primaryTools);
 
@@ -1350,9 +1358,12 @@ void UBBoardController::setupToolbar()
     addMenuChoice(geometryControl.second, geometryGroup, 1,
             QStringLiteral("长方形"), UBDrawingController::SquareGeometry,
             QStringLiteral("自由绘制长方形；按住 Shift 绘制正方形"));
+    addMenuChoice(geometryControl.second, geometryGroup, 24,
+            QStringLiteral("圆"), UBDrawingController::CircleGeometry,
+            QStringLiteral("按下的位置为圆心，拖动确定半径"));
     addMenuChoice(geometryControl.second, geometryGroup, 2,
-            QStringLiteral("椭圆"), UBDrawingController::CircleGeometry,
-            QStringLiteral("自由绘制椭圆；按住 Shift 绘制圆形"));
+            QStringLiteral("椭圆"), UBDrawingController::EllipseGeometry,
+            QStringLiteral("沿外接矩形拖动绘制椭圆；按住 Shift 等比绘制"));
     addMenuChoice(geometryControl.second, geometryGroup, 5,
             QStringLiteral("三角形"), UBDrawingController::TriangleGeometry,
             QStringLiteral("自由绘制三角形；按住 Shift 保持等宽等高"));
@@ -1541,6 +1552,7 @@ void UBBoardController::setupToolbar()
     QAction* lineOptionsAction =
             mMainWindow->boardToolBar->insertWidget(mMainWindow->actionBackgrounds, lineOptions);
 
+
     //-----------------------------------------------------------//
     // Setup eraser width choice widget
 
@@ -1617,9 +1629,11 @@ void UBBoardController::setupToolbar()
 
     QAction* newDocumentAction = new QAction(
             UBUiTheme::icon(QStringLiteral("newdoc")),
-            QStringLiteral("新建"), mMainWindow->boardToolBar);
+            QStringLiteral("新建文档"), mMainWindow->boardToolBar);
     newDocumentAction->setObjectName(QStringLiteral("actionBoardNewDocument"));
     newDocumentAction->setToolTip(QStringLiteral("新建文档"));
+    mMainWindow->actionPages->setText(QStringLiteral("创建页面"));
+    mMainWindow->actionPages->setToolTip(QStringLiteral("在当前文档中创建页面"));
     connect(newDocumentAction, &QAction::triggered, mMainWindow->boardToolBar,
             [this]() {
         if (!UBApplication::documentController)
@@ -1690,6 +1704,11 @@ void UBBoardController::setupToolbar()
 
     UBApplication::app()->toolBarDisplayTextChanged(QVariant(settings->appToolBarDisplayText->get().toBool()));
     refreshPenVisuals();
+    const auto normalizeToolbar=[this](const QVariant& value){
+        UBUiTheme::normalizeBoardToolbar(mMainWindow->boardToolBar,value.toBool());
+    };
+    normalizeToolbar(settings->appToolBarDisplayText->get());
+    connect(settings->appToolBarDisplayText,&UBSetting::changed,mMainWindow->boardToolBar,normalizeToolbar);
 }
 
 
@@ -1885,7 +1904,10 @@ void UBBoardController::initToolbarTexts()
     foreach(QAction* action, allToolbarActions)
     {
         QString nominalText = action->text();
-        QString shortText = truncate(nominalText, 48);
+        action->setProperty("ubToolbarFullText", nominalText);
+        const bool explicitCreationLabel=action==mMainWindow->actionPages
+            || action->objectName()==QStringLiteral("actionBoardNewDocument");
+        QString shortText = explicitCreationLabel ? nominalText : truncate(nominalText, 48);
         QPair<QString, QString> texts(nominalText, shortText);
 
         mActionTexts.insert(action, texts);
@@ -2713,7 +2735,9 @@ UBItem *UBBoardController::downloadFinished(bool pSuccess, QUrl sourceUrl, QUrl 
         }
         else
         {
-            mActiveScene->scaleToFitDocumentSize(pixItem, true, UBSettings::objectInControlViewMargin);
+            mActiveScene->scaleToFitDocumentSize(pixItem, false, UBSettings::objectInControlViewMargin);
+            const QPointF offset = pPos - pixItem->sceneBoundingRect().center();
+            pixItem->moveBy(offset.x(), offset.y());
             UBDrawingController::drawingController()->setStylusTool(UBStylusTool::Selector);
         }
 
@@ -2732,7 +2756,9 @@ UBItem *UBBoardController::downloadFinished(bool pSuccess, QUrl sourceUrl, QUrl 
         }
         else
         {
-            mActiveScene->scaleToFitDocumentSize(svgItem, true, UBSettings::objectInControlViewMargin);
+            mActiveScene->scaleToFitDocumentSize(svgItem, false, UBSettings::objectInControlViewMargin);
+            const QPointF offset = pPos - svgItem->sceneBoundingRect().center();
+            svgItem->moveBy(offset.x(), offset.y());
             UBDrawingController::drawingController()->setStylusTool(UBStylusTool::Selector);
         }
 
@@ -3738,8 +3764,8 @@ void UBBoardController::setWidePageSize(bool checked)
         UBPageSizeUndoCommand* uc = new UBPageSizeUndoCommand(mActiveScene, mActiveScene->nominalSize(), newSize);
         UBApplication::undoStack->push(uc);
 
-        setPageSize(newSize);
     }
+    setPageSize(newSize);
 }
 
 
@@ -3753,18 +3779,19 @@ void UBBoardController::setRegularPageSize(bool checked)
         UBPageSizeUndoCommand* uc = new UBPageSizeUndoCommand(mActiveScene, mActiveScene->nominalSize(), newSize);
         UBApplication::undoStack->push(uc);
 
-        setPageSize(newSize);
     }
+    setPageSize(newSize);
 }
 
 
 void UBBoardController::setBorderlessPageSize(bool checked)
 {
     Q_UNUSED(checked);
-    if (mActiveScene && !mActiveScene->property("borderlessPage").toBool())
+    if (mActiveScene)
     {
         const QSize size = mActiveScene->nominalSize();
-        UBApplication::undoStack->push(new UBPageSizeUndoCommand(mActiveScene, size, size, true));
+        if (!mActiveScene->property("borderlessPage").toBool())
+            UBApplication::undoStack->push(new UBPageSizeUndoCommand(mActiveScene, size, size, true));
         setPageSize(size, true);
     }
 }
@@ -3787,7 +3814,6 @@ void UBBoardController::setPageSize(QSize newSize, bool borderless)
         QDateTime now = QDateTime::currentDateTime();
         selectedDocument()->setMetaData(UBSettings::documentUpdatedAt, UBStringUtils::toUtcIsoDateTime(now));
 
-        UBSettings::settings()->pageSize->set(newSize);
         mActiveScene->invalidate(mActiveScene->sceneRect(), QGraphicsScene::BackgroundLayer);
         for (QGraphicsView* view : mActiveScene->views())
         {
@@ -3796,6 +3822,10 @@ void UBBoardController::setPageSize(QSize newSize, bool borderless)
             view->viewport()->update();
         }
     }
+    // Clicking an already-active format is still an explicit default choice,
+    // e.g. after reopening an older fixed-format page following the migration.
+    UBSettings::settings()->pageSize->set(newSize);
+    UBSettings::settings()->pageBorderless->setBool(borderless);
 }
 
 void UBBoardController::notifyCache(bool visible)
@@ -4079,15 +4109,11 @@ void UBBoardController::copy()
 
 void UBBoardController::paste()
 {
-    QClipboard *clipboard = QApplication::clipboard();
-    qreal xPosition = ((qreal)QRandomGenerator::global()->bounded(RAND_MAX)/(qreal)RAND_MAX) * 400;
-    qreal yPosition = ((qreal)QRandomGenerator::global()->bounded(RAND_MAX)/(qreal)RAND_MAX) * 200;
-    QPointF randomPos(xPosition -200 , yPosition - 100);
-    QRect rect = mControlView->rect();
-    QPoint center(rect.x() + rect.width() / 2, rect.y() + rect.height() / 2);
-    QPointF viewRelativeCenter = mControlView->mapToScene(center);
+    if (!mControlView || !mActiveScene || !selectedDocument())
+        return;
 
-    processMimeData(clipboard->mimeData(), viewRelativeCenter + randomPos);
+    QClipboard *clipboard = QApplication::clipboard();
+    processMimeData(clipboard->mimeData(), mControlView->pastePosition());
 
     QDateTime now = QDateTime::currentDateTime();
     selectedDocument()->setMetaData(UBSettings::documentUpdatedAt, UBStringUtils::toUtcIsoDateTime(now));
@@ -4111,11 +4137,24 @@ void UBBoardController::processMimeData(const QMimeData* pMimeData, const QPoint
         {
             QList<UBItem*> items = mimeData->items();
             std::stable_sort(items.begin(),items.end(),zLevelLessThan);
+            QRectF sourceBounds;
+            for (UBItem* item : items)
+            {
+                if (auto* graphicsItem = dynamic_cast<QGraphicsItem*>(item))
+                    sourceBounds |= graphicsItem->sceneBoundingRect();
+            }
             foreach(UBItem* item, items)
             {
                 QGraphicsItem* pItem = dynamic_cast<QGraphicsItem*>(item);
                 if(NULL != pItem){
-                    duplicateItem(item);
+                    const QPointF targetCenter = pPos + pItem->sceneBoundingRect().center() - sourceBounds.center();
+                    if (auto* copy = dynamic_cast<QGraphicsItem*>(duplicateItem(item)))
+                    {
+                        // Paste follows the pointer, unlike the separate
+                        // Duplicate action. Preserve a multi-item layout.
+                        const QPointF offset = targetCenter - copy->sceneBoundingRect().center();
+                        copy->moveBy(offset.x(), offset.y());
+                    }
                 }
             }
 
@@ -4192,7 +4231,11 @@ void UBBoardController::processMimeData(const QMimeData* pMimeData, const QPoint
 
         if (ubMimeType == UBMimeType::VectorImage)
         {
-            mActiveScene->addSvg({}, pPos, buffer.data());
+            if (auto* image = mActiveScene->addSvg({}, pPos, buffer.data()))
+            {
+                const QPointF offset = pPos - image->sceneBoundingRect().center();
+                image->moveBy(offset.x(), offset.y());
+            }
             return;
         }
         else if (ubMimeType == UBMimeType::RasterImage)

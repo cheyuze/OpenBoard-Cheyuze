@@ -476,6 +476,7 @@ signals:
         qreal mPreviousWidth;
         qreal mDistanceFromLastStrokePoint;
         QPointF mCurrentPoint;
+        QLineF mConfiguredStraightLine;
 
         QList<UBGraphicsPolygonItem*> mPreviousPolygonItems;
 

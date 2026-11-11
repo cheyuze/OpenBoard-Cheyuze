@@ -29,8 +29,11 @@
 
 #include "UBGraphicsStrokesGroup.h"
 #include "UBGraphicsStroke.h"
+#include <cmath>
 
 #include "domain/UBGraphicsPolygonItem.h"
+#include "domain/UBGraphicsPixmapItemDelegate.h"
+#include "domain/UBGraphicsScene.h"
 
 #include "core/memcheck.h"
 
@@ -40,10 +43,7 @@ UBGraphicsStrokesGroup::UBGraphicsStrokesGroup(QGraphicsItem *parent)
     , debugTextEnabled(false) // set to true to get a graphical display of strokes' Z-levels
     , mDebugText(nullptr)
 {
-    setDelegate(new UBGraphicsItemDelegate(this, 0, GF_COMMON
-                                           | GF_RESPECT_RATIO
-                                           | GF_REVOLVABLE
-                                           | GF_FLIPPABLE_ALL_AXIS));
+    setDelegate(new UBGraphicsPixmapItemDelegate(this, true));
 
     setData(UBGraphicsItemData::ItemLayerType, UBItemLayerType::Object);
 
@@ -56,6 +56,42 @@ UBGraphicsStrokesGroup::UBGraphicsStrokesGroup(QGraphicsItem *parent)
 
 UBGraphicsStrokesGroup::~UBGraphicsStrokesGroup()
 {
+}
+
+void UBGraphicsStrokesGroup::setEditableLine(const QLineF& line)
+{
+    if (qIsFinite(line.x1()) && qIsFinite(line.y1()) && qIsFinite(line.x2())
+            && qIsFinite(line.y2()) && line.length() > .01)
+        mEditableLine = line;
+}
+
+bool UBGraphicsStrokesGroup::hasEditableLine()
+{
+    if (mEditableLine.length() > .01) return true;
+    // Old documents did not tag geometry. Recognize only constant-width,
+    // nominal, collinear segments, never a curve, filled shape or taper.
+    QList<QPointF> points; qreal width=-1;
+    for (auto* child : childItems()) {
+        auto* polygon=dynamic_cast<UBGraphicsPolygonItem*>(child);
+        if (!polygon || !polygon->isNominalLine()) return false;
+        if (width < 0) width=polygon->originalWidth();
+        if (qAbs(polygon->originalWidth()-width) > .01) return false;
+        points << polygon->mapToParent(polygon->originalLine().p1())
+               << polygon->mapToParent(polygon->originalLine().p2());
+    }
+    if (points.size()<2) return false;
+    const QPointF origin=points.first();QPointF axis;
+    for (const auto& point : points) if (QLineF(origin,point).length() > .01) {axis=point-origin;break;}
+    const qreal length=std::hypot(axis.x(),axis.y());if(length<=.01)return false;
+    axis/=length;qreal minimum=0,maximum=0;
+    for (const auto& point : points) {
+        const auto delta=point-origin;
+        if(qAbs(delta.x()*axis.y()-delta.y()*axis.x())>.02)return false;
+        const qreal projection=QPointF::dotProduct(delta,axis);
+        minimum=qMin(minimum,projection);maximum=qMax(maximum,projection);
+    }
+    if(maximum-minimum<2)return false;
+    setEditableLine(QLineF(origin+axis*minimum,origin+axis*maximum));return true;
 }
 
 void UBGraphicsStrokesGroup::setUuid(const QUuid &pUuid)
@@ -118,16 +154,14 @@ QColor UBGraphicsStrokesGroup::color(colorType pColorType) const
 
 void UBGraphicsStrokesGroup::mousePressEvent(QGraphicsSceneMouseEvent *event)
 {
-    Delegate()->startUndoStep();
-
-    QGraphicsItemGroup::mousePressEvent(event);
+    Delegate()->mousePressEvent(event);
     event->accept();
 }
 
 void UBGraphicsStrokesGroup::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
 {
     if (!isLocked(this)) {
-        QGraphicsItemGroup::mouseMoveEvent(event);
+        Delegate()->mouseMoveEvent(event);
 
         event->accept();
     }
@@ -138,7 +172,20 @@ void UBGraphicsStrokesGroup::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
     event->accept();
 
     Delegate()->mouseReleaseEvent(event);
-    QGraphicsItemGroup::mouseReleaseEvent(event);
+}
+
+void UBGraphicsStrokesGroup::contextMenuEvent(QGraphicsSceneContextMenuEvent* event)
+{
+    auto* graphicsScene = dynamic_cast<UBGraphicsScene*>(QGraphicsItemGroup::scene());
+    if (!graphicsScene) { event->ignore(); return; }
+    if (!isSelected()) { graphicsScene->deselectAllItemsExcept(this); setSelected(true); }
+    static_cast<UBGraphicsPixmapItemDelegate*>(Delegate())->openMenu(event->screenPos());
+    event->accept();
+}
+
+void UBGraphicsStrokesGroup::keyPressEvent(QKeyEvent* event)
+{
+    if (!Delegate()->keyPressEvent(event)) QGraphicsItemGroup::keyPressEvent(event);
 }
 
 UBItem* UBGraphicsStrokesGroup::deepCopy() const
@@ -211,6 +258,8 @@ void UBGraphicsStrokesGroup::copyItemParameters(UBItem *copy) const
         cp->setData(UBGraphicsItemData::ItemIsHiddenOnDisplay, this->data(UBGraphicsItemData::ItemIsHiddenOnDisplay));
         cp->setData(UBGraphicsItemData::ItemOwnZValue, this->data(UBGraphicsItemData::ItemOwnZValue));
         cp->setZValue(this->zValue());
+        if (auto* group=dynamic_cast<UBGraphicsStrokesGroup*>(cp))
+            group->setEditableLine(mEditableLine);
     }
 }
 
@@ -254,7 +303,7 @@ QPainterPath UBGraphicsStrokesGroup::shape() const
 {
     QPainterPath path;
 
-    if (isSelected())
+    if (isSelected() && mEditableLine.length() <= .01)
     {
         path.addRect(boundingRect());
     }

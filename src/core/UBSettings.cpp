@@ -307,14 +307,18 @@ void UBSettings::init()
     ValidateKeyboardPaletteKeyBtnSize();
 
     pageSize = new UBSetting(this, "Board", "DefaultPageSize", documentSizes.value(DocumentSizeRatio::Ratio16_9));
+    pageBorderless = new UBSetting(this, "Board", "DefaultPageBorderless", true);
 
-    // Apply the new wide-screen default once on existing Team Edition installs.
-    // This only changes the default for newly created documents; existing pages
-    // retain the size stored in their document metadata.
-    if (!mUserSettings->value("TeamEdition/WideCanvasDefaultApplied", false).toBool())
+    // Adopt the borderless default once on upgrade. Never resize saved pages or
+    // reset a later explicit page-mode choice on subsequent launches.
+    if (!mUserSettings->value("TeamEdition/BorderlessCanvasDefaultApplied", false).toBool())
     {
-        pageSize->set(documentSizes.value(DocumentSizeRatio::Ratio16_9));
-        mUserSettings->setValue("TeamEdition/WideCanvasDefaultApplied", true);
+        pageBorderless->setBool(true);
+        // Store the value with its migration marker, rather than relying on a
+        // later periodic save after the marker may already have been flushed.
+        mUserSettings->setValue("Board/DefaultPageBorderless", true);
+        mUserSettings->setValue("TeamEdition/BorderlessCanvasDefaultApplied", true);
+        mUserSettings->sync();
     }
 
     boardCrossColorDarkBackground = new UBSetting(this, "Board", "CrossColorDarkBackground", "#C8C0C0C0");

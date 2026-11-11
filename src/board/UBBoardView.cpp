@@ -275,8 +275,116 @@ void UBBoardView::refreshLaserPointer()
         updateLaserPointer(viewport()->mapFromGlobal(QCursor::pos()), true);
 }
 
+QGraphicsItem* UBBoardView::selectorItemAt(const QPointF& viewportPosition)
+{
+    auto* currentScene = QGraphicsView::scene();
+    if (!currentScene) return nullptr;
+    const QTransform toViewport = viewportTransform();
+    const QPointF point = toViewport.inverted().map(viewportPosition);
+    auto* exact = currentScene->itemAt(point, toViewport);
+    if (exact && (exact->type() == UBGraphicsDelegateFrame::Type
+                  || exact->type() == DelegateButton::Type)) return exact;
+
+    // This is a view-only pick tolerance, in logical screen pixels. Never
+    // enlarge the document's shape()/boundingRect(): erasing, serialization
+    // and export must continue to use the actual, unchanged thin geometry.
+    QPainterPath probe;
+    probe.addEllipse(viewportPosition, 6, 6);
+    const QRectF search = toViewport.inverted().map(probe).boundingRect();
+    QSet<UBGraphicsStrokesGroup*> visited;
+    for (auto* candidate : currentScene->items(search, Qt::IntersectsItemBoundingRect,
+                                               Qt::DescendingOrder, toViewport)) {
+        UBGraphicsStrokesGroup* shape = nullptr;
+        for (auto* owner = candidate; owner && !shape; owner = owner->parentItem())
+            shape = dynamic_cast<UBGraphicsStrokesGroup*>(owner);
+        // An exact foreground object remains an occluder. Do not offer a
+        // hand/click on ink behind a picture or on controls above it.
+        if (!shape && candidate == exact) return exact;
+        if (!shape || visited.contains(shape)) continue;
+        visited.insert(shape);
+        const QTransform mapping = shape->deviceTransform(toViewport);
+        QPainterPath hit = mapping.map(static_cast<QGraphicsItem*>(shape)->shape());
+        const auto line = shape->editableLine();
+        if (line.length() > .01) {
+            // A dashed straight line is still one editable line, including
+            // its gaps. Its picture-style rectangle is never used to pick.
+            QPainterPath axis;
+            axis.moveTo(mapping.map(line.p1()));axis.lineTo(mapping.map(line.p2()));
+            QPainterPathStroker stroke;stroke.setWidth(1);
+            hit.addPath(stroke.createStroke(axis));
+        }
+        if (hit.intersects(probe) || hit.contains(viewportPosition)) return shape;
+    }
+    return exact;
+}
+
+void UBBoardView::updateSelectorHover(const QPointF& viewportPosition)
+{
+    if (!bIsControl || bIsDesktop || !isInteractive()
+            || UBDrawingController::drawingController()->stylusTool() != UBStylusTool::Selector)
+        return;
+    if (mShapeHoverCursorActive)
+        setToolCursor(UBStylusTool::Selector);
+    // Let native endpoint/resize/text controls own their more specific cursor
+    // first, even for a one-pixel movement below the normal drag threshold.
+    QMouseEvent hover(QEvent::MouseMove, viewportPosition,
+                      viewport()->mapToGlobal(viewportPosition.toPoint()),
+                      Qt::NoButton, Qt::NoButton, QApplication::keyboardModifiers());
+    QGraphicsView::mouseMoveEvent(&hover);
+    if (dynamic_cast<UBGraphicsStrokesGroup*>(selectorItemAt(viewportPosition))) {
+        viewport()->setCursor(Qt::PointingHandCursor);
+        mShapeHoverCursorActive = true;
+    }
+}
+
 bool UBBoardView::eventFilter(QObject* watched, QEvent* event)
 {
+    if (watched == viewport() && (bIsControl || bIsDesktop))
+    {
+        QPointF position;
+        bool pointerEvent = false;
+        switch (event->type())
+        {
+        case QEvent::MouseMove:
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseButtonRelease:
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+            position = static_cast<QMouseEvent*>(event)->position();
+#else
+            position = static_cast<QMouseEvent*>(event)->localPos();
+#endif
+            pointerEvent = true;
+            break;
+        case QEvent::TabletMove:
+        case QEvent::TabletPress:
+        case QEvent::TabletRelease:
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+            position = static_cast<QTabletEvent*>(event)->position();
+#else
+            position = static_cast<QTabletEvent*>(event)->posF();
+#endif
+            pointerEvent = true;
+            break;
+        case QEvent::Enter:
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+            position = static_cast<QEnterEvent*>(event)->position();
+#else
+            position = viewport()->mapFromGlobal(QCursor::pos());
+#endif
+            pointerEvent = true;
+            break;
+        default:
+            break;
+        }
+        if (pointerEvent && QRectF(viewport()->rect()).contains(position))
+        {
+            // Keep viewport, not scene, coordinates: toolbar/menu paste must
+            // remain visible after panning, zooming or changing pages.
+            mLastPointerViewportPosition = position;
+            mHasPointerViewportPosition = true;
+        }
+    }
+
     if (UBDrawingController::drawingController()->stylusTool() != UBStylusTool::Pointer)
         return QGraphicsView::eventFilter(watched, event);
 
@@ -313,6 +421,23 @@ bool UBBoardView::eventFilter(QObject* watched, QEvent* event)
         break;
     }
     return QGraphicsView::eventFilter(watched, event);
+}
+
+QPointF UBBoardView::pastePosition() const
+{
+    const QRect bounds = viewport()->rect();
+    QPointF position = mLastPointerViewportPosition;
+    if (!mHasPointerViewportPosition)
+    {
+        position = viewport()->mapFromGlobal(QCursor::pos());
+        if (!bounds.contains(position.toPoint()))
+            position = bounds.center();
+    }
+
+    // A remembered pointer can be outside a subsequently resized viewport.
+    position.setX(qBound(qreal(bounds.left()), position.x(), qreal(bounds.right())));
+    position.setY(qBound(qreal(bounds.top()), position.y(), qreal(bounds.bottom())));
+    return viewportTransform().inverted().map(position);
 }
 
 
@@ -453,6 +578,8 @@ bool UBBoardView::event (QEvent * e)
 
 bool UBBoardView::viewportEvent(QEvent* event)
 {
+    if (event->type() == QEvent::Leave && mShapeHoverCursorActive)
+        setToolCursor(UBDrawingController::drawingController()->stylusTool());
     const bool handled = QGraphicsView::viewportEvent(event);
     if (event->type() == QEvent::Enter && (bIsControl || bIsDesktop)
             && !mMiddleButtonPanActive && !mMouseButtonIsPressed && !mTabletStylusIsPressed)
@@ -463,6 +590,14 @@ bool UBBoardView::viewportEvent(QEvent* event)
         const int tool = UBDrawingController::drawingController()->stylusTool();
         if (tool != UBStylusTool::Selector && tool != UBStylusTool::Play)
             setToolCursor(tool);
+
+        if (tool == UBStylusTool::Selector) {
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+            updateSelectorHover(static_cast<QEnterEvent*>(event)->position());
+#else
+            updateSelectorHover(viewport()->mapFromGlobal(QCursor::pos()));
+#endif
+        }
 
         if (tool == UBStylusTool::Pointer)
         {
@@ -960,6 +1095,15 @@ void UBBoardView::handleItemMousePress(QMouseEvent *event)
     setMovingItem(determineItemToPress(getMovingItem()));
     handleItemsSelection(getMovingItem());
 
+    if (mTolerantShapePress && getMovingItem()) {
+        // There is no exact Qt hit at this point, so native dispatch would
+        // deselect the intended shape and send the click to the background.
+        if (auto* item = dynamic_cast<UBGraphicsItem*>(getMovingItem()))
+            item->Delegate()->startUndoStep();
+        if (!isMultipleSelectionEnabled()) getMovingItem()->setSelected(true);
+        return;
+    }
+
     if (isMultipleSelectionEnabled())
         return;
 
@@ -1272,6 +1416,7 @@ void UBBoardView::mousePressEvent (QMouseEvent *event)
     }
 
     mIsDragInProgress = false;
+    mTolerantShapePress = false;
 
     if (isAbsurdPoint (event->pos ())) {
         event->accept ();
@@ -1354,6 +1499,15 @@ void UBBoardView::mousePressEvent (QMouseEvent *event)
 
             if (scene()->backgroundObject() == getMovingItem())
                 setMovingItem(NULL);
+
+            if (currentTool == UBStylusTool::Selector) {
+                auto* target = selectorItemAt(eventPosition);
+                if (dynamic_cast<UBGraphicsStrokesGroup*>(target)
+                        && determineItemToPress(target) != determineItemToPress(getMovingItem())) {
+                    mTolerantShapePress = true;
+                    setMovingItem(target);
+                }
+            }
 
             connect(&mLongPressTimer, SIGNAL(timeout()), this, SLOT(longPressEvent()));
             if (!getMovingItem() && !mController->cacheIsVisible())
@@ -1521,6 +1675,18 @@ void UBBoardView::mouseMoveEvent (QMouseEvent *event)
     if (updateLaserPointer(event->localPos()))
 #endif
     {
+        event->accept();
+        return;
+    }
+
+    if (bIsControl && !bIsDesktop && !event->buttons()
+            && !mMouseButtonIsPressed && !mTabletStylusIsPressed
+            && UBDrawingController::drawingController()->stylusTool() == UBStylusTool::Selector) {
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+        updateSelectorHover(event->position());
+#else
+        updateSelectorHover(event->localPos());
+#endif
         event->accept();
         return;
     }
@@ -1723,6 +1889,22 @@ void UBBoardView::mouseReleaseEvent (QMouseEvent *event)
 #else
     QPointF eventPosition = event->localPos();
 #endif
+
+    if (mTolerantShapePress && currentTool == UBStylusTool::Selector) {
+        if (auto* item = dynamic_cast<UBGraphicsItem*>(getMovingItem()))
+            item->Delegate()->commitUndoStep();
+        if (getMovingItem() && !mWidgetMoved && isMultipleSelectionEnabled())
+            getMovingItem()->setSelected(!getMovingItem()->isSelected());
+        mTolerantShapePress = false;
+        mWidgetMoved = false;
+        mMouseButtonIsPressed = mPendingStylusReleaseEvent = mTabletStylusIsPressed = false;
+        setMovingItem(nullptr);
+        mLongPressTimer.stop();
+        scene()->updateSelectionFrame();
+        updateSelectorHover(eventPosition);
+        event->accept();
+        return;
+    }
 
     if (currentTool == UBStylusTool::Selector)
     {
@@ -1977,14 +2159,18 @@ void UBBoardView::mouseReleaseEvent (QMouseEvent *event)
     mMouseButtonIsPressed = false;
     mPendingStylusReleaseEvent = false;
     mTabletStylusIsPressed = false;
+    mTolerantShapePress = false;
     setMovingItem(NULL);
 
     mLongPressTimer.stop();
     scene()->updateSelectionFrame();
+    if (currentTool == UBStylusTool::Selector)
+        updateSelectorHover(eventPosition);
 }
 
 void UBBoardView::forcedTabletRelease ()
 {
+    mTolerantShapePress = false;
     if (mMiddleButtonPanActive)
     {
         mMiddleButtonPanActive = false;
@@ -2329,6 +2515,7 @@ void UBBoardView::focusOutEvent (QFocusEvent * event)
 
 void UBBoardView::setToolCursor (int tool)
 {
+    mShapeHoverCursorActive = false;
     viewport()->setCursor(UBResources::resources()->cursorForTool(tool));
     if (bIsControl || bIsDesktop)
     {

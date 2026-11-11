@@ -6,9 +6,11 @@
 #include <QString>
 
 class QWidget;
+class QToolBar;
 
-// Presentation-only helpers. Never owns widgets, changes window flags, or
-// installs event filters: recording/cursor/input lifecycles remain unchanged.
+// Presentation helpers. The overflow adapter watches only its own toolbar
+// and disclosure; no application-wide or canvas filters. Recording, cursor
+// and drawing input lifecycles remain unchanged.
 namespace UBUiTheme
 {
     QColor ink();
@@ -18,6 +20,7 @@ namespace UBUiTheme
     QColor selected();
     QIcon icon(const QString& name, const QColor& accent = QColor());
     void applyActionIcons(QWidget* root);
+    void normalizeBoardToolbar(QToolBar* toolbar, bool displayText);
 }
 
 #endif

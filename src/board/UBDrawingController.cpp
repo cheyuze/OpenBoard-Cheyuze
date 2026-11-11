@@ -342,7 +342,7 @@ void UBDrawingController::setLineGeometryMode(int mode)
 {
     const LineGeometryMode boundedMode = static_cast<LineGeometryMode>(
             qBound(static_cast<int>(StraightLineGeometry), mode,
-                   static_cast<int>(TriangularPrismGeometry)));
+                   static_cast<int>(EllipseGeometry)));
     if (mLineGeometryMode != boundedMode)
     {
         mLineGeometryMode = boundedMode;

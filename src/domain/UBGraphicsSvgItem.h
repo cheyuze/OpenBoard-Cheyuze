@@ -80,6 +80,9 @@ class UBGraphicsSvgItem: public QGraphicsSvgItem, public UBItem, public UBGraphi
 
     protected:
 
+        void contextMenuEvent(QGraphicsSceneContextMenuEvent* event) override;
+        void keyPressEvent(QKeyEvent* event) override;
+
         virtual void mousePressEvent(QGraphicsSceneMouseEvent *event);
         virtual void mouseMoveEvent(QGraphicsSceneMouseEvent *event);
         virtual void mouseReleaseEvent(QGraphicsSceneMouseEvent *event);

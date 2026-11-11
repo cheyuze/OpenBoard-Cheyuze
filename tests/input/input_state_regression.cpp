@@ -106,6 +106,7 @@ public:
     bool mMouseButtonIsPressed = false;
     bool mTabletStylusIsPressed = false;
     bool mMiddleButtonPanActive = true;
+    bool mShapeHoverCursorActive = false;
     QPointF mPreviousPoint;
     int lastCursor = -1;
     FakePanController controller;
@@ -116,6 +117,9 @@ public:
     bool updateLaserPointer(const QPointF&, bool = false) { return false; }
     void hideLaserPointer() {}
     void refreshLaserPointer() {}
+    // Real selector hit-testing/cursor dispatch is covered by the separate
+    // full-client shape-hover suite, not substituted into this entry adapter.
+    void updateSelectorHover(const QPointF&) {}
     void mouseMoveEvent(QMouseEvent*);
     bool viewportEvent(QEvent*) override;
 };

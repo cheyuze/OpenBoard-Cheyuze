@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>车厘子定制版 · 版本更新</title>
+    <title>OpenBoard 2.0.0 · 体验优化</title>
     <style>
         * { box-sizing: border-box; }
         html, body { width: 100%; min-height: 100%; margin: 0; }
@@ -22,6 +22,7 @@
         .contact { display: flex; align-items: center; gap: 14px; margin-top: 16px; padding: 14px 17px; color: inherit; text-decoration: none; background: linear-gradient(135deg, #ffffff, #edf5ff); border: 1px solid #cfe0f5; border-radius: 14px; transition: transform .15s ease, box-shadow .15s ease; }
         .contact:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(37, 103, 183, .16); }
         .avatar { flex: 0 0 46px; width: 46px; height: 46px; color: white; background: linear-gradient(135deg, #245b9e, #2f6bb5); border-radius: 13px; text-align: center; line-height: 46px; font-size: 22px; font-weight: 700; }
+        .avatar svg { width: 25px; height: 25px; vertical-align: middle; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
         .contact-main { flex: 1; }
         .contact-name { display: block; color: #1d4f91; font-size: 16px; font-weight: 700; }
         .contact-meta { display: block; margin-top: 3px; color: #526174; font-size: 12px; line-height: 1.6; }
@@ -47,9 +48,9 @@
         </defs>
     </svg>
     <section class="hero">
-        <span class="version">车厘子定制版 · 1.9.7</span>
-        <h1>对已知BUG的修复</h1>
-        <p>修复撤销与重做后的画面更新延迟，统一按钮和快捷键的刷新处理。同步补齐此前未发布的页面模式及声音设备缺失处理，保留现有白板与录制功能。</p>
+        <span class="version">车厘子定制版 · 2.0.0</span>
+        <h1>体验优化</h1>
+        <p>集中优化日常讲题操作：形状编辑更直观，阴影标注更顺手，细线选择与工具栏操作更清晰。默认新建无边白布，保留已有文档、页面格式与录制功能。</p>
     </section>
 
     <a class="contact" href="yach://yach.zhiyinlou.com/session/p2p?sessionid=285108440437788672" title="通过知音楼联系车禹泽">
@@ -61,21 +62,30 @@
         <span class="contact-action">通过知音楼联系我 ›</span>
     </a>
 
+    <a class="contact" href="https://yach-doc-shimo.zhiyinlou.com/forms/L9kBM1E4D6spX5qK/fill" title="在默认浏览器打开《中台教学培训需求调研》">
+        <span class="avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 4H5v17h14V4h-3M9 2h6v4H9zM8 11h8M8 15h6"/></svg></span>
+        <span class="contact-main">
+            <span class="contact-name">《中台教学培训需求调研》</span>
+            <span class="contact-meta">提交功能需求、使用问题与优化建议</span>
+        </span>
+        <span class="contact-action">填写需求反馈 ›</span>
+    </a>
+
     <h2 class="section-title">本版主要更新</h2>
-    <section class="updates" aria-label="1.9.7 更新内容">
-        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#layout"/></svg></span><h2>撤销与重做及时显示</h2><p>历史操作完成后主动刷新画布，避免旧笔迹滞留，不必再依赖下一次书写或重新聚焦。</p></article>
-        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#image"/></svg></span><h2>按钮与快捷键一致</h2><p>撤销按钮与 Ctrl+Z、重做与 Ctrl+Y 共用完成路径，保持原有历史步数和文档内容规则。</p></article>
-        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#layers"/></svg></span><h2>正常书写保留局部刷新</h2><p>整屏同步仅用于有效撤销和重做，不增加每次下笔的整屏刷新；当前画布与可见投屏一起更新。</p></article>
-        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#desktop"/></svg></span><h2>无边全屏白布</h2><p>页面大小新增无边白布，保留 16:9 和 4:3。模式随页面保存与复制，也可撤销或重做切换。</p></article>
-        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#workbench"/></svg></span><h2>声音设备缺失自动回退</h2><p>录制前发现已选设备不可用时切到系统默认设备并提示，保持原有声音来源模式，不擅自开启音源。</p></article>
-        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#notes"/></svg></span><h2>录制失败有明确提示</h2><p>初始化失败会显示警告并恢复可重试状态，避免按钮看似无响应。既有采集、计时和编码核心保持不变。</p></article>
+    <section class="updates" aria-label="2.0.0 更新内容">
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#layout"/></svg></span><h2>工具栏与操作框更统一</h2><p>统一图标、文字与对齐，形状采用清晰的编辑控件；“更多”改为竖向列表，不再挤出第二行工具栏。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#image"/></svg></span><h2>图片跟随指针，笔迹在上</h2><p>粘贴位置跟随画布中的鼠标焦点；图片默认在笔迹下方，选中不改变层级，右键可手动调整。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#layers"/></svg></span><h2>圆心绘圆，直线端点编辑</h2><p>按下位置作为圆心，拖动改变半径；直线用两端控制点调整长短和方向，另保留椭圆绘制。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#notes"/></svg></span><h2>三种方式添加阴影</h2><p>支持圈选、点击识别和逐点闭合多边形。预设颜色与浓度后直接填充，可连续标注，也可撤销。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#desktop"/></svg></span><h2>默认无边全屏白布</h2><p>新建白板默认无边模式，仍可选 16:9 或 4:3 并记住选择。已有页面及导入的 PDF/PPT 保持原格式。</p></article>
+        <article class="item"><span class="icon" aria-hidden="true"><svg><use href="#workbench"/></svg></span><h2>细线与形状更容易选中</h2><p>选择工具悬停形状时显示小手，细线附近更容易点中；实际线宽不变，端点和缩放光标保持明确。</p></article>
     </section>
 
     <a class="contact" href="https://xiwang.cheyuze.top" title="在默认浏览器打开教学培训工作台">
         <span class="contact-main"><span class="contact-name">教学培训工作台</span><span class="contact-meta">常用教学工具与培训资源 · xiwang.cheyuze.top</span></span>
         <span class="contact-action">打开工作台 ›</span>
     </a>
-    <p class="notice">每个新版本首次启动展示本页一次，随后尊重“下次显示”设置。网站与 GitHub 提供同一安装包；百度网盘由维护者手动同步，请核对版本。已进行隔离回归与完整客户端输入验证，仍需实际手写板复测偶发时序。设备回退仅在录制开始前处理，重要授课前请使用实际设备短片试录。</p>
+    <p class="notice">每个新版本首次启动展示本页一次，随后尊重“下次显示”设置。需求反馈表与工作台在默认浏览器打开；百度网盘由维护者手动同步，请核对版本。本轮未修改录制计时、采集、编码与音频核心；隔离回归不能穷尽实体设备和驱动的所有情况，重要授课前请使用实际设备短片试录。</p>
 
     <footer>
         本软件为基于 OpenBoard 开源项目的非官方定制版本；OpenBoard 原版权及 GNU GPL v3 开源许可证声明继续保留。

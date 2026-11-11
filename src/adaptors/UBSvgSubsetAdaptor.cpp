@@ -562,6 +562,14 @@ void UBSvgSubsetAdaptor::UBSvgSubsetReader::processElement()
         {
             strokesGroup = new UBGraphicsStrokesGroup();
             graphicsItemFromSvg(strokesGroup);
+            const QStringList endpoints=mXmlReader.attributes().value(mNamespaceUri,"line-endpoints").toString()
+                    .split(QRegularExpression(QStringLiteral("\\s+")),Qt::SkipEmptyParts);
+            if(endpoints.size()==4){
+                bool valid[4];qreal values[4];
+                for(int i=0;i<4;++i)values[i]=endpoints.at(i).toDouble(&valid[i]);
+                if(valid[0]&&valid[1]&&valid[2]&&valid[3])
+                    strokesGroup->setEditableLine(QLineF(values[0],values[1],values[2],values[3]));
+            }
 
             bool hasZValue;
             qreal zValue = normalizedZValue(&hasZValue);
@@ -1331,6 +1339,12 @@ bool UBSvgSubsetAdaptor::UBSvgSubsetWriter::persistScene(std::shared_ptr<UBDocum
                                                   , "fill-on-light-background", colorOnLightBackground.name());
 
                         mXmlWriter.writeAttribute(UBSettings::uniboardDocumentNamespaceUri, "uuid", UBStringUtils::toCanonicalUuid(sg->uuid()));
+                        if(sg->hasEditableLine()){
+                            const QLineF line=sg->editableLine();
+                            mXmlWriter.writeAttribute(UBSettings::uniboardDocumentNamespaceUri,"line-endpoints",
+                                QStringLiteral("%1 %2 %3 %4").arg(line.x1(),0,'g',15).arg(line.y1(),0,'g',15)
+                                    .arg(line.x2(),0,'g',15).arg(line.y2(),0,'g',15));
+                        }
 
                         QVariant locked = sg->data(UBGraphicsItemData::ItemLocked);
                         if (!locked.isNull() && locked.toBool())

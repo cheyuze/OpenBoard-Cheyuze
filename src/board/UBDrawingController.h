@@ -69,7 +69,8 @@ class UBDrawingController : public QObject
             ConeGeometry,
             SphereGeometry,
             PyramidGeometry,
-            TriangularPrismGeometry
+            TriangularPrismGeometry,
+            EllipseGeometry // Append only: keep all existing geometry IDs stable.
         };
 
         enum LinePattern

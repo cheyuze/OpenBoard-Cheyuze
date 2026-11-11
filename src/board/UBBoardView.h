@@ -60,6 +60,8 @@ public:
 
     void setToolCursor(int tool);
 
+    QPointF pastePosition() const;
+
     void rubberItems();
     void moveRubberedItems(QPointF movingVector);
 
@@ -134,6 +136,9 @@ private:
     void hideLaserPointer();
     void refreshLaserPointer();
 
+    QGraphicsItem* selectorItemAt(const QPointF& viewportPosition);
+    void updateSelectorHover(const QPointF& viewportPosition);
+
     inline bool shouldDisplayItem(QGraphicsItem *item)
     {
         bool ok;
@@ -157,6 +162,10 @@ private:
     bool mMiddleButtonPanActive;
     QPointF mPreviousPoint;
     QPoint mMouseDownPos;
+    QPointF mLastPointerViewportPosition;
+    bool mHasPointerViewportPosition{false};
+    bool mShapeHoverCursorActive{false};
+    bool mTolerantShapePress{false};
 
     bool mPenPressureSensitive;
     bool mMarkerPressureSensitive;

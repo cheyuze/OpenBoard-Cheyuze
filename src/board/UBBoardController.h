@@ -43,6 +43,7 @@
 class UBMainWindow;
 class UBApplication;
 class UBBoardView;
+class UBRegionFillController;
 
 class UBDocument;
 class UBDocumentController;
@@ -100,6 +101,7 @@ class UBBoardController : public UBDocumentContainer
         {
             return mControlView;
         }
+        UBRegionFillController* regionFillController() const { return mRegionFill; }
 
         UBBoardView* displayView() const
         {
@@ -323,6 +325,7 @@ class UBBoardController : public UBDocumentContainer
         UBMessageWindow *mMessageWindow;
         UBEmbedController *mEmbedController;
         UBBoardView *mControlView;
+        UBRegionFillController* mRegionFill{nullptr};
         UBBoardView *mDisplayView;
         QWidget *mControlContainer;
         QHBoxLayout *mControlLayout;

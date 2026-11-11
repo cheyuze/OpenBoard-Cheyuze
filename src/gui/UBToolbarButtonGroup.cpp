@@ -205,6 +205,20 @@ UBToolbarButtonGroup::~UBToolbarButtonGroup()
     // NOOP
 }
 
+void UBToolbarButtonGroup::setToolbarMetrics(bool displayText)
+{
+    if(auto* box=qobject_cast<QVBoxLayout*>(layout())){
+        box->setSizeConstraint(QLayout::SetDefaultConstraint);
+        box->setContentsMargins(3,4,3,displayText?7:4);box->setSpacing(3);
+        box->setStretch(0,1);
+    }
+    setFixedHeight(displayText?58:42);
+    if(mCaptionLabel){
+        mCaptionLabel->setFixedHeight(16);
+        mCaptionLabel->setStyleSheet(QStringLiteral("font-family:'Microsoft YaHei UI';font-size:11px;color:#526174;background:transparent;border:0;"));
+    }
+}
+
 void UBToolbarButtonGroup::setLabel(const QString& label)
 {
     mLabel = label;

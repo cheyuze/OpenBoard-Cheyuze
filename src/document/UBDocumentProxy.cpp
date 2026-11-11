@@ -77,6 +77,7 @@ void UBDocumentProxy::init()
     setUuid(QUuid::createUuid());
 
     setDefaultDocumentSize(UBSettings::settings()->pageSize->get().toSize());
+    setMetaData("borderlessPageDefault", UBSettings::settings()->pageBorderless->get().toBool());
 }
 
 bool UBDocumentProxy::theSameDocument(std::shared_ptr<UBDocumentProxy> proxy)

@@ -30,10 +30,12 @@
 #include "UBGraphicsSvgItem.h"
 
 #include <QtGui>
+#include <QGraphicsSceneContextMenuEvent>
 
 #include "UBGraphicsScene.h"
 #include "UBGraphicsItemDelegate.h"
 #include "UBGraphicsPixmapItem.h"
+#include "UBGraphicsPixmapItemDelegate.h"
 
 #include "core/UBApplication.h"
 #include "core/UBPersistenceManager.h"
@@ -74,9 +76,7 @@ void UBGraphicsSvgItem::init()
 {
     setData(UBGraphicsItemData::ItemLayerType, UBItemLayerType::Object);
 
-    setDelegate(new UBGraphicsItemDelegate(this, 0, GF_COMMON
-                                           | GF_RESPECT_RATIO
-                                           | GF_REVOLVABLE));
+    setDelegate(new UBGraphicsPixmapItemDelegate(this, true));
     UBGraphicsFlags dfl = Delegate()->ubflags();
     Delegate()->setUBFlags(dfl | GF_FLIPPABLE_ALL_AXIS | GF_REVOLVABLE);
 
@@ -143,6 +143,19 @@ void UBGraphicsSvgItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 {
     Delegate()->mouseReleaseEvent(event);
     QGraphicsSvgItem::mouseReleaseEvent(event);
+}
+
+void UBGraphicsSvgItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event)
+{
+    if (!scene() || scene()->backgroundObject() == this) { event->ignore(); return; }
+    if (!isSelected()) { scene()->deselectAllItemsExcept(this); setSelected(true); }
+    static_cast<UBGraphicsPixmapItemDelegate*>(Delegate())->openMenu(event->screenPos());
+    event->accept();
+}
+
+void UBGraphicsSvgItem::keyPressEvent(QKeyEvent* event)
+{
+    if (!Delegate()->keyPressEvent(event)) QGraphicsSvgItem::keyPressEvent(event);
 }
 
 

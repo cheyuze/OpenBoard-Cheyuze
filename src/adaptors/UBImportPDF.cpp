@@ -96,6 +96,9 @@ void UBImportPDF::placeImportedItemToScene(std::shared_ptr<UBGraphicsScene> scen
     scene->setAsBackgroundObject(pdfItem, false, false);
 
     scene->setNominalSize(pdfItem->boundingRect().width(), pdfItem->boundingRect().height());
+    // Imported PDF/PPT pages retain the source paper format, independently of
+    // the default mode for a new blank whiteboard.
+    scene->setProperty("borderlessPage", false);
 }
 
 const QString& UBImportPDF::folderToCopy()
